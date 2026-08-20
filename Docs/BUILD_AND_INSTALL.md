@@ -70,4 +70,13 @@ Install development builds through Xcode or `devicectl`; distribute signed build
 ./Scripts/Validate-CrossPlatform.sh
 ```
 
+After compiling an Editor target, the combat subsystem verification commandlet can be run headlessly:
+
+```bash
+"$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd" AshesOfHeaven.uproject \
+  -run=AHCombatVerificationCommandlet -unattended -nop4 -nosplash -nullrhi -nosound
+```
+
+It checks health damage, armor absorption timing, ammo/reload transfer, grenade inventory, objective transitions, checkpoint serialization, and faction hostility. Restart the editor before running it if the editor has an older hot-reloaded project module loaded.
+
 An Unreal-equipped runner should invoke the platform script for its host platform, then run automated tests and archive the output. CI must keep Windows, macOS, Android, and iOS jobs separate because Unreal/SDK/signing toolchains are not interchangeable.
