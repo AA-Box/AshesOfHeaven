@@ -1,0 +1,54 @@
+name: Cross-platform validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  source-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shared source/configuration
+        run: ./Scripts/Validate-CrossPlatform.sh
+
+  windows-shipping:
+    if: ${{ vars.UNREAL_ENGINE_WINDOWS_ROOT != '' }}
+    runs-on: [self-hosted, Windows, UE5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows Shipping archive
+        shell: pwsh
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_WINDOWS_ROOT }}
+        run: ./Scripts/Build-Windows.ps1
+
+  macos-shipping:
+    if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS Shipping archive
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_MAC_ROOT }}
+        run: ./Scripts/Build-Mac.sh
+
+  android-shipping:
+    if: ${{ vars.UNREAL_ENGINE_ANDROID_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5, Android]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Android ARM64 test package
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_ANDROID_ROOT }}
+        run: ./Scripts/Build-Android.sh
+
+  ios-shipping:
+    if: ${{ vars.UNREAL_ENGINE_IOS_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5, iOS]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build iOS/iPadOS package
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_IOS_ROOT }}
+          AH_IOS_DISTRIBUTION: "0"
+        run: ./Scripts/Build-iOS.sh

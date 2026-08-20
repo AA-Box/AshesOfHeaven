@@ -1,0 +1,31 @@
+# Unreal Engine generated output
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Builds/
+Build/Mac/FileOpenOrder/
+
+# IDE and generated project metadata
+.vs/
+.idea/
+*.sln
+*.suo
+*.xcworkspace/
+*.xcodeproj/xcuserdata/
+
+# Local knowledge-graph output
+graphify-out/
+
+# OS files
+.DS_Store
+
+# Signing material and local credentials
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.keystore
+*.jks
+*.cer
+*.pem
+*.key
