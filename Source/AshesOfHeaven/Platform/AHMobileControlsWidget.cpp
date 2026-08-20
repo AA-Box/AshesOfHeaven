@@ -31,6 +31,10 @@ FReply UAHMobileControlsWidget::NativeOnTouchStarted(const FGeometry& InGeometry
 	const int32 PointerIndex = InGestureEvent.GetPointerIndex();
 	const FVector2D LocalPosition = InGeometry.AbsoluteToLocal(InGestureEvent.GetScreenSpacePosition());
 	const FVector2D LocalSize = InGeometry.GetLocalSize();
+	if (TryHandleActionTouch(LocalPosition, LocalSize, PointerIndex))
+	{
+		return FReply::Handled().CaptureMouse(TakeWidget());
+	}
 
 	if (LocalPosition.X < LocalSize.X * 0.48f && MovePointerIndex == INDEX_NONE)
 	{
@@ -83,6 +87,12 @@ FReply UAHMobileControlsWidget::NativeOnTouchEnded(const FGeometry& InGeometry, 
 
 void UAHMobileControlsWidget::EndTouch(int32 PointerIndex)
 {
+	if (const EAHMobileTouchAction* Action = ActionPointers.Find(PointerIndex))
+	{
+		ReleaseAction(*Action);
+		ActionPointers.Remove(PointerIndex);
+		return;
+	}
 	if (PointerIndex == MovePointerIndex)
 	{
 		MovePointerIndex = INDEX_NONE;
@@ -92,6 +102,41 @@ void UAHMobileControlsWidget::EndTouch(int32 PointerIndex)
 	{
 		LookPointerIndex = INDEX_NONE;
 	}
+}
+
+bool UAHMobileControlsWidget::TryHandleActionTouch(const FVector2D& LocalPosition, const FVector2D& LocalSize, int32 PointerIndex)
+{
+	if (LocalSize.X <= 1.0f || LocalSize.Y <= 1.0f)
+	{
+		return false;
+	}
+
+	EAHMobileTouchAction Action;
+	bool bAction = false;
+	const float X = LocalPosition.X / LocalSize.X;
+	const float Y = LocalPosition.Y / LocalSize.Y;
+	if (X > 0.72f)
+	{
+		if (Y < 0.34f) { Action = EAHMobileTouchAction::ADS; bAction = true; }
+		else if (Y < 0.52f) { Action = EAHMobileTouchAction::Fire; bAction = true; }
+		else if (Y < 0.68f) { Action = EAHMobileTouchAction::Reload; bAction = true; }
+		else if (Y < 0.84f) { Action = EAHMobileTouchAction::Grenade; bAction = true; }
+		else { Action = EAHMobileTouchAction::Melee; bAction = true; }
+	}
+	else if (Y > 0.80f && X > 0.28f)
+	{
+		if (X < 0.43f) { Action = EAHMobileTouchAction::Interact; bAction = true; }
+		else if (X < 0.58f) { Action = EAHMobileTouchAction::Jump; bAction = true; }
+		else if (X < 0.72f) { Action = EAHMobileTouchAction::Sprint; bAction = true; }
+		else { Action = EAHMobileTouchAction::Crouch; bAction = true; }
+	}
+
+	if (bAction)
+	{
+		ActionPointers.Add(PointerIndex, Action);
+		PressAction(Action);
+	}
+	return bAction;
 }
 
 void UAHMobileControlsWidget::ApplyMoveInput(const FVector2D& Value)
@@ -115,4 +160,3 @@ void UAHMobileControlsWidget::ApplyLookInput(const FVector2D& Value)
 		}
 	}
 }
-

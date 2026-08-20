@@ -1,0 +1,134 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "Gameplay/Combat/AHGameplayTypes.h"
+#include "NiagaraSystem.h"
+#include "AHWeaponBase.generated.h"
+
+class USkeletalMeshComponent;
+class USoundBase;
+class AAHCombatantCharacter;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHWeaponAmmoChangedDelegate, const FAHAmmoState&, Ammo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHWeaponEventDelegate);
+
+UCLASS(Blueprintable)
+class ASHESOFHEAVEN_API AAHWeaponBase : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	AAHWeaponBase();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon")
+	FName WeaponId = FName(TEXT("M91_Revenant"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon")
+	FText DisplayName = FText::FromString(TEXT("M91 REVENANT"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=1))
+	int32 MagazineCapacity = 36;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0))
+	int32 ReserveCapacity = 180;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=1.0))
+	float RoundsPerMinute = 700.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float BodyDamage = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=1.0))
+	float HeadshotMultiplier = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float MaxRange = 20000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float FalloffStart = 5000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float FalloffEnd = 16000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float HipSpreadDegrees = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float ADSSpreadDegrees = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float VerticalRecoil = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float HorizontalRecoil = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=0.0))
+	float ReloadDuration = 1.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> ShotSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> ReloadSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> EmptySound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> ImpactSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
+	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
+	TObjectPtr<UNiagaraSystem> ImpactEffect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
+	TObjectPtr<UNiagaraSystem> TracerEffect;
+
+	UPROPERTY(BlueprintAssignable, Category="Weapon")
+	FAHWeaponAmmoChangedDelegate OnAmmoChanged;
+
+	UPROPERTY(BlueprintAssignable, Category="Weapon")
+	FAHWeaponEventDelegate OnShot;
+
+	UPROPERTY(BlueprintAssignable, Category="Weapon")
+	FAHWeaponEventDelegate OnReloaded;
+
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	void SetWeaponActive(bool bActive);
+	void StartFire();
+	void StopFire();
+	void Reload();
+
+	UFUNCTION(BlueprintPure, Category="Weapon")
+	bool IsReloading() const { return bIsReloading; }
+
+	UFUNCTION(BlueprintPure, Category="Weapon")
+	bool IsFiring() const { return bWantsToFire; }
+
+	UFUNCTION(BlueprintPure, Category="Weapon")
+	const FAHAmmoState& GetAmmoState() const { return Ammo; }
+
+	void SetAmmoState(const FAHAmmoState& SavedAmmo);
+	void AddReserveAmmo(int32 Amount);
+	AAHCombatantCharacter* GetCombatantOwner() const;
+
+protected:
+	virtual void FireShot();
+	void FinishReload();
+	float GetDamageAtDistance(float Distance) const;
+
+	FAHAmmoState Ammo;
+	FTimerHandle FireTimer;
+	FTimerHandle ReloadTimer;
+	bool bWantsToFire = false;
+	bool bIsReloading = false;
+	bool bWeaponActive = false;
+};

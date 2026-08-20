@@ -16,6 +16,9 @@ public class AshesOfHeaven : ModuleRules
 			"EnhancedInput",
 			"DeveloperSettings",
 			"AIModule",
+			"NavigationSystem",
+			"GameplayTasks",
+			"Niagara",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
@@ -32,7 +35,8 @@ public class AshesOfHeaven : ModuleRules
 			"AshesOfHeaven/Variant_Shooter",
 			"AshesOfHeaven/Variant_Shooter/AI",
 			"AshesOfHeaven/Variant_Shooter/UI",
-			"AshesOfHeaven/Variant_Shooter/Weapons"
+			"AshesOfHeaven/Variant_Shooter/Weapons",
+			"AshesOfHeaven/Gameplay"
 		});
 
 		// Uncomment if you are using Slate UI

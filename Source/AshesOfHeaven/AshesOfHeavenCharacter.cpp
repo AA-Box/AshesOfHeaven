@@ -9,6 +9,7 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AshesOfHeaven.h"
+#include "Platform/AHPlatformManagerSubsystem.h"
 
 AAshesOfHeavenCharacter::AAshesOfHeavenCharacter()
 {
@@ -49,16 +50,22 @@ void AAshesOfHeavenCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
+		UAHPlatformManagerSubsystem* PlatformManager = UAHPlatformManagerSubsystem::Get(this);
+		UInputAction* ResolvedJumpAction = JumpAction ? JumpAction : (PlatformManager ? PlatformManager->GetJumpAction() : nullptr);
+		UInputAction* ResolvedMoveAction = MoveAction ? MoveAction : (PlatformManager ? PlatformManager->GetMoveAction() : nullptr);
+		UInputAction* ResolvedLookAction = LookAction ? LookAction : (PlatformManager ? PlatformManager->GetLookAction() : nullptr);
+		UInputAction* ResolvedMouseLookAction = MouseLookAction ? MouseLookAction : (PlatformManager ? PlatformManager->GetMouseLookAction() : nullptr);
+
 		// Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &AAshesOfHeavenCharacter::DoJumpStart);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &AAshesOfHeavenCharacter::DoJumpEnd);
+		EnhancedInputComponent->BindAction(ResolvedJumpAction, ETriggerEvent::Started, this, &AAshesOfHeavenCharacter::DoJumpStart);
+		EnhancedInputComponent->BindAction(ResolvedJumpAction, ETriggerEvent::Completed, this, &AAshesOfHeavenCharacter::DoJumpEnd);
 
 		// Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::MoveInput);
+		EnhancedInputComponent->BindAction(ResolvedMoveAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::MoveInput);
 
 		// Looking/Aiming
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::LookInput);
-		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::LookInput);
+		EnhancedInputComponent->BindAction(ResolvedLookAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::LookInput);
+		EnhancedInputComponent->BindAction(ResolvedMouseLookAction, ETriggerEvent::Triggered, this, &AAshesOfHeavenCharacter::LookInput);
 	}
 	else
 	{

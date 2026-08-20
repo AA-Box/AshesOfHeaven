@@ -52,6 +52,7 @@ protected:
 	virtual FReply NativeOnTouchEnded(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent) override;
 
 private:
+	bool TryHandleActionTouch(const FVector2D& LocalPosition, const FVector2D& LocalSize, int32 PointerIndex);
 	void ApplyMoveInput(const FVector2D& Value);
 	void ApplyLookInput(const FVector2D& Value);
 	void EndTouch(int32 PointerIndex);
@@ -60,5 +61,5 @@ private:
 	int32 LookPointerIndex = INDEX_NONE;
 	FVector2D MoveOrigin = FVector2D::ZeroVector;
 	FVector2D LookPosition = FVector2D::ZeroVector;
+	TMap<int32, EAHMobileTouchAction> ActionPointers;
 };
-

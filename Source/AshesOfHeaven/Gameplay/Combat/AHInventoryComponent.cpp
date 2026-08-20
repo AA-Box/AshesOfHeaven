@@ -1,0 +1,125 @@
+#include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Engine/World.h"
+
+UAHInventoryComponent::UAHInventoryComponent()
+{
+	PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UAHInventoryComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	Grenades = FMath::Clamp(StartingGrenades, 0, MaximumGrenades);
+}
+
+void UAHInventoryComponent::AddWeapon(AAHWeaponBase* Weapon)
+{
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	Weapon->SetOwner(GetOwner());
+	Weapons.AddUnique(Weapon);
+	if (CurrentWeaponIndex == INDEX_NONE)
+	{
+		CurrentWeaponIndex = 0;
+	}
+
+	for (int32 Index = 0; Index < Weapons.Num(); ++Index)
+	{
+		Weapons[Index]->SetActorHiddenInGame(Index != CurrentWeaponIndex);
+	}
+	OnInventoryChanged.Broadcast();
+}
+
+AAHWeaponBase* UAHInventoryComponent::AddWeaponClass(TSubclassOf<AAHWeaponBase> WeaponClass, bool bEquipImmediately)
+{
+	if (!GetWorld() || !WeaponClass)
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = GetOwner();
+	SpawnParams.Instigator = Cast<APawn>(GetOwner());
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AAHWeaponBase* Weapon = GetWorld()->SpawnActor<AAHWeaponBase>(WeaponClass, GetOwner()->GetActorTransform(), SpawnParams);
+	if (Weapon)
+	{
+		const int32 NewIndex = Weapons.Num();
+		AddWeapon(Weapon);
+		if (bEquipImmediately)
+		{
+			EquipWeapon(NewIndex);
+		}
+	}
+	return Weapon;
+}
+
+void UAHInventoryComponent::EquipWeapon(int32 Index)
+{
+	if (!Weapons.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	CurrentWeaponIndex = Index;
+	for (int32 WeaponIndex = 0; WeaponIndex < Weapons.Num(); ++WeaponIndex)
+	{
+		if (IsValid(Weapons[WeaponIndex]))
+		{
+			Weapons[WeaponIndex]->SetActorHiddenInGame(WeaponIndex != CurrentWeaponIndex);
+			Weapons[WeaponIndex]->SetWeaponActive(WeaponIndex == CurrentWeaponIndex);
+		}
+	}
+	OnInventoryChanged.Broadcast();
+}
+
+void UAHInventoryComponent::CycleWeapon(int32 Direction)
+{
+	if (Weapons.Num() < 2)
+	{
+		return;
+	}
+
+	const int32 NewIndex = (CurrentWeaponIndex + Direction + Weapons.Num()) % Weapons.Num();
+	EquipWeapon(NewIndex);
+}
+
+AAHWeaponBase* UAHInventoryComponent::GetCurrentWeapon() const
+{
+	return Weapons.IsValidIndex(CurrentWeaponIndex) ? Weapons[CurrentWeaponIndex] : nullptr;
+}
+
+bool UAHInventoryComponent::ConsumeGrenade()
+{
+	if (Grenades <= 0)
+	{
+		return false;
+	}
+
+	--Grenades;
+	OnInventoryChanged.Broadcast();
+	return true;
+}
+
+void UAHInventoryComponent::AddGrenades(int32 Amount)
+{
+	Grenades = FMath::Clamp(Grenades + Amount, 0, MaximumGrenades);
+	OnInventoryChanged.Broadcast();
+}
+
+void UAHInventoryComponent::SetSavedAmmo(const FAHAmmoState& Ammo)
+{
+	if (AAHWeaponBase* Weapon = GetCurrentWeapon())
+	{
+		Weapon->SetAmmoState(Ammo);
+	}
+}
+
+FAHAmmoState UAHInventoryComponent::GetSavedAmmo() const
+{
+	return GetCurrentWeapon() ? GetCurrentWeapon()->GetAmmoState() : FAHAmmoState();
+}

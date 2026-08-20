@@ -50,6 +50,7 @@ enum class EAHMobileTouchAction : uint8
 	Interact,
 	Grenade,
 	Melee,
+	Sprint,
 	WeaponNext,
 	WeaponPrevious,
 	VehicleAccelerate,
@@ -243,4 +244,3 @@ struct ASHESOFHEAVEN_API FAHDeviceProfile
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Device")
 	bool bHighEnd = false;
 };
-
