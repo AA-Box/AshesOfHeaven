@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Gameplay/Combat/AHGameplayTypes.h"
 #include "AHPlatformSaveSubsystem.generated.h"
 
 /** Logical campaign state. Unreal resolves the physical save location per platform. */
@@ -40,6 +41,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Accessibility")
 	float SubtitleBackgroundOpacity = 0.80f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Combat")
+	FAHCombatCheckpointState CombatState;
 };
 
 /** Platform-neutral save API for checkpoints, settings, and suspend protection. */
@@ -55,6 +59,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Ashes of Heaven|Save")
 	bool LoadCheckpoint(FName& CheckpointId, float& CampaignProgress, FString& MapName, int32& Difficulty);
 
+	bool SaveCombatCheckpoint(const FAHCombatCheckpointState& State);
+	bool LoadCombatCheckpoint(FAHCombatCheckpointState& State) const;
+
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Save")
 	bool HasSave() const;
 
@@ -67,4 +74,3 @@ public:
 private:
 	UAHSaveGame* LoadSaveObject() const;
 };
-

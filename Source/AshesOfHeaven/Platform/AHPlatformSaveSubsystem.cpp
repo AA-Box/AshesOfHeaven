@@ -31,7 +31,38 @@ bool UAHPlatformSaveSubsystem::SaveCheckpoint(FName CheckpointId, float Campaign
 	SaveObject->CampaignProgress = FMath::Clamp(CampaignProgress, 0.0f, 1.0f);
 	SaveObject->MapName = MapName;
 	SaveObject->Difficulty = Difficulty;
+	SaveObject->CombatState.bValid = false;
 	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
+}
+
+bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointState& State)
+{
+	UAHSaveGame* SaveObject = LoadSaveObject();
+	if (!SaveObject)
+	{
+		SaveObject = Cast<UAHSaveGame>(UGameplayStatics::CreateSaveGameObject(UAHSaveGame::StaticClass()));
+	}
+	if (!SaveObject)
+	{
+		return false;
+	}
+
+	SaveObject->CheckpointId = State.CheckpointId;
+	SaveObject->MapName = State.MapName;
+	SaveObject->CampaignProgress = FMath::Clamp(State.ObjectiveIndex / 5.0f, 0.0f, 1.0f);
+	SaveObject->CombatState = State;
+	SaveObject->CombatState.bValid = true;
+	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
+}
+
+bool UAHPlatformSaveSubsystem::LoadCombatCheckpoint(FAHCombatCheckpointState& State) const
+{
+	if (const UAHSaveGame* SaveObject = LoadSaveObject())
+	{
+		State = SaveObject->CombatState;
+		return State.bValid;
+	}
+	return false;
 }
 
 bool UAHPlatformSaveSubsystem::LoadCheckpoint(FName& CheckpointId, float& CampaignProgress, FString& MapName, int32& Difficulty)
@@ -73,4 +104,3 @@ void UAHPlatformSaveSubsystem::SaveSuspensionCheckpoint()
 		CurrentMap == TEXT("Unknown") && !ExistingMap.IsEmpty() ? ExistingMap : CurrentMap,
 		ExistingDifficulty);
 }
-
