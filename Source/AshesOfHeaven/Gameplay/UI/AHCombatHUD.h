@@ -25,6 +25,8 @@ public:
 
 private:
 	void DrawPanel(const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color) const;
+	void DrawTacticalFrame(const FVector2D& Position, const FVector2D& Size, const FLinearColor& Accent, float FillAlpha = 0.66f) const;
+	void DrawLine(const FVector2D& Start, const FVector2D& End, const FLinearColor& Color, float Thickness = 1.0f) const;
 	void DrawBar(const FVector2D& Position, const FVector2D& Size, float Percent, const FLinearColor& Color) const;
 	void DrawTextAt(const FText& Text, const FVector2D& Position, const FLinearColor& Color, float Scale = 1.0f) const;
 

@@ -1,5 +1,6 @@
 #include "Gameplay/Weapons/AHWeaponPickup.h"
 #include "AshesOfHeaven.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
@@ -23,6 +24,7 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 		return;
 	}
 
+	bool bCollected = false;
 	switch (PickupType)
 	{
 	case EAHResourcePickupType::Weapon:
@@ -31,6 +33,7 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 			#if !UE_BUILD_SHIPPING
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] weapon actor=%s amount=%d"), *GetName(), Amount);
 			#endif
+			bCollected = true;
 			Destroy();
 		}
 		break;
@@ -41,6 +44,7 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 			#if !UE_BUILD_SHIPPING
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] ammo actor=%s amount=%d"), *GetName(), Amount);
 			#endif
+			bCollected = true;
 			Destroy();
 		}
 		break;
@@ -49,10 +53,19 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 		#if !UE_BUILD_SHIPPING
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] grenades actor=%s amount=%d"), *GetName(), Amount);
 		#endif
+		bCollected = true;
 		Destroy();
 		break;
 	default:
 		break;
+	}
+
+	if (bCollected)
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Pickup, GetActorLocation(), 0.7f);
+		}
 	}
 }
 

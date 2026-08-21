@@ -1,4 +1,5 @@
 #include "Gameplay/Combat/AHCombatComponent.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
@@ -88,6 +89,13 @@ void UAHCombatComponent::Melee()
 	if (MeleeSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, MeleeSound, CombatantOwner->GetActorLocation());
+	}
+	else if (GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Melee, CombatantOwner->GetActorLocation(), 0.8f);
+		}
 	}
 	const FVector Start = CombatantOwner->GetWeaponTraceOrigin();
 	const FVector End = Start + CombatantOwner->GetControlRotation().Vector() * MeleeRange;

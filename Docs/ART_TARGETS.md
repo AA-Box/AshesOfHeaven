@@ -27,7 +27,12 @@ PARTIALLY IMPLEMENTED:
 
 NOT IMPLEMENTED:
 
-- authored ruined-city meshes, wet material master/instances, puddle decals, smoke columns, embers, distant artillery VFX, authored soundscape, and production sky/cloud art.
+- authored ruined-city meshes, wet material master/instances, puddle decals, smoke columns, embers, distant artillery VFX, and authored soundscape/music.
+
+PHASE 4.1 AUDIO: Runtime event cues and a low mechanical ambient bed are now present through
+`UAHAudioSubsystem`; the existing project weapon-fire asset is used where available. This is a
+packaged-safe integration palette, not final battlefield ambience, weapon layering, dialogue/voice,
+footsteps, or mix approval.
 
 KNOWN GAP: Current geometry is still procedural/greybox-derived and will not subjectively match the approved image until authored environment/material/VFX work is supplied.
 
@@ -56,6 +61,9 @@ PARTIALLY IMPLEMENTED:
 NOT IMPLEMENTED:
 
 - final station kit, ticket machines, route map material, luggage/clothing props, wet-surface master, leaking water, electrical hum, and authored damaged fluorescent VFX/audio.
+
+PHASE 4.1 AUDIO: Objective, interaction, pickup, and dialogue timing now have runtime feedback; the
+station still needs authored electrical hum, failing-fixture detail, room tone, and environmental mix.
 
 KNOWN GAP: The station is materially more readable than the old open greybox, but it is not yet the full dense abandoned concourse in the reference.
 
@@ -86,6 +94,9 @@ NOT IMPLEMENTED:
 
 - authored black ceramic/obsidian master, microstructure, seams, volumetric shafts, suspended architectural kit, final glyph materials/decals, Cathedral ambience, and cinematic-scale production meshes.
 
+PHASE 4.1 AUDIO: The Cathedral has a low runtime bed and event feedback, but no authored resonance,
+tonal pressure, transmission voice, or production music is claimed.
+
 KNOWN GAP: This is the highest-priority target but remains a procedural architectural scaffold rather than final art.
 
 PERFORMANCE: Mostly static-looking non-colliding primitives, no nav impact, sparse lights, and asset-free fog/lighting atmosphere. Profile fog/light/shadow cost on each target tier.
@@ -112,6 +123,9 @@ PARTIALLY IMPLEMENTED:
 NOT IMPLEMENTED:
 
 - final original Lucian face/body/hair/face paint, gauntlets, clothing, emblem/pendant, Maya production character, facial animation, cinematic animation, and authored dialogue staging.
+
+PHASE 4.1 AUDIO: Dialogue timing now has a restrained runtime cue when no voice asset is assigned;
+final voice performance, room tone, and cinematic mix remain open.
 
 KNOWN GAP: The current shot still visibly contains mannequin proxies; it must not be presented as final character art.
 

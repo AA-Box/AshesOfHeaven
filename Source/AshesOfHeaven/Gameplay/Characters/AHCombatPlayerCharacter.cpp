@@ -1,4 +1,5 @@
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
@@ -73,6 +74,22 @@ void AAHCombatPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	RefreshMovementSpeed();
+	if (GetCharacterMovement() && GetCharacterMovement()->IsMovingOnGround() && GetVelocity().SizeSquared2D() > FMath::Square(35.0f))
+	{
+		FootstepTimeRemaining -= DeltaSeconds;
+		if (FootstepTimeRemaining <= 0.0f)
+		{
+			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+			{
+				Audio->PlayWorldCue(EAHAudioCue::Footstep, GetActorLocation(), bSprinting ? 0.85f : 0.62f, bCrouched ? 0.82f : (bSprinting ? 1.08f : 1.0f));
+			}
+			FootstepTimeRemaining = bCrouched ? 0.62f : (bSprinting ? 0.28f : 0.43f);
+		}
+	}
+	else
+	{
+		FootstepTimeRemaining = 0.0f;
+	}
 	if (GetFirstPersonCameraComponent())
 	{
 		const float TargetFOV = IsAimingDownSights() ? ADSFOV : HipFOV;
@@ -241,6 +258,7 @@ void AAHCombatPlayerCharacter::PreviousWeapon()
 void AAHCombatPlayerCharacter::OnDeathStarted()
 {
 	bSprinting = false;
+	FootstepTimeRemaining = 0.0f;
 	StopFire();
 	Super::OnDeathStarted();
 }

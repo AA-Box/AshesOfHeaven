@@ -1,4 +1,5 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
@@ -158,9 +159,23 @@ float AAHCombatantCharacter::TakeDamage(float DamageAmount, FDamageEvent const& 
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, HurtSound, GetActorLocation());
 	}
+	else if (HealthDamage > 0.0f && GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Hurt, GetActorLocation(), 0.7f);
+		}
+	}
 	if (Absorbed > 0.0f && ArmorDamageSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ArmorDamageSound, GetActorLocation());
+	}
+	else if (Absorbed > 0.0f && GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Armor, GetActorLocation(), 0.75f);
+		}
 	}
 	OnDamageFeedback.Broadcast(HealthDamage + Absorbed, bHeadshot, Absorbed > 0.0f || ArmorBefore > 0.0f, bArmorBroken, DirectionAngle);
 	return HealthDamage + Absorbed;
@@ -246,6 +261,13 @@ void AAHCombatantCharacter::OnDeathStarted()
 	if (DeathSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
+	}
+	else if (GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Death, GetActorLocation(), 0.8f);
+		}
 	}
 }
 

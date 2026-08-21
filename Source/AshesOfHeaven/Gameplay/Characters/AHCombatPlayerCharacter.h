@@ -83,4 +83,5 @@ protected:
 	bool bSprinting = false;
 	bool bCrouched = false;
 	bool bGodMode = false;
+	float FootstepTimeRemaining = 0.0f;
 };

@@ -274,11 +274,67 @@ The Phase 4 source and runtime target layer completed a fresh machine validation
 
 No actual runtime screenshots were captured in this execution environment. The stable viewpoints are real in-engine positions and can be reviewed with `Scripts/Run-Mac-ArtTarget.sh`; no offline render or fabricated screenshot is claimed. Real device FPS, draw-call, memory, thermal, and mobile measurements were not performed. Subjective target match, final art approval, and the two Phase 3 interactive human runs remain human-gated.
 
+## PHASE 4.1 — AUDIO AND REFERENCE-DRIVEN TACTICAL UI — 2026-08-21
+
+The first Phase 4 pass exposed two concrete completeness gaps: the gameplay event sound properties
+were mostly unassigned, and the HUD still read as a generic greybox overlay rather than belonging to
+the approved industrial/Veil visual language. Phase 4.1 closes the runtime feedback gap and replaces
+the HUD treatment without changing the chapter graph, combat rules, collision, navigation, or
+cross-platform architecture.
+
+### Audio implementation
+
+- Added `UAHAudioSubsystem` in `Source/AshesOfHeaven/Gameplay/Audio/` as a world-owned runtime audio
+  palette. It initializes on every playable world and is safe in packaged builds.
+- The rifle uses the packaged project asset
+  `/Game/Weapons/GrenadeLauncher/Audio/FirstPersonTemplateWeaponFire02` for its default shot sound.
+- Null or unassigned Blueprint sound slots now fall back to generated PCM cues for shot, reload, dry
+  fire, impact, melee, armor, hurt, death, grenade, pickup, footstep, objective, dialogue, and a low mechanical
+  ambient bed. Existing authored assets continue to win whenever a slot is assigned.
+- Audio hooks are attached at the actual gameplay events: weapon fire/reload/empty/impact, combatant
+  damage/death, melee, grenade explosion, objective changes, dialogue lines, and world start.
+- The generated palette is an intentional Phase 4.1 integration layer, not a claim of final sound
+  design. Authored weapon layers, footsteps, enemy vocalizations, environmental ambience, music,
+  voice acting, mix, and platform-specific loudness still require production audio work.
+
+### HUD implementation
+
+- Replaced the old blue-grey block HUD with a dark near-black tactical treatment: thin bracket frames,
+  steel/bone typography, restrained amber objective accents, cyan armor, red danger states, and sparse
+  lines rather than large opaque panels.
+- The objective strip now reads as `MISSION // OBJECTIVE`, shows progress, uses a short amber settle
+  pulse, and remains readable at a 1280x720 baseline with safe margins.
+- Health/armor, vitals, magazine/reserve, grenades, damage direction, hit markers, interaction,
+  countdown, Manticore hull/speed, terminal intel, dialogue, and chapter completion all use the same
+  tactical frame language. The magazine value is intentionally dominant and the weapon name/status
+  hierarchy is secondary.
+- HUD sizing is based on the smaller of width/height scale, clamped for 1280x720 through 2560x1440,
+  so text does not collapse into the old tiny corner labels on the baseline target.
+- The environment references remain the art direction source: Erebus uses war-worn steel/fire,
+  Transit uses amber/red infrastructure, Cathedral uses black mass/cold light, and Lucian/Maya uses
+  severe cinematic negative space. The HUD translates that shared language; the PNGs are not literal
+  HUD layout sheets.
+
+### Phase 4.1 verification — 2026-08-21
+
+| Gate | Exact result |
+| --- | --- |
+| Development Editor | **PASS** — `AshesOfHeavenEditor Mac Development`, UE 5.8 Mac arm64 UHT/compile/link, exit 0; audio subsystem, pickup/footstep hooks, and HUD compiled. |
+| `AHCombatVerificationCommandlet` | **PASS** — 14/14 checks, 0 failed checks, 0 errors; one known HUD-test cleanup warning; fresh Editor module logged `cues=14`. Log: `/tmp/ashes-phase41-commandlet-final-52678.log`. |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 15/15 tests completed with `Result={Success}`, exit code 0; fresh Editor module logged `cues=14`. Log: `/tmp/ashes-phase41-automation-final-52743.log`. |
+| Mac Development cook/package | **PASS** — `BUILD SUCCESSFUL`, `BuildCookRun time: 60.38 s`, exit code 0; `Builds/macOS-Development/AshesOfHeaven.app`. |
+| Mac Shipping cook/package | **PASS** — `BUILD SUCCESSFUL`, `BuildCookRun time: 47.55 s`, exit code 0; `Builds/macOS/AshesOfHeaven.app`. |
+| Development normal renderer + audio | **PASS** — final packaged process stayed alive for 12 seconds without `-nullrhi` or `-nosound`; CoreAudio created the 48 kHz mixer, the 14-cue runtime palette initialized, and the ambient bed started. Captured output: `/tmp/ashes-phase41-development-final-audio-53794.stdout`. |
+| Shipping normal renderer | **PASS** — final packaged `AshesOfHeaven-Mac-Shipping` stayed alive for 15 seconds without `-nullrhi` or `-nosound`; no crash occurred. Captured stdout was empty, as expected for this Shipping target: `/tmp/ashes-phase41-shipping-final-audio-53870.stdout`. |
+
+These are machine/build and runtime initialization results. They do not claim a human playthrough,
+subjective reference match, final authored audio, or final art approval.
+
 ## Known issues and scope boundaries
 
-- Phase 4 now supplies a procedural visual target layer and art-direction lighting, but authored
-  environment meshes, production materials, final VFX/audio, and production character art remain
-  open gaps. See `Docs/ART_TARGETS.md`; visual match is not claimed without human review.
+- Phase 4.1 now supplies a runtime audio integration layer and reference-driven tactical HUD, but
+  authored environment meshes, production materials, final VFX/audio, and production character art
+  remain open gaps. See `Docs/ART_TARGETS.md`; visual match is not claimed without human review.
 - The approved prototype `NS_DustMote` asset is not loaded at runtime because its Stateless Niagara
   serialization asserts in the installed Mac package. The atmosphere hook is intentionally kept
   asset-free through fog, layered silhouettes, and practical lights until a cooked-safe authored
@@ -302,7 +358,10 @@ Codex did not claim a human interactive playthrough. A human tester must run the
 1. Complete the slice normally, judging controls, gun feel, AI, progression, checkpoints, Manticore operation, dialogue, and whether anything softlocks.
 2. Collect ammo and grenades, reach checkpoint 2 or 3, die, respawn, verify inventory/objectives/enemies, and finish the mission.
 
-The human tester should ignore ugly geometry, placeholder animation, lighting, and sound when judging Phase 3 acceptance. These interactive combat/death/restart/pickup/Manticore/checkpoint behaviors remain `UNTESTED` in the platform matrix until that playthrough is performed.
+The human tester should ignore remaining prototype geometry, animation, lighting, and the Phase 4.1
+placeholder audio palette when judging Phase 3 acceptance. These interactive combat/death/restart/
+pickup/Manticore/checkpoint behaviors remain `UNTESTED` in the platform matrix until that playthrough
+is performed.
 
 ### Validation environment note — 2026-08-21
 

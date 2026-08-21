@@ -1,6 +1,7 @@
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "AshesOfHeaven.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -42,6 +43,10 @@ AAHWeaponBase::AAHWeaponBase()
 	if (UMaterialInterface* RifleMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle")))
 	{
 		CapacitorMesh->SetMaterial(0, RifleMaterial);
+	}
+	if (USoundBase* RifleFireSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Weapons/GrenadeLauncher/Audio/FirstPersonTemplateWeaponFire02.FirstPersonTemplateWeaponFire02")))
+	{
+		ShotSound = RifleFireSound;
 	}
 }
 
@@ -185,6 +190,13 @@ void AAHWeaponBase::Reload()
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ReloadSound, GetActorLocation());
 	}
+	else if (GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Reload, GetActorLocation(), 0.75f);
+		}
+	}
 	GetWorld()->GetTimerManager().SetTimer(ReloadTimer, this, &AAHWeaponBase::FinishReload, ReloadDuration, false);
 }
 
@@ -258,6 +270,13 @@ void AAHWeaponBase::FireShot()
 		{
 			UGameplayStatics::PlaySoundAtLocation(this, EmptySound, GetActorLocation());
 		}
+		else if (GetWorld())
+		{
+			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+			{
+				Audio->PlayWorldCue(EAHAudioCue::Empty, GetActorLocation(), 0.8f);
+			}
+		}
 		return;
 	}
 
@@ -279,6 +298,13 @@ void AAHWeaponBase::FireShot()
 		if (ImpactSound)
 		{
 			UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, Hit.ImpactPoint);
+		}
+		else if (GetWorld())
+		{
+			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+			{
+				Audio->PlayWorldCue(EAHAudioCue::Impact, Hit.ImpactPoint, 0.65f);
+			}
 		}
 		if (ImpactEffect)
 		{
@@ -303,6 +329,13 @@ void AAHWeaponBase::FireShot()
 	if (ShotSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ShotSound, GetActorLocation());
+	}
+	else if (GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Shot, GetActorLocation(), 0.9f);
+		}
 	}
 	if (WeaponMesh)
 	{

@@ -73,7 +73,27 @@ The M91 is heavy, industrial, electromagnetic, and believable. The existing rifl
 
 ## HUD and typography
 
-The HUD is minimal, military, quiet, and scalable. It uses the existing Unreal medium font so redistribution does not depend on an unlicensed font. Health/armor, ammo/reserve, grenades, interaction, crosshair, hit/damage feedback, objective progress, countdown, and Manticore status remain present. Objective changes receive a short prominence pulse and then settle into a quieter panel. Layout uses safe margins and a 0.90–1.35 scale range for 1280×720 through 2560×1440; ultrawide and landscape mobile remain implementation-review targets.
+The HUD is minimal, military, quiet, and scalable. It uses the existing Unreal medium font so redistribution does not depend on an unlicensed font. Health/armor, ammo/reserve, grenades, interaction, crosshair, hit/damage feedback, objective progress, countdown, and Manticore status remain present. Objective changes receive a short amber prominence pulse and then settle into a quieter near-black bracket frame. Armor is cyan, vitals/danger are red or amber, weapon/ammo is bone white with amber status, and all panels use hairline rules rather than generic blue-grey blocks. Layout uses safe margins and a 0.85–1.35 scale range based on the smaller viewport dimension for 1280×720 through 2560×1440; ultrawide and landscape mobile remain implementation-review targets.
+
+## Audio direction and runtime integration
+
+The sound identity follows the same restraint as the image direction: human hardware is heavy,
+electromagnetic, dry, and mechanical; the Veil is low, synthetic, and almost spatially empty; the
+Cathedral carries cold tonal pressure rather than a conventional fantasy choir; present-day scenes
+use controlled room tone and dialogue space. Gameplay feedback must be immediate even before the
+production sound pass exists.
+
+Phase 4.1 implements `UAHAudioSubsystem` as a packaged-safe integration palette. It owns short PCM
+fallback cues for fire, reload, dry fire, impacts, melee, armor, damage, death, grenades, pickups,
+footsteps, objective changes, dialogue timing, and a low mechanical ambient bed. A project weapon-fire asset is
+used where available, and authored Blueprint sound properties always take precedence over fallback
+cues. This makes the event graph audible now without pretending that synthesized integration tones
+are final music, voice acting, footsteps, enemy performance, environmental ambience, or mix design.
+
+The production audio pass should replace the fallback palette cue by cue, keeping the same event
+contracts so audio authoring does not alter gameplay code. It should establish a human/Veil contrast,
+transit electrical decay, Erebus battle distance, Cathedral negative-space resonance, Manticore
+mechanical mass, and a restrained Lucian/Maya dialogue bed.
 
 ## Lighting, atmosphere, and VFX
 

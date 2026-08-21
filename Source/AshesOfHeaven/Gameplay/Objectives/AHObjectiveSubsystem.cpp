@@ -1,5 +1,6 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "AshesOfHeaven.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
@@ -121,6 +122,13 @@ void UAHObjectiveSubsystem::BroadcastCurrentObjective()
 		if (ObjectiveChangeSound && GetWorld())
 		{
 			UGameplayStatics::PlaySound2D(GetWorld(), ObjectiveChangeSound);
+		}
+		else if (GetWorld())
+		{
+			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+			{
+				Audio->PlayUICue(EAHAudioCue::Objective, 0.7f);
+			}
 		}
 	}
 }

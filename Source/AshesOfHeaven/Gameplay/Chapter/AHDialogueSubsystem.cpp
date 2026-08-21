@@ -1,5 +1,6 @@
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
 #include "AshesOfHeaven.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Engine/World.h"
 
@@ -67,6 +68,13 @@ void UAHDialogueSubsystem::ShowNextLine()
 	}
 
 	CurrentLine = QueuedLines[CurrentLineIndex];
+	if (!CurrentLine.Voice && GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayUICue(EAHAudioCue::Dialogue, 0.35f);
+		}
+	}
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] line sequence=%s index=%d speaker=%s duration=%0.1f"), *CurrentSequenceId.ToString(), CurrentLineIndex, *CurrentLine.Speaker.ToString(), CurrentLine.Duration);
 	#endif

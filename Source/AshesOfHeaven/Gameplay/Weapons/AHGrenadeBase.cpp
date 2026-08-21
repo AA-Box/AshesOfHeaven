@@ -1,4 +1,5 @@
 #include "Gameplay/Weapons/AHGrenadeBase.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/AI/AHCombatAIController.h"
 #include "Components/SphereComponent.h"
@@ -52,6 +53,13 @@ void AAHGrenadeBase::Explode()
 	if (ExplosionSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, GetActorLocation());
+	}
+	else if (GetWorld())
+	{
+		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+		{
+			Audio->PlayWorldCue(EAHAudioCue::Grenade, GetActorLocation(), 1.0f);
+		}
 	}
 	if (ExplosionEffect)
 	{

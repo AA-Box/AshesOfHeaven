@@ -6,7 +6,7 @@ This matrix is evidence-gated. `UNTESTED` means the project has source/config su
 
 The current source includes four real in-engine visual target areas and the stable preview launcher `Scripts/Run-Mac-ArtTarget.sh`. The visual target layer is non-colliding and preserves the Phase 3 gameplay/nav architecture. Current source-level targets are: Erebus battlefield, Transit Station, Cathedral interior, Present-day Lucian/Maya, M91 framing, faction-aware temporary combatant silhouettes, original Cathedral glyph scaffolding, and a scalable HUD.
 
-The table below remains evidence-gated. The current Phase 4 machine evidence is recorded immediately below; the older Phase 3.2/3.3 records remain historical. Subjective visual match, screenshots, device performance, and human interactive play remain `UNTESTED` unless explicitly recorded.
+The table below remains evidence-gated. The current Phase 4/4.1 machine evidence is recorded immediately below; the older Phase 3.2/3.3 records remain historical. Subjective visual match, screenshots, device performance, and human interactive play remain `UNTESTED` unless explicitly recorded.
 
 ## Current Phase 4 machine evidence — 2026-08-21
 
@@ -16,6 +16,7 @@ The table below remains evidence-gated. The current Phase 4 machine evidence is 
 - Development package: **PASS** — `Builds/macOS-Development/AshesOfHeaven.app`; deep strict codesign passed.
 - Shipping package: **PASS** — `Builds/macOS/AshesOfHeaven.app`; deep strict codesign passed.
 - Normal Metal launch: **PASS** for process-level 15-second smoke on both packages, without `-nullrhi`; all five Development art-target activations (`Erebus`, `Transit`, `Cathedral`, `LucianMaya`, `M91`) also stayed alive for 8 seconds and logged their matching target marker.
+- Audio initialization: **PASS** — Development packaged normal-renderer smoke without `-nosound` created the CoreAudio 48 kHz mixer, initialized the 14-cue runtime palette, and started the ambient bed; final authored soundscape remains open.
 - Gameplay, interactive combat/death/restart/pickup/Manticore/checkpoint progression, screenshots, subjective art match, and target-device performance: **UNTESTED**.
 
 | Feature | Windows | macOS | Android | iOS |
