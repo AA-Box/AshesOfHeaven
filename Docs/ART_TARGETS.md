@@ -20,18 +20,17 @@ IMPLEMENTED:
 PARTIALLY IMPLEMENTED:
 
 - wet/puddle/mud/soot/debris look is represented by available project materials and shape layering;
-- atmosphere is represented by cold fog, layered silhouettes, and restrained practical lights;
-- a future VFX replacement hook is documented, but the prototype Stateless Niagara dust asset is not
-  loaded because it asserts while deserializing in the installed Mac package;
+- atmosphere is represented by cold fog, layered silhouettes, authored `NS_AshField`, `NS_EmberDrift`,
+  `NS_DustSheet`, and restrained practical lights;
 - battlefield beyond the route is visual lighting/silhouette simulation, not background AI.
 
 NOT IMPLEMENTED:
 
 - authored ruined-city meshes, wet material master/instances, puddle decals, smoke columns, embers, distant artillery VFX, and authored soundscape/music.
 
-PHASE 4.1 AUDIO: Runtime event cues and a low mechanical ambient bed are now present through
-`UAHAudioSubsystem`; the existing project weapon-fire asset is used where available. This is a
-packaged-safe integration palette, not final battlefield ambience, weapon layering, dialogue/voice,
+PHASE 4.2 AUDIO: Runtime event cues now resolve project-local WAV, SoundCue, and serialized
+MetaSound assets through `UAHAudioSubsystem`, with authored attenuation/concurrency/submix routing.
+This is still an integration palette, not final battlefield ambience, weapon layering, dialogue/voice,
 footsteps, or mix approval.
 
 KNOWN GAP: Current geometry is still procedural/greybox-derived and will not subjectively match the approved image until authored environment/material/VFX work is supplied.
@@ -62,8 +61,9 @@ NOT IMPLEMENTED:
 
 - final station kit, ticket machines, route map material, luggage/clothing props, wet-surface master, leaking water, electrical hum, and authored damaged fluorescent VFX/audio.
 
-PHASE 4.1 AUDIO: Objective, interaction, pickup, and dialogue timing now have runtime feedback; the
-station still needs authored electrical hum, failing-fixture detail, room tone, and environmental mix.
+PHASE 4.2 AUDIO: Objective, interaction, pickup, and dialogue timing now have project-local runtime
+feedback; the station still needs authored electrical hum, failing-fixture detail, room tone, and
+environmental mix.
 
 KNOWN GAP: The station is materially more readable than the old open greybox, but it is not yet the full dense abandoned concourse in the reference.
 
@@ -94,8 +94,8 @@ NOT IMPLEMENTED:
 
 - authored black ceramic/obsidian master, microstructure, seams, volumetric shafts, suspended architectural kit, final glyph materials/decals, Cathedral ambience, and cinematic-scale production meshes.
 
-PHASE 4.1 AUDIO: The Cathedral has a low runtime bed and event feedback, but no authored resonance,
-tonal pressure, transmission voice, or production music is claimed.
+PHASE 4.2 AUDIO: The Cathedral resolves a project-local ambient source and event feedback, but no
+authored resonance, tonal pressure, transmission voice, or production music is claimed.
 
 KNOWN GAP: This is the highest-priority target but remains a procedural architectural scaffold rather than final art.
 
@@ -124,8 +124,8 @@ NOT IMPLEMENTED:
 
 - final original Lucian face/body/hair/face paint, gauntlets, clothing, emblem/pendant, Maya production character, facial animation, cinematic animation, and authored dialogue staging.
 
-PHASE 4.1 AUDIO: Dialogue timing now has a restrained runtime cue when no voice asset is assigned;
-final voice performance, room tone, and cinematic mix remain open.
+PHASE 4.2 AUDIO: Dialogue timing resolves a project-local cue when no voice asset is assigned; final
+voice performance, room tone, and cinematic mix remain open.
 
 KNOWN GAP: The current shot still visibly contains mannequin proxies; it must not be presented as final character art.
 

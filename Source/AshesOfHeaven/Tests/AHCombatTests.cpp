@@ -27,8 +27,17 @@
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionParameter.h"
 #include "NiagaraSystem.h"
+#include "MetasoundSource.h"
+#include "Sound/SoundCue.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundConcurrency.h"
+#include "Sound/SoundSubmix.h"
+#include "Sound/SoundWave.h"
 #include "Sound/SoundBase.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
 #include "Blueprint/UserWidget.h"
@@ -79,6 +88,10 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("semantic audio event map is populated"), Palette->Events.Num() >= 7);
 		TestTrue(TEXT("environment audio event map is populated"), Palette->Environments.Num() >= 3);
+		for (const TPair<FName, TSoftObjectPtr<USoundBase>>& Entry : Palette->Events)
+		{
+			TestTrue(*FString::Printf(TEXT("event %s resolves to a project sound"), *Entry.Key.ToString()), Entry.Value.IsValid() || Entry.Value.ToSoftObjectPath().IsValid());
+		}
 	}
 	for (const TCHAR* Path : {
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Fire.MS_M91_Fire"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Impact.MS_M91_Impact"),
@@ -86,7 +99,33 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Cathedral_Ambience.MS_Cathedral_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Manticore_Engine.MS_Manticore_Engine"),
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_UI_Objective.MS_UI_Objective") })
 	{
-		TestNotNull(TEXT("MetaSound presentation asset exists"), LoadObject<USoundBase>(nullptr, Path));
+		TestTrue(TEXT("MetaSound presentation asset exists and is a MetaSound source"), LoadObject<UMetaSoundSource>(nullptr, Path) != nullptr);
+	}
+	const TArray<FString> RawAudioPaths = {
+		TEXT("/Game/Ashes/Audio/Raw/SC_M91_Fire.SC_M91_Fire"), TEXT("/Game/Ashes/Audio/Raw/SC_M91_Reload.SC_M91_Reload"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_M91_Impact.SC_M91_Impact"), TEXT("/Game/Ashes/Audio/Raw/SC_Erebus_Ambience.SC_Erebus_Ambience"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_Transit_Ambience.SC_Transit_Ambience"), TEXT("/Game/Ashes/Audio/Raw/SC_Cathedral_Ambience.SC_Cathedral_Ambience") };
+	TSet<USoundWave*> RawSources;
+	for (const FString& Path : RawAudioPaths)
+	{
+		USoundWave* Wave = LoadObject<USoundWave>(nullptr, *Path);
+		TestNotNull(TEXT("authored raw SoundWave exists"), Wave);
+		if (Wave)
+		{
+			RawSources.Add(Wave);
+		}
+	}
+	TestEqual(TEXT("raw event sources remain distinct assets"), RawSources.Num(), RawAudioPaths.Num());
+	TestNotNull(TEXT("world attenuation asset exists"), LoadObject<USoundAttenuation>(nullptr, TEXT("/Game/Ashes/Audio/Mix/ATT_World3D.ATT_World3D")));
+	TestNotNull(TEXT("world concurrency asset exists"), LoadObject<USoundConcurrency>(nullptr, TEXT("/Game/Ashes/Audio/Mix/CONC_World.CONC_World")));
+	TestNotNull(TEXT("master submix asset exists"), LoadObject<USoundSubmix>(nullptr, TEXT("/Game/Ashes/Audio/Mix/SM_Master.SM_Master")));
+	USoundCue* M91Cue = LoadObject<USoundCue>(nullptr, TEXT("/Game/Ashes/Audio/Cues/SC_M91_Fire.SC_M91_Fire"));
+	TestNotNull(TEXT("M91 SoundCue exists"), M91Cue);
+	if (M91Cue)
+	{
+		TestNotNull(TEXT("M91 SoundCue has an authored node graph"), M91Cue->FirstNode.Get());
+		TestTrue(TEXT("M91 SoundCue has concurrency routing"), !M91Cue->bOverrideConcurrency && M91Cue->ConcurrencySet.Num() > 0);
+		TestNotNull(TEXT("M91 SoundCue has submix routing"), M91Cue->SoundSubmixObject.Get());
 	}
 	for (const TCHAR* Path : {
 		TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_HumanArmor.M_HumanArmor"), TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"),
@@ -95,11 +134,36 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("authored material exists"), LoadObject<UMaterialInterface>(nullptr, Path));
 	}
 	for (const TCHAR* Path : {
-		TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
+		TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), TEXT("/Game/Ashes/VFX/NS_ImpactSparks.NS_ImpactSparks"),
 		TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"),
+		TEXT("/Game/Ashes/VFX/NS_DustSheet.NS_DustSheet"), TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes") })
+	{
+		UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, Path);
+		TestNotNull(TEXT("authored Niagara asset exists"), System);
+		TestTrue(TEXT("Niagara asset is project-authored, not an engine template"), System && System->GetPathName().StartsWith(TEXT("/Game/Ashes/VFX/")));
+	}
+	for (const TCHAR* LegacyPath : {
+		TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
 		TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"), TEXT("/Game/Ashes/VFX/NS_CathedralParticles.NS_CathedralParticles") })
 	{
-		TestNotNull(TEXT("cooked-safe Niagara asset exists"), LoadObject<UNiagaraSystem>(nullptr, Path));
+		const FAssetData LegacyAsset = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get().GetAssetByObjectPath(FSoftObjectPath(LegacyPath));
+		TestFalse(TEXT("legacy Niagara template duplicate is absent"), LegacyAsset.IsValid());
+	}
+	for (const TCHAR* Path : {
+		TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian") })
+	{
+		UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, Path);
+		TestNotNull(TEXT("material master exists"), Material);
+		if (Material)
+		{
+			TArray<FMaterialParameterInfo> ScalarParameters;
+			TArray<FGuid> ScalarParameterIds;
+			TArray<FMaterialParameterInfo> VectorParameters;
+			TArray<FGuid> VectorParameterIds;
+			Material->GetAllScalarParameterInfo(ScalarParameters, ScalarParameterIds);
+			Material->GetAllVectorParameterInfo(VectorParameters, VectorParameterIds);
+			TestTrue(TEXT("material master has a non-trivial authored parameter surface"), ScalarParameters.Num() + VectorParameters.Num() >= 6);
+		}
 	}
 	return true;
 }

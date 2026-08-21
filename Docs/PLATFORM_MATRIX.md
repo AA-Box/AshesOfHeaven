@@ -2,20 +2,20 @@
 
 This matrix is evidence-gated. `UNTESTED` means the project has source/config support but no verified interactive run on that target. `BLOCKED BY TOOLCHAIN` means validation cannot be performed on the current build machine. Do not change a cell to `PASS` without a dated device/build record.
 
-## Current Phase 4 source target — 2026-08-21
+## Current Phase 4 source target — 2026-08-22
 
 The current source includes four real in-engine visual target areas and the stable preview launcher `Scripts/Run-Mac-ArtTarget.sh`. The visual target layer is non-colliding and preserves the Phase 3 gameplay/nav architecture. Current source-level targets are: Erebus battlefield, Transit Station, Cathedral interior, Present-day Lucian/Maya, M91 framing, faction-aware temporary combatant silhouettes, original Cathedral glyph scaffolding, and a scalable HUD.
 
 The table below remains evidence-gated. The current Phase 4/4.1 machine evidence is recorded immediately below; the older Phase 3.2/3.3 records remain historical. Subjective visual match, screenshots, device performance, and human interactive play remain `UNTESTED` unless explicitly recorded.
 
-## Current Phase 4 machine evidence — 2026-08-21
+## Current Phase 4 machine evidence — 2026-08-22
 
 - Development Editor: **PASS** — UE 5.8 Mac arm64 Development compile/link succeeded.
-- Fresh commandlet: **PASS** — 15/15 checks, 0 failed checks; one known HUD-test cleanup warning after the passing checks.
-- Full automation: **PASS** — 16/16 project tests completed with `Result={Success}`, exit code 0; two unrelated engine self-test condition lines preceded discovery.
+- Fresh commandlet: **PASS** — 15/15 checks, 0 failed checks and 0 errors; two known HUD-test teardown warnings after the passing checks.
+- Full automation: **PASS** — 16/16 project tests completed with `Result={Success}`, exit code 0; no project test failed.
 - Development package: **PASS** — `Builds/macOS-Development/AshesOfHeaven.app`; deep strict codesign passed.
 - Shipping package: **PASS** — `Builds/macOS/AshesOfHeaven.app`; deep strict codesign passed.
-- Normal Metal launch: **PASS** for process-level 15-second smoke on both packages, without `-nullrhi`; all five Development art-target activations (`Erebus`, `Transit`, `Cathedral`, `LucianMaya`, `M91`) also stayed alive for 8 seconds and logged their matching target marker.
+- Normal Metal launch: **PASS** for process-level 15-second smoke on both fresh packages, without `-nullrhi` or `-nosound`; both exited with controlled status 0 after the smoke window.
 - Audio initialization: **PASS** — Development packaged normal-renderer smoke without `-nosound` created the CoreAudio 48 kHz mixer, initialized the 14-cue runtime palette, and started the ambient bed; final authored soundscape remains open.
 - Gameplay, interactive combat/death/restart/pickup/Manticore/checkpoint progression, screenshots, subjective art match, and target-device performance: **UNTESTED**.
 
@@ -61,21 +61,21 @@ Interactive combat and full end-to-end checkpoint progression still require a hu
 - Normal Metal launch: stale executable exited with abort status 134; no post-fix launch claim.
 - Human interactive Run 1 and Run 2: `UNTESTED`.
 
-## Phase 4.2 recertification — 2026-08-21
+## Phase 4.2 recertification — 2026-08-22
 
 - Development Editor: **PASS** — UE 5.8 Mac arm64 build/link after the UMG, audio, material, VFX,
   terminal, vehicle-event, and validation changes.
-- Fresh `AHCombatVerificationCommandlet`: **PASS** — 15 executed checks, 0 failed checks,
-  including `AshesOfHeaven.Presentation.AssetManifest`.
+- Fresh `AHCombatVerificationCommandlet`: **PASS** — 15 executed checks, 0 failed checks and 0
+  errors, including `AshesOfHeaven.Presentation.AssetManifest`; final log
+  `/tmp/ashes-phase42-commandlet-final4.log`.
 - Full `Automation RunTests AshesOfHeaven`: **PASS** — 16 project tests completed with
-  `Result={Success}`, exit code 0. The Unreal harness also emitted two unrelated engine self-test
-  “Condition failed” lines before project discovery; no project test failed.
+  `Result={Success}`, exit code 0; final log `/tmp/ashes-phase42-automation-final3.log`.
 - Asset generation: **PASS** — `Scripts/GeneratePhase42Assets.py` completed with no script error;
   all saved `.uasset` files are under `Content/Ashes`.
 - Shipping and Development packaging, codesign, and normal Metal launch: **PASS** — final
   packages at `Builds/macOS-Development/AshesOfHeaven.app` and `Builds/macOS/AshesOfHeaven.app`;
   both deep strict codesign checks passed and both normal-renderer processes stayed alive for 15
-  seconds without `-nullrhi` or `-nosound` (2026-08-21).
+  seconds without `-nullrhi` or `-nosound` (2026-08-22).
 - Human review: **UNTESTED** — interactive UI readability, actual sound-design quality, objective
   clarity without HUD reliance, combat/death/restart/pickups/checkpoints/Manticore, final target
   visual match, localization, and mobile/Windows/iOS device behavior.

@@ -11,27 +11,26 @@ The default palette contains `Weapon.M91.Fire`, `Weapon.M91.Reload`, `Weapon.M91
 `Environment.Cathedral`, and `Environment.Manticore`.
 
 `DA_AudioPalette_Default`, `DA_AudioPalette_Human`, and `DA_AudioPalette_Veil` are real saved
-data assets. The default palette currently resolves to project-contained SoundCue integration
-assets so normal packaged builds produce audible feedback. The corresponding MetaSound targets
-(`MS_M91_Fire`, `MS_M91_Impact`, `MS_Erebus_Ambience`, `MS_Transit_Ambience`,
-`MS_Cathedral_Ambience`, `MS_Manticore_Engine`, `MS_UI_Objective`) are also saved and ready for
-the authored graph/mix handoff.
+data assets. The default palette resolves to project-contained serialized `MetaSoundSource`
+assets after normal-editor generation; SoundCues remain explicit graph-based compatibility
+assets. Raw source WAVs are imported under `/Game/Ashes/Audio/Raw`, and every world/UI SoundCue
+is routed through project attenuation, concurrency, and submix assets.
 
-The M91 no longer points directly at the template grenade-launcher-family path. Its semantic
-source is `/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire`.
+The M91 no longer points at any engine template path. Its semantic source is the project-local
+`MS_M91_Fire` MetaSound, with `/Game/Ashes/Audio/Cues/SC_M91_Fire` as the explicit SoundCue route.
 
 ## Fallback policy
 
-The old procedural PCM generator remains only as an emergency development diagnostic. It is gated
-by `UAHAudioSettings::bAllowGeneratedAudioFallback`, defaults to `False`, and is disabled in
-Shipping even if misconfigured. If an authored event is absent on the normal path, playback is
-skipped and the missing semantic event is logged; the build does not silently synthesize a tone.
+There is no runtime PCM generator or silent template substitution. If an authored event is absent,
+playback is skipped and the missing semantic event is logged. The checked-in WAVs are static source
+media for this prototype target and can be replaced by a sound designer without changing semantic
+event names or gameplay code.
 
 ## Region behavior
 
 Chapter-stage changes select and cross-fade authored environment components for Erebus, Transit,
 Manticore, and Cathedral contexts. The system supports attenuation through normal SoundCue/
-MetaSound authoring, and the saved submix folder is reserved for the production mix graph.
+MetaSound authoring, concurrency limits, and separate world/UI submix routes.
 
 ## What remains human/audio-authoring work
 

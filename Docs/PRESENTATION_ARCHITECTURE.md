@@ -10,7 +10,7 @@ its production `DrawHUD()` is intentionally empty. It creates
 `/Game/Ashes/UI/HUD/WBP_HUD_Root` and adds it to the viewport. No production UI path calls
 `Canvas`, `GEngine->DefaultTexture`, or hard-coded Canvas coordinates.
 
-`UAHHUDRootWidget` builds the safe-zone/Canvas UMG layout and binds to health, armor, inventory,
+`UAHHUDRootWidget` consumes the saved authored UMG hierarchy through safe-zone anchors and binds to health, armor, inventory,
 ammo, interaction, objective, dialogue, countdown, chapter-stage, and Manticore presentation
 delegates. Updates are event-driven. It does not tick to poll gameplay state.
 
@@ -20,8 +20,9 @@ The named WidgetBlueprint assets are saved entry points for designers:
 `WBP_InteractionPrompt`, `WBP_DamageIndicator`, `WBP_Countdown`, `WBP_Dialogue`,
 `WBP_TerminalIntel`, `WBP_ManticoreHUD`, `WBP_ChapterTitle`, and `WBP_TerminalWorld`.
 
-The current native layout is the safe cross-platform baseline. The assets can be replaced with
-authored hierarchy, typography, brushes, and animations without changing gameplay contracts.
+The generator creates real designer-editable widget trees and named presentation children; runtime
+C++ owns only state binding and visibility. Typography, brushes, materials, and animations can be
+iterated in the saved Widget Blueprints without changing gameplay contracts.
 
 ## Data and content
 
@@ -52,6 +53,7 @@ human approval.
 ## Performance and platform rules
 
 The root uses safe-zone-aware anchors and adaptive viewport layout. UI state changes are delegate
-driven, materials are saved assets, and Niagara is sourced from cooked-safe templates. Desktop may
+driven, materials are saved assets, and Niagara is authored in project emitter/system assets rather
+than copied engine templates. Desktop may
 use richer presentation tiers; the baseline must remain readable and scalable on mobile. Final
 device FPS, touch glyphs, and subjective visual approval remain human/device review gates.

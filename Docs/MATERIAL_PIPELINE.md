@@ -11,8 +11,10 @@ Masters:
 `M_CathedralMatter`, `M_VeilObsidian`, `M_EmissiveGlyph`, `M_Decal_Master`, `M_Scorch`, and
 `M_Grime`.
 
-The masters have real material expression graphs with named BaseTint/Roughness/Metallic
-parameters. Saved instances include `MI_HumanMetal_Dark`, `MI_HumanArmor_Black`,
+The masters have real material expression graphs with named BaseTint/Roughness/Metallic,
+GrimeAmount, WearAmount, EdgeVariation, DamageMaskStrength, Wetness, and MicroDetailStrength
+parameters, plus world-position noise, tint blending, roughness variation, normal input, and
+emissive/decal branches where appropriate. Saved instances include `MI_HumanMetal_Dark`, `MI_HumanArmor_Black`,
 `MI_Concrete_Wet`, `MI_CathedralMatter_Dark`, `MI_VeilObsidian_Black`, and
 `MI_EmissiveGlyph_Cyan`.
 
@@ -21,9 +23,10 @@ missing optional content asset cannot break gameplay construction.
 
 ## Niagara family
 
-Cooked-safe saved systems exist for `NS_Ash`, `NS_Embers`, `NS_Sparks`, `NS_FireSmall`,
-`NS_FireLarge`, `NS_SmokeColumn`, `NS_Dust`, and `NS_CathedralParticles`. The director uses
-`NS_Dust` only when it resolves; it no longer relies on the unsafe prototype Stateless emitter.
+Authored project emitter/system pairs exist for `NS_AshField`, `NS_EmberDrift`, `NS_ImpactSparks`,
+`NS_FireSmall`, `NS_FireLarge`, `NS_SmokeColumn`, `NS_DustSheet`, and `NS_CathedralMotes`.
+They are created with Niagara editor factories under `/Game/Ashes/VFX/Emitters` and
+`/Game/Ashes/VFX`; no `/Niagara/DefaultAssets/Templates` duplicate is used.
 
 Every system must keep scalable spawn/update rates and must be profiled on desktop and mobile.
 

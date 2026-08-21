@@ -20,6 +20,7 @@ public class AshesOfHeaven : ModuleRules
 			"NavigationSystem",
 			"GameplayTasks",
 			"Niagara",
+			"MetasoundEngine",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
@@ -28,6 +29,11 @@ public class AshesOfHeaven : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "AssetTools", "EditorScriptingUtilities", "UnrealEd", "UMGEditor", "NiagaraEditor" });
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"AshesOfHeaven",

@@ -473,11 +473,20 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 			Expect(TestName, TEXT("authored material exists"), LoadObject<UMaterialInterface>(nullptr, Path) != nullptr);
 		}
 		for (const TCHAR* Path : {
-			TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
+			TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), TEXT("/Game/Ashes/VFX/NS_ImpactSparks.NS_ImpactSparks"),
 			TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"),
+			TEXT("/Game/Ashes/VFX/NS_DustSheet.NS_DustSheet"), TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes") })
+		{
+			UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, Path);
+			Expect(TestName, TEXT("authored Niagara asset exists"), System != nullptr);
+			Expect(TestName, TEXT("Niagara asset is project-authored, not an engine template"), System && System->GetPathName().StartsWith(TEXT("/Game/Ashes/VFX/")));
+		}
+		for (const TCHAR* LegacyPath : {
+			TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
 			TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"), TEXT("/Game/Ashes/VFX/NS_CathedralParticles.NS_CathedralParticles") })
 		{
-			Expect(TestName, TEXT("cooked-safe Niagara asset exists"), LoadObject<UNiagaraSystem>(nullptr, Path) != nullptr);
+			const FAssetData LegacyAsset = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get().GetAssetByObjectPath(FSoftObjectPath(LegacyPath));
+			Expect(TestName, TEXT("legacy Niagara template duplicate is absent"), !LegacyAsset.IsValid());
 		}
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;

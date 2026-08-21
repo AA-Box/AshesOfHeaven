@@ -274,7 +274,7 @@ The Phase 4 source and runtime target layer completed a fresh machine validation
 
 No actual runtime screenshots were captured in this execution environment. The stable viewpoints are real in-engine positions and can be reviewed with `Scripts/Run-Mac-ArtTarget.sh`; no offline render or fabricated screenshot is claimed. Real device FPS, draw-call, memory, thermal, and mobile measurements were not performed. Subjective target match, final art approval, and the two Phase 3 interactive human runs remain human-gated.
 
-## PHASE 4.1 — AUDIO AND REFERENCE-DRIVEN TACTICAL UI — 2026-08-21
+## PHASE 4.1 — AUDIO AND REFERENCE-DRIVEN TACTICAL UI — 2026-08-21 (superseded by Phase 4.2)
 
 The first Phase 4 pass exposed two concrete completeness gaps: the gameplay event sound properties
 were mostly unassigned, and the HUD still read as a generic greybox overlay rather than belonging to
@@ -335,10 +335,10 @@ subjective reference match, final authored audio, or final art approval.
 - Phase 4.1 now supplies a runtime audio integration layer and reference-driven tactical HUD, but
   authored environment meshes, production materials, final VFX/audio, and production character art
   remain open gaps. See `Docs/ART_TARGETS.md`; visual match is not claimed without human review.
-- The approved prototype `NS_DustMote` asset is not loaded at runtime because its Stateless Niagara
-  serialization asserts in the installed Mac package. The atmosphere hook is intentionally kept
-  asset-free through fog, layered silhouettes, and practical lights until a cooked-safe authored
-  emitter replaces it; this is a known VFX gap, not a hidden success claim.
+- The presentation generator now saves project-authored Niagara emitter/system pairs, including
+  `NS_AshField`, `NS_EmberDrift`, `NS_ImpactSparks`, `NS_FireSmall`, `NS_FireLarge`,
+  `NS_SmokeColumn`, `NS_DustSheet`, and `NS_CathedralMotes`. These are integration-quality VFX
+  assets, not a claim of final authored fire, smoke, embers, or Cathedral atmosphere.
 - Combatants still use temporary faction-aware body proxies unless production meshes are supplied.
 - Lucian and Maya are interim UE mannequin display proxies, not final character art and not a
   likeness claim.
@@ -377,7 +377,7 @@ in-engine viewpoints. The remaining work is human visual approval, external envi
 character/VFX/audio authoring, real target-device profiling, and the previously recorded Phase 3
 interactive Run 1/Run 2 acceptance.
 
-## PHASE 4.2 — Unreal-native presentation recertification — 2026-08-21
+## PHASE 4.2 — Unreal-native presentation recertification — 2026-08-22
 
 Phase 4.2 is implemented as a presentation pipeline only. Gameplay systems, the Chapter One
 stage/objective graph, checkpoints, encounter logic, and navigation architecture were preserved.
@@ -388,24 +388,25 @@ Chapter Two/Phase 5 was not started.
 - Production HUD now enters through `AAHCombatHUD` but renders through saved UMG
   `/Game/Ashes/UI/HUD/WBP_HUD_Root`; the old Canvas `DrawHUD` path is an empty compatibility
   override, not the production presentation path.
-- `UAHHUDRootWidget` uses a safe-zone-aware adaptive layout and binds event-driven objective,
+- `UAHHUDRootWidget` consumes a saved authored UMG hierarchy through safe-zone-aware anchors and binds event-driven objective,
   health, armor, ammo, grenades, interaction, dialogue, countdown, damage, completion, and
   Manticore state. It does not poll gameplay in Tick.
-- Saved UMG assets exist for root, objective, player status, weapon status, crosshair,
+- Saved UMG assets own real child hierarchies for root, objective, player status, weapon status, crosshair,
   interaction, damage, countdown, dialogue, terminal intel, Manticore, chapter title, and terminal
   world presentation.
-- `UAHAudioPaletteData` and `UAHAudioSettings` provide semantic audio resolution. Project-contained
-  SoundCue integration assets are used in the default palette; MetaSound target assets and region
-  palette entries are saved below `Content/Ashes/Audio`.
-- Procedural PCM generation is now opt-in diagnostic fallback only, disabled by default and forced
-  off in Shipping. Missing authored events log and skip instead of silently synthesizing tones.
-- The M91 no longer directly loads the template grenade-launcher-family path; it resolves the
-  project-local M91 semantic source.
+- `UAHAudioPaletteData` and `UAHAudioSettings` provide semantic audio resolution. Imported project
+  WAVs, graph-based SoundCues, serialized MetaSound sources, attenuation, concurrency, and world/UI
+  submix assets are saved below `Content/Ashes/Audio`; the default palette resolves MetaSounds.
+- Runtime PCM generation and engine template substitution are removed. Missing authored events log
+  and skip instead of synthesizing a tone.
+- The M91 resolves the project-local `MS_M91_Fire` source and no longer loads the grenade-launcher
+  template family.
 - Stage changes cross-fade the authored Erebus, Transit, Cathedral, and Manticore environment
   events. Development debug commands cover the requested UI/audio/material paths.
-- Saved material masters/instances, Niagara systems, reusable Blueprint presentation props, and
-  presentation data assets exist under `Content/Ashes`. The director consumes them first with
-  explicit greybox fallback paths; dust uses cooked-safe `NS_Dust` when available.
+- Saved material masters/instances, authored Niagara emitter/system pairs, reusable Blueprint
+  presentation props, and presentation data assets exist under `Content/Ashes`. Materials contain
+  wear/grime/edge/damage/wetness/microdetail branches; VFX no longer duplicates engine templates.
+  The director consumes project assets first with explicit greybox fallback paths.
 - The terminal owns a world-space `WBP_TerminalWorld` widget component. Manticore and countdown
   publish low-rate/event-driven presentation updates.
 
@@ -415,26 +416,25 @@ Commands were run against UE 5.8.1 at `/Users/Shared/Epic Games/UE_5.8` from the
 
 | Check | Result |
 | --- | --- |
-| `AshesOfHeavenEditor Mac Development` | **PASS** — compiled and linked successfully |
-| `Scripts/GeneratePhase42Assets.py` | **PASS** — completed with no script error; saved assets under `Content/Ashes` |
-| `AHCombatVerificationCommandlet` | **PASS** — 15 checks, 15 PASS, 0 failed checks; final log `Saved/Logs/Phase42-AHCombatVerificationCommandlet-Final.log` |
-| `Automation RunTests AshesOfHeaven` | **PASS** — 16 project tests, all `Result={Success}`, exit code 0; final log `Saved/Logs/Phase42-Automation-Final.log` |
+| `AshesOfHeavenEditor Mac Development` | **PASS** — compiled and linked successfully after the final Niagara path and manifest fixes |
+| `Scripts/GeneratePhase42Assets.py` | **PASS** — commandlet authoring completed without script errors; normal-editor rerun serialized MetaSound graphs and saved assets under `Content/Ashes` |
+| `AHCombatVerificationCommandlet` | **PASS** — 15 tests, 0 failed checks, 0 errors; final log `/tmp/ashes-phase42-commandlet-final4.log` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 16 project tests, all `Result={Success}`, exit code 0; final log `/tmp/ashes-phase42-automation-final3.log` |
 | Asset Registry presentation manifest | **PASS** — required UMG/audio/material/Niagara assets loaded |
 
-The automation harness emitted two unrelated Unreal engine self-test “Condition failed” lines
-before project discovery; no project test failed and the automation process exited 0. The
-commandlet emitted one known test-world cleanup warning (`AHObjectiveHUDTestWorld`) after its
-15 passing checks; it did not affect the result.
+The automation harness emitted no project failures. The commandlet emitted two known test-world
+teardown warnings (`AHObjectiveHUDTestWorld`) after its 15 passing checks; the MCP listener was
+isolated to port 8001 for this run because the normal editor owns port 8000. Neither affected the
+result.
 
 ### Build/package status for this revision
 
 Development Editor, Mac Development and Mac Shipping cook/package, deep strict codesign, and
-normal Metal/CoreAudio launch checks are complete for this revision. Both packaged processes
-stayed alive for 15 seconds without `-nullrhi` or `-nosound` and exited with controlled status 0.
-The first Development package exposed a real cook omission for `WBP_HUD_Root`; the package was
-rebuilt after adding `/Game/Ashes` to `DirectoriesToAlwaysCook`, and the final Development launch
-loaded the palette and did not report the missing HUD class. The two deferred-decal masters were
-also corrected to a valid `BLEND_ALPHA_COMPOSITE` mode; the final cook completed with 0 warnings.
+normal Metal launch checks are complete for this revision. Both fresh archived processes stayed
+alive for 15 seconds without `-nullrhi` or `-nosound` and exited with controlled status 0. The
+Development package was rebuilt after the material-manifest test was corrected for the UE 5.8
+runtime API. The package runs emitted only known toolchain noise: the UE MetalShaderConverter
+include warning and the MCP licensing warning; no project build, cook, or test failure remained.
 
 Exact final runtime logs:
 
@@ -443,10 +443,10 @@ Exact final runtime logs:
 - `Saved/Logs/Phase42-Automation.log`
 - `Saved/Logs/Phase42-Development-NormalLaunch-Final.log`
 - `Saved/Logs/Phase42-Shipping-NormalLaunch.log`
-- `Saved/Logs/Phase42-AHCombatVerificationCommandlet-Final.log`
-- `Saved/Logs/Phase42-Automation-Final.log`
+- `/tmp/ashes-phase42-commandlet-final4.log`
+- `/tmp/ashes-phase42-automation-final3.log`
 
-Final packages:
+Final packages (2026-08-22, package counter `0.43`):
 
 - `Builds/macOS-Development/AshesOfHeaven.app`
 - `Builds/macOS/AshesOfHeaven.app`

@@ -7,7 +7,7 @@
 class AAHCombatPlayerCharacter;
 class AAHManticoreVehicle;
 class AAHWeaponBase;
-class UCanvasPanel;
+class UUserWidget;
 class UTextBlock;
 class UProgressBar;
 class UWidgetAnimation;
@@ -37,7 +37,7 @@ public:
 	bool IsPresentationReady() const { return bPresentationReady; }
 
 protected:
-	void BuildNativeLayout();
+	void ResolveAuthoredWidgets();
 	void BindPlayerState(AAHCombatPlayerCharacter* Player);
 	void UnbindPlayerState();
 	void BindWeapon(AAHWeaponBase* Weapon);
@@ -69,8 +69,28 @@ protected:
 	UFUNCTION()
 	void HandleVehiclePresentationChanged();
 
-	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> LayoutRoot;
+	/** Each child is a real designer-authored Widget Blueprint, not a native-generated layout. */
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> ObjectiveWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> PlayerStatusWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> WeaponStatusWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> CrosshairWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> InteractionWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> DamageIndicatorWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> CountdownWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> DialogueWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> ChapterTitleWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUserWidget> ManticoreWidget;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ObjectiveText;
 	UPROPERTY(Transient)

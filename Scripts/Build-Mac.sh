@@ -27,9 +27,19 @@ fi
 
 mkdir -p "$OUTPUT_ROOT"
 echo "Building AshesOfHeaven Mac $CLIENT_CONFIG package..."
-"$UAT" BuildCookRun \
-  -project="$PROJECT_FILE" -noP4 -platform=Mac -clientconfig="$CLIENT_CONFIG" \
-  -build -cook -stage -pak -archive -prereqs -archivedirectory="$OUTPUT_ROOT"
+UAT_ARGS=(
+  BuildCookRun
+  "-project=$PROJECT_FILE"
+  -noP4
+  -platform=Mac
+  "-clientconfig=$CLIENT_CONFIG"
+  -build -cook -stage -pak -archive -prereqs
+  "-archivedirectory=$OUTPUT_ROOT"
+)
+if [[ -n "${ADDITIONAL_COOKER_OPTIONS:-}" ]]; then
+  UAT_ARGS+=("-AdditionalCookerOptions=$ADDITIONAL_COOKER_OPTIONS")
+fi
+"$UAT" "${UAT_ARGS[@]}"
 
 echo "Mac output: $OUTPUT_ROOT"
 # Take the app from the staging directory, not from -archive: UAT's Mac archive step

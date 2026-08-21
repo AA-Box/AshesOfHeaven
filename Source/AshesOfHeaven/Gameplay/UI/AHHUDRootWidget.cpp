@@ -1,11 +1,7 @@
 #include "Gameplay/UI/AHHUDRootWidget.h"
 
 #include "Blueprint/WidgetTree.h"
-#include "Components/Border.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
-#include "Components/SafeZone.h"
 #include "Components/TextBlock.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
@@ -17,47 +13,30 @@
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
-#include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
+#include "UObject/WeakObjectPtr.h"
 
 namespace
 {
-	const FLinearColor Bone(0.84f, 0.85f, 0.81f, 1.0f);
-	const FLinearColor Muted(0.48f, 0.53f, 0.53f, 1.0f);
-	const FLinearColor Amber(0.94f, 0.62f, 0.22f, 1.0f);
 	const FLinearColor Red(0.82f, 0.14f, 0.10f, 1.0f);
+	const FLinearColor Amber(0.94f, 0.62f, 0.22f, 1.0f);
 	const FLinearColor Cyan(0.42f, 0.68f, 0.71f, 1.0f);
 
-	UTextBlock* MakeText(UWidgetTree* Tree, FName Name, const FText& Text, int32 Size, const FLinearColor& Color)
+	template <typename WidgetType>
+	WidgetType* FindChildWidget(UUserWidget* Parent, const TCHAR* Name)
 	{
-		UTextBlock* Result = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-		Result->SetText(Text);
-		Result->SetColorAndOpacity(Color);
-		FSlateFontInfo Font = Result->GetFont();
-		Font.Size = Size;
-		Result->SetFont(Font);
-		Result->SetShadowOffset(FVector2D(1.0f, 1.0f));
-		Result->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.72f));
-		return Result;
-	}
-
-	void Place(UCanvasPanel* Canvas, UWidget* Widget, const FAnchors& Anchors, const FMargin& Offsets, const FVector2D& Alignment = FVector2D::ZeroVector)
-	{
-		if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Widget))
-		{
-			Slot->SetAnchors(Anchors);
-			Slot->SetOffsets(Offsets);
-			Slot->SetAlignment(Alignment);
-		}
+		return Parent ? Cast<WidgetType>(Parent->GetWidgetFromName(FName(Name))) : nullptr;
 	}
 }
 
 void UAHHUDRootWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	BuildNativeLayout();
-	bPresentationReady = LayoutRoot != nullptr;
+	ResolveAuthoredWidgets();
+	bPresentationReady = ObjectiveText && ObjectiveIndexText && HealthValueText && ArmorValueText
+		&& HealthBar && ArmorBar && WeaponNameText && AmmoText && GrenadeText && CrosshairText
+		&& InteractionText && DamageText && DialogueSpeakerText && DialogueSubtitleText
+		&& MissionCompleteText && VehicleText && VehicleHealthBar;
 	if (UWorld* World = GetWorld())
 	{
 		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
@@ -96,76 +75,26 @@ void UAHHUDRootWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UAHHUDRootWidget::BuildNativeLayout()
+void UAHHUDRootWidget::ResolveAuthoredWidgets()
 {
-	if (!WidgetTree || LayoutRoot)
-	{
-		return;
-	}
-	LayoutRoot = Cast<UCanvasPanel>(WidgetTree->RootWidget);
-	if (!LayoutRoot)
-	{
-		LayoutRoot = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDLayout"));
-		WidgetTree->RootWidget = LayoutRoot;
-	}
-
-	ObjectiveIndexText = MakeText(WidgetTree, TEXT("ObjectiveIndex"), NSLOCTEXT("AshesHUD", "ObjectiveIndex", "OBJECTIVE"), 14, Muted);
-	ObjectiveText = MakeText(WidgetTree, TEXT("ObjectiveText"), NSLOCTEXT("AshesHUD", "AwaitingOrders", "AWAITING ORDERS"), 24, Bone);
-	Place(LayoutRoot, ObjectiveIndexText, FAnchors(0.0f, 0.0f, 0.0f, 0.0f), FMargin(42.0f, 34.0f, 420.0f, 22.0f));
-	Place(LayoutRoot, ObjectiveText, FAnchors(0.0f, 0.0f, 0.0f, 0.0f), FMargin(42.0f, 56.0f, 640.0f, 42.0f));
-
-	CountdownText = MakeText(WidgetTree, TEXT("Countdown"), FText::GetEmpty(), 26, Amber);
-	CountdownText->SetJustification(ETextJustify::Right);
-	Place(LayoutRoot, CountdownText, FAnchors(1.0f, 0.0f, 1.0f, 0.0f), FMargin(-250.0f, 38.0f, 208.0f, 38.0f));
-
-	ArmorValueText = MakeText(WidgetTree, TEXT("ArmorValue"), FText::GetEmpty(), 14, Cyan);
-	HealthValueText = MakeText(WidgetTree, TEXT("HealthValue"), FText::GetEmpty(), 14, Amber);
-	ArmorBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("ArmorBar"));
-	HealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("HealthBar"));
-	Place(LayoutRoot, ArmorValueText, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -142.0f, 110.0f, 24.0f));
-	Place(LayoutRoot, ArmorBar, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -116.0f, 238.0f, 8.0f));
-	Place(LayoutRoot, HealthValueText, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -94.0f, 110.0f, 24.0f));
-	Place(LayoutRoot, HealthBar, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -68.0f, 238.0f, 8.0f));
-
-	WeaponNameText = MakeText(WidgetTree, TEXT("WeaponName"), FText::GetEmpty(), 14, Muted);
-	AmmoText = MakeText(WidgetTree, TEXT("Ammo"), FText::GetEmpty(), 32, Bone);
-	GrenadeText = MakeText(WidgetTree, TEXT("Grenades"), FText::GetEmpty(), 14, Amber);
-	WeaponNameText->SetJustification(ETextJustify::Right);
-	AmmoText->SetJustification(ETextJustify::Right);
-	GrenadeText->SetJustification(ETextJustify::Right);
-	Place(LayoutRoot, WeaponNameText, FAnchors(1.0f, 1.0f, 1.0f, 1.0f), FMargin(-360.0f, -142.0f, 318.0f, 24.0f));
-	Place(LayoutRoot, AmmoText, FAnchors(1.0f, 1.0f, 1.0f, 1.0f), FMargin(-360.0f, -112.0f, 318.0f, 44.0f));
-	Place(LayoutRoot, GrenadeText, FAnchors(1.0f, 1.0f, 1.0f, 1.0f), FMargin(-360.0f, -66.0f, 318.0f, 24.0f));
-
-	CrosshairText = MakeText(WidgetTree, TEXT("Crosshair"), NSLOCTEXT("AshesHUD", "Crosshair", "+"), 20, Bone);
-	CrosshairText->SetJustification(ETextJustify::Center);
-	Place(LayoutRoot, CrosshairText, FAnchors(0.5f, 0.5f, 0.5f, 0.5f), FMargin(-24.0f, -20.0f, 48.0f, 40.0f), FVector2D(0.0f, 0.0f));
-
-	InteractionText = MakeText(WidgetTree, TEXT("InteractionPrompt"), FText::GetEmpty(), 18, Amber);
-	InteractionText->SetJustification(ETextJustify::Center);
-	Place(LayoutRoot, InteractionText, FAnchors(0.5f, 0.5f, 0.5f, 0.5f), FMargin(-260.0f, 78.0f, 520.0f, 32.0f));
-
-	DamageText = MakeText(WidgetTree, TEXT("DamageIndicator"), FText::GetEmpty(), 18, Red);
-	DamageText->SetJustification(ETextJustify::Center);
-	DamageText->SetVisibility(ESlateVisibility::Collapsed);
-	Place(LayoutRoot, DamageText, FAnchors(0.5f, 0.0f, 0.5f, 0.0f), FMargin(-200.0f, 130.0f, 400.0f, 32.0f));
-
-	DialogueSpeakerText = MakeText(WidgetTree, TEXT("DialogueSpeaker"), FText::GetEmpty(), 16, Amber);
-	DialogueSubtitleText = MakeText(WidgetTree, TEXT("DialogueSubtitle"), FText::GetEmpty(), 22, Bone);
-	Place(LayoutRoot, DialogueSpeakerText, FAnchors(0.5f, 1.0f, 0.5f, 1.0f), FMargin(-400.0f, -174.0f, 800.0f, 24.0f));
-	Place(LayoutRoot, DialogueSubtitleText, FAnchors(0.5f, 1.0f, 0.5f, 1.0f), FMargin(-400.0f, -146.0f, 800.0f, 48.0f));
-
-	MissionCompleteText = MakeText(WidgetTree, TEXT("MissionComplete"), NSLOCTEXT("AshesHUD", "ChapterComplete", "ASHES OF HEAVEN\nCHAPTER ONE COMPLETE"), 30, Amber);
-	MissionCompleteText->SetJustification(ETextJustify::Center);
-	MissionCompleteText->SetVisibility(ESlateVisibility::Collapsed);
-	Place(LayoutRoot, MissionCompleteText, FAnchors(0.5f, 0.5f, 0.5f, 0.5f), FMargin(-360.0f, -60.0f, 720.0f, 120.0f));
-
-	VehicleText = MakeText(WidgetTree, TEXT("ManticoreHUD"), FText::GetEmpty(), 18, Amber);
-	VehicleText->SetVisibility(ESlateVisibility::Collapsed);
-	VehicleHealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("ManticoreHealth"));
-	VehicleHealthBar->SetVisibility(ESlateVisibility::Collapsed);
-	Place(LayoutRoot, VehicleText, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -184.0f, 360.0f, 32.0f));
-	Place(LayoutRoot, VehicleHealthBar, FAnchors(0.0f, 1.0f, 0.0f, 1.0f), FMargin(42.0f, -150.0f, 238.0f, 8.0f));
+	ObjectiveText = FindChildWidget<UTextBlock>(ObjectiveWidget, TEXT("ObjectiveText"));
+	ObjectiveIndexText = FindChildWidget<UTextBlock>(ObjectiveWidget, TEXT("ObjectiveIndex"));
+	CountdownText = FindChildWidget<UTextBlock>(CountdownWidget, TEXT("Countdown"));
+	ArmorValueText = FindChildWidget<UTextBlock>(PlayerStatusWidget, TEXT("ArmorValue"));
+	HealthValueText = FindChildWidget<UTextBlock>(PlayerStatusWidget, TEXT("HealthValue"));
+	ArmorBar = FindChildWidget<UProgressBar>(PlayerStatusWidget, TEXT("ArmorBar"));
+	HealthBar = FindChildWidget<UProgressBar>(PlayerStatusWidget, TEXT("HealthBar"));
+	WeaponNameText = FindChildWidget<UTextBlock>(WeaponStatusWidget, TEXT("WeaponName"));
+	AmmoText = FindChildWidget<UTextBlock>(WeaponStatusWidget, TEXT("Ammo"));
+	GrenadeText = FindChildWidget<UTextBlock>(WeaponStatusWidget, TEXT("Grenades"));
+	CrosshairText = FindChildWidget<UTextBlock>(CrosshairWidget, TEXT("Crosshair"));
+	InteractionText = FindChildWidget<UTextBlock>(InteractionWidget, TEXT("InteractionPrompt"));
+	DamageText = FindChildWidget<UTextBlock>(DamageIndicatorWidget, TEXT("DamageIndicator"));
+	DialogueSpeakerText = FindChildWidget<UTextBlock>(DialogueWidget, TEXT("DialogueSpeaker"));
+	DialogueSubtitleText = FindChildWidget<UTextBlock>(DialogueWidget, TEXT("DialogueSubtitle"));
+	MissionCompleteText = FindChildWidget<UTextBlock>(ChapterTitleWidget, TEXT("MissionComplete"));
+	VehicleText = FindChildWidget<UTextBlock>(ManticoreWidget, TEXT("ManticoreHUD"));
+	VehicleHealthBar = FindChildWidget<UProgressBar>(ManticoreWidget, TEXT("ManticoreHealth"));
 }
 
 void UAHHUDRootWidget::SetPossessedPawn(APawn* NewPawn)

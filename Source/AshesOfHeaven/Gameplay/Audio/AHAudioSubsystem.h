@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Sound/SoundWaveProcedural.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "AHAudioSubsystem.generated.h"
 
@@ -54,21 +53,9 @@ private:
 	FName GetSemanticEventName(EAHAudioCue Cue) const;
 	USoundBase* ResolveAuthoredCue(EAHAudioCue Cue);
 	USoundBase* ResolveAuthoredEnvironment(FName EnvironmentId);
-	bool ShouldUseGeneratedFallback() const;
-	USoundWaveProcedural* CreateCueWave(EAHAudioCue Cue, float& OutDuration) const;
-	void FillSamples(EAHAudioCue Cue, TArray<int16>& OutSamples, float StartTimeSeconds = 0.0f) const;
-	float GetCueDuration(EAHAudioCue Cue) const;
-	void CleanupActiveWaves();
-	void HandleAmbientUnderflow(USoundWaveProcedural* Wave, int32 SamplesNeeded);
 	UFUNCTION()
 	void HandleChapterStageChanged(EAHChapterStage Stage);
 	FName GetEnvironmentForStage(EAHChapterStage Stage) const;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<USoundWaveProcedural>> ActiveWaves;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USoundWaveProcedural> AmbientWave;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> ActiveEnvironmentComponent;
@@ -76,8 +63,5 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAHAudioPaletteData> AudioPalette;
 
-	TArray<float> ActiveWaveExpiryTimes;
-	FTimerHandle CleanupTimer;
-	float AmbientTimeSeconds = 0.0f;
 	bool bAudioPaletteReady = false;
 };

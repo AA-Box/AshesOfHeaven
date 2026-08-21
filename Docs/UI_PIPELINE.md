@@ -26,9 +26,10 @@ metadata box, and the giant dialogue strip. Objective text is a brief top-left r
 is a compact top-right warning; health/armor and weapon/ammo are peripheral; the reticle is
 restrained and context-aware; dialogue is subtitle-first; completion is a centered chapter title.
 
-The native baseline is safe-zone anchored and uses FText for state text. Designers may replace the
-text widgets with localized fonts, authored materials, input glyphs, CommonUI, or UMG animations
-without altering the state contract.
+The baseline is safe-zone anchored and uses FText for state text. The checked-in Widget Blueprints
+already own the hierarchy, text widgets, rules, progress bars, and composition slots; designers can
+replace those authored elements with localized fonts, materials, input glyphs, CommonUI, or UMG
+animations without altering the state contract.
 
 ## Required authored assets
 

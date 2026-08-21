@@ -15,6 +15,8 @@ class ASHESOFHEAVEN_API AAHPresentationPropActor : public AActor
 public:
 	AAHPresentationPropActor();
 
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Presentation")
 	TObjectPtr<UStaticMeshComponent> PropMesh;
 
@@ -23,4 +25,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Presentation")
 	FText DisplayLabel;
+
+protected:
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
 };

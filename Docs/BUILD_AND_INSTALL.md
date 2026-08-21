@@ -79,7 +79,7 @@ After compiling an Editor target, the combat subsystem verification commandlet c
 
 It checks health damage, armor absorption timing, ammo/reload transfer, grenade inventory, objective transitions, checkpoint serialization, and faction hostility. Restart the editor before running it if the editor has an older hot-reloaded project module loaded.
 
-The current Chapter One verification run covers 13 checks: the nine Phase 2 combat/acceptance checks plus `Chapter.StageOrdering`, `Chapter.ObjectiveChain`, `Chapter.StateSerialization`, and `Chapter.CountdownAndNarrativeState`.
+The current verification run covers 15 checks, including the combat/checkpoint checks, the complete 21-stage Chapter One graph, the 17-objective Chapter One chain, countdown/narrative state, and `AshesOfHeaven.Presentation.AssetManifest`.
 
 To run the complete project automation suite after compiling the Editor target:
 
@@ -90,7 +90,7 @@ To run the complete project automation suite after compiling the Editor target:
   -nullrhi -nosound -stdout -FullStdOutLogOutput
 ```
 
-On 2026-08-21 this returned 13 discovered tests, 13 successes, and exit code 0. The packaged Mac smoke command is:
+On 2026-08-22 this returned 16 discovered tests, 16 successes, and exit code 0. The packaged Mac smoke command is:
 
 ```bash
 ./Builds/macOS/AshesOfHeaven.app/Contents/MacOS/AshesOfHeaven-Mac-Shipping \

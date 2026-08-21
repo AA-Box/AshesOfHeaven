@@ -822,7 +822,7 @@ void AAHChapterOneDirector::SpawnVisualLight(const FVector& Location, const FLin
 
 void AAHChapterOneDirector::SpawnVisualDust(const FVector& Location, float Scale)
 {
-	UNiagaraSystem* DustSystem = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"));
+	UNiagaraSystem* DustSystem = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Ashes/VFX/NS_DustSheet.NS_DustSheet"));
 	if (DustSystem && GetWorld())
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), DustSystem, Location, FRotator::ZeroRotator, FVector(Scale), true, true, ENCPoolMethod::AutoRelease);

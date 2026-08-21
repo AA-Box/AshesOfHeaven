@@ -83,21 +83,20 @@ Cathedral carries cold tonal pressure rather than a conventional fantasy choir; 
 use controlled room tone and dialogue space. Gameplay feedback must be immediate even before the
 production sound pass exists.
 
-Phase 4.1 implements `UAHAudioSubsystem` as a packaged-safe integration palette. It owns short PCM
-fallback cues for fire, reload, dry fire, impacts, melee, armor, damage, death, grenades, pickups,
-footsteps, objective changes, dialogue timing, and a low mechanical ambient bed. A project weapon-fire asset is
-used where available, and authored Blueprint sound properties always take precedence over fallback
-cues. This makes the event graph audible now without pretending that synthesized integration tones
-are final music, voice acting, footsteps, enemy performance, environmental ambience, or mix design.
+Phase 4.2 implements `UAHAudioSubsystem` as a packaged-safe integration palette backed by imported
+static source WAVs, real SoundCue graphs, serialized MetaSound sources, attenuation, concurrency,
+and world/UI submix assets. No runtime PCM fallback or engine template sound is used. This makes
+the event graph audible now without pretending the checked-in prototype sources are final music,
+voice acting, footsteps, enemy performance, environmental ambience, or mix design.
 
-The production audio pass should replace the fallback palette cue by cue, keeping the same event
+The production audio pass should replace the prototype source by source, keeping the same event
 contracts so audio authoring does not alter gameplay code. It should establish a human/Veil contrast,
 transit electrical decay, Erebus battle distance, Cathedral negative-space resonance, Manticore
 mechanical mass, and a restrained Lucian/Maya dialogue bed.
 
 ## Lighting, atmosphere, and VFX
 
-The generated map now provides a cold desaturated daylight sun, real-time sky capture, Exponential Height Fog, and sparse battlefield/practical point lights. The approved prototype Stateless Niagara dust asset was intentionally not loaded because it asserts while deserializing in the installed Mac package; fog, silhouettes, and lighting provide the current atmosphere hook. Fire, ash, ember, smoke-column, sparks, distant battle, and Cathedral particle families are planned extension points; any future Niagara family must be cooked-safe, expose quality scalability, and lower spawn/update cost for mobile.
+The generated map now provides a cold desaturated daylight sun, real-time sky capture, Exponential Height Fog, sparse battlefield/practical point lights, and authored Niagara families for ash, embers, sparks, fire, smoke, dust, and Cathedral motes. The project VFX systems are generated with Niagara editor factories rather than copied from engine templates; they must still be profiled and visually tuned on desktop and mobile.
 
 Post-process tuning remains intentionally restrained: preserve enemy/pickup readability, avoid crushed blacks, avoid full-screen bloom, and keep letterboxing out of normal gameplay. The current runtime layer is a target scaffold, not a final post-process grade.
 
@@ -146,8 +145,8 @@ presentation. The target is deliberately quieter than the former programmer HUD:
 Lucian name dossier, no large objective metadata frame, and no giant dialogue black strip.
 
 The audio runtime now resolves semantic events from `DA_AudioPalette_Default` and region changes
-from the saved Erebus/Transit/Cathedral/Manticore palette entries. Runtime-generated PCM is
-diagnostic-only and disabled by default. The current SoundCue sources are integration content,
+from the saved Erebus/Transit/Cathedral/Manticore palette entries. The current MetaSound and
+SoundCue sources are integration content,
 not final sound design approval; final M91 layers, authored ambience, Veil language, Cathedral
 resonance, Manticore machinery, voice, music, mix, and silence still require sound authoring and
 human listening review.
