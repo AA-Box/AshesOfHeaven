@@ -1,4 +1,5 @@
 #include "Gameplay/Level/AHChapterOneDirector.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHHumanSoldierCharacter.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
@@ -284,6 +285,9 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	}
 	StageElapsed = 0.0f;
 	DestructionFadeAlpha = 0.0f;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE);
+	#endif
 	Chapter->SetStage(Stage);
 
 	switch (Stage)
@@ -385,6 +389,9 @@ void AAHChapterOneDirector::StartDialogueSequence(FName SequenceId, const TArray
 {
 	if (Dialogue)
 	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] dialogue_start=%s"), *SequenceId.ToString());
+		#endif
 		Dialogue->StartSequence(SequenceId, Lines, true);
 	}
 }
@@ -399,6 +406,9 @@ void AAHChapterOneDirector::CompleteCurrentObjective()
 
 void AAHChapterOneDirector::HandleTrigger(FName TriggerId)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] trigger=%s stage=%s"), *TriggerId.ToString(), *UEnum::GetValueAsString(GetCurrentStage()));
+	#endif
 	if (TriggerId == FName(TEXT("ReachDefensiveLine")) || TriggerId == FName(TEXT("ReachTransitStation")) || TriggerId == FName(TEXT("CrossBattlefield")) || TriggerId == FName(TEXT("EnterCathedral")) || TriggerId == FName(TEXT("ReachTerminal")) || TriggerId == FName(TEXT("EscapeCathedral")))
 	{
 		CompleteCurrentObjective();
@@ -407,6 +417,9 @@ void AAHChapterOneDirector::HandleTrigger(FName TriggerId)
 
 void AAHChapterOneDirector::HandleObjectiveCompleted(FName ObjectiveId)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] objective_complete=%s next_index=%d"), *ObjectiveId.ToString(), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE);
+	#endif
 	if (Chapter)
 	{
 		Chapter->SetObjectiveIndex(Objectives ? Objectives->GetCurrentObjectiveIndex() : Chapter->GetState().ObjectiveIndex + 1);
@@ -432,6 +445,9 @@ void AAHChapterOneDirector::HandleObjectiveCompleted(FName ObjectiveId)
 
 void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] dialogue_complete=%s"), *SequenceId.ToString());
+	#endif
 	if (SequenceId == FName(TEXT("Ch01_Opening")))
 	{
 		StartStage(EAHChapterStage::ErebusOpening);
@@ -474,6 +490,9 @@ void AAHChapterOneDirector::HandleTerminalConfirmed()
 
 void AAHChapterOneDirector::HandleVehicleEntered(APawn* Driver)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] manticore_enter driver=%s stage=%s"), *GetNameSafe(Driver), *UEnum::GetValueAsString(GetCurrentStage()));
+	#endif
 	if (GetCurrentStage() == EAHChapterStage::ManticoreSection)
 	{
 		CompleteCurrentObjective();
@@ -482,6 +501,9 @@ void AAHChapterOneDirector::HandleVehicleEntered(APawn* Driver)
 
 void AAHChapterOneDirector::HandleVehicleExited(APawn* Driver)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] manticore_exit driver=%s"), *GetNameSafe(Driver));
+	#endif
 	if (Manticore && Chapter)
 	{
 		Chapter->SetVehicleState(Manticore->GetVehicleState());
@@ -490,6 +512,9 @@ void AAHChapterOneDirector::HandleVehicleExited(APawn* Driver)
 
 void AAHChapterOneDirector::HandleVehicleDestroyed()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase3.2][ChapterDirector] manticore_destroyed"));
+	#endif
 	if (Chapter)
 	{
 		FAHVehicleState VehicleState = Manticore ? Manticore->GetVehicleState() : FAHVehicleState();
@@ -500,6 +525,9 @@ void AAHChapterOneDirector::HandleVehicleDestroyed()
 
 void AAHChapterOneDirector::HandleMissionComplete()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] chapter_complete_delegate"));
+	#endif
 	if (Chapter)
 	{
 		Chapter->SetStage(EAHChapterStage::ChapterComplete);

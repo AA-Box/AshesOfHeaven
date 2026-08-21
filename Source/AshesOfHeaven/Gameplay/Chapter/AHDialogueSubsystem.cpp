@@ -1,4 +1,5 @@
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Engine/World.h"
 
@@ -15,6 +16,9 @@ void UAHDialogueSubsystem::StartSequence(FName SequenceId, const TArray<FAHDialo
 		{
 			if (Chapter->HasCompletedNarrativeEvent(SequenceId))
 			{
+				#if !UE_BUILD_SHIPPING
+				UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] skip_completed sequence=%s"), *SequenceId.ToString());
+				#endif
 				OnSequenceComplete.Broadcast(SequenceId);
 				return;
 			}
@@ -26,6 +30,9 @@ void UAHDialogueSubsystem::StartSequence(FName SequenceId, const TArray<FAHDialo
 	CurrentSequenceId = SequenceId;
 	CurrentLineIndex = INDEX_NONE;
 	bActive = true;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] begin sequence=%s lines=%d"), *SequenceId.ToString(), Lines.Num());
+	#endif
 	ShowNextLine();
 }
 
@@ -60,6 +67,9 @@ void UAHDialogueSubsystem::ShowNextLine()
 	}
 
 	CurrentLine = QueuedLines[CurrentLineIndex];
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] line sequence=%s index=%d speaker=%s duration=%0.1f"), *CurrentSequenceId.ToString(), CurrentLineIndex, *CurrentLine.Speaker.ToString(), CurrentLine.Duration);
+	#endif
 	OnLineChanged.Broadcast(CurrentLine.Speaker, CurrentLine.Subtitle, CurrentLine.Duration);
 	if (GetWorld())
 	{
@@ -85,6 +95,9 @@ void UAHDialogueSubsystem::FinishSequence()
 
 	const FName CompletedSequence = CurrentSequenceId;
 	bActive = false;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] complete sequence=%s"), *CompletedSequence.ToString());
+	#endif
 	CurrentSequenceId = NAME_None;
 	CurrentLineIndex = INDEX_NONE;
 	QueuedLines.Reset();

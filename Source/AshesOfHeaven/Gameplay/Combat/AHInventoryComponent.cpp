@@ -1,4 +1,5 @@
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Engine/World.h"
 
@@ -11,6 +12,9 @@ void UAHInventoryComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	Grenades = FMath::Clamp(StartingGrenades, 0, MaximumGrenades);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Inventory] begin grenades=%d"), Grenades);
+	#endif
 }
 
 void UAHInventoryComponent::AddWeapon(AAHWeaponBase* Weapon)
@@ -101,6 +105,9 @@ bool UAHInventoryComponent::ConsumeGrenade()
 	}
 
 	--Grenades;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Inventory] grenade_consume remaining=%d"), Grenades);
+	#endif
 	OnInventoryChanged.Broadcast();
 	return true;
 }
@@ -108,6 +115,9 @@ bool UAHInventoryComponent::ConsumeGrenade()
 void UAHInventoryComponent::AddGrenades(int32 Amount)
 {
 	Grenades = FMath::Clamp(Grenades + Amount, 0, MaximumGrenades);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Inventory] grenade_delta=%d total=%d"), Amount, Grenades);
+	#endif
 	OnInventoryChanged.Broadcast();
 }
 
@@ -116,6 +126,9 @@ void UAHInventoryComponent::SetSavedAmmo(const FAHAmmoState& Ammo)
 	if (AAHWeaponBase* Weapon = GetCurrentWeapon())
 	{
 		Weapon->SetAmmoState(Ammo);
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Inventory] ammo_restore magazine=%d reserve=%d"), Ammo.Magazine, Ammo.Reserve);
+		#endif
 	}
 }
 

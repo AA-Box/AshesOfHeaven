@@ -1,4 +1,5 @@
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "AshesOfHeaven.h"
 
 void UAHChapterSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -19,6 +20,9 @@ bool UAHChapterSubsystem::SetStage(EAHChapterStage NewStage)
 	}
 
 	State.Stage = NewStage;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] stage=%s"), *UEnum::GetValueAsString(NewStage));
+	#endif
 	State.CompletedSections.AddUnique(FName(*UEnum::GetValueAsString(NewStage)));
 	if (NewStage == EAHChapterStage::ChapterComplete)
 	{
@@ -68,11 +72,17 @@ void UAHChapterSubsystem::StartCountdown(float DurationSeconds)
 	State.CountdownSeconds = FMath::Max(0.0f, DurationSeconds);
 	State.bCountdownActive = State.CountdownSeconds > 0.0f;
 	LastCountdownMilestone = FMath::CeilToInt(State.CountdownSeconds);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] begin seconds=%0.1f"), State.CountdownSeconds);
+	#endif
 }
 
 void UAHChapterSubsystem::StopCountdown()
 {
 	State.bCountdownActive = false;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] stop remaining=%0.1f"), State.CountdownSeconds);
+	#endif
 }
 
 void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
@@ -89,6 +99,9 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 		LastCountdownMilestone = CurrentMilestone;
 		if (CurrentMilestone % 60 == 0 || CurrentMilestone <= 10)
 		{
+			#if !UE_BUILD_SHIPPING
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] milestone seconds=%d"), CurrentMilestone);
+			#endif
 			OnCountdownMilestone.Broadcast(CurrentMilestone);
 		}
 	}
@@ -112,5 +125,8 @@ void UAHChapterSubsystem::RestoreState(const FAHChapterState& RestoredState)
 {
 	State = RestoredState;
 	LastCountdownMilestone = FMath::FloorToInt(State.CountdownSeconds);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] restore stage=%s objective=%d checkpoint=%s countdown=%0.1f vehicle_spawned=%s vehicle_destroyed=%s"), *UEnum::GetValueAsString(State.Stage), State.ObjectiveIndex, *State.CheckpointId.ToString(), State.CountdownSeconds, State.Vehicle.bSpawned ? TEXT("true") : TEXT("false"), State.Vehicle.bDestroyed ? TEXT("true") : TEXT("false"));
+	#endif
 	OnStageChanged.Broadcast(State.Stage);
 }

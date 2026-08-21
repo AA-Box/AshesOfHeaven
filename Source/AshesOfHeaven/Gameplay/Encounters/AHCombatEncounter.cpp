@@ -1,4 +1,5 @@
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
@@ -28,6 +29,9 @@ void AAHCombatEncounter::BeginPlay()
 		if (Checkpoints->IsEncounterCompleted(EncounterId))
 		{
 			bComplete = true;
+			#if !UE_BUILD_SHIPPING
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Encounter] restore_complete id=%s"), *EncounterId.ToString());
+			#endif
 			return;
 		}
 	}
@@ -53,6 +57,9 @@ void AAHCombatEncounter::ActivateEncounter()
 	}
 
 	bActive = true;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Encounter] start id=%s requested_enemies=%d"), *EncounterId.ToString(), EnemyCount);
+	#endif
 	for (int32 Index = 0; Index < EnemyCount; ++Index)
 	{
 		if (UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
@@ -153,6 +160,9 @@ void AAHCombatEncounter::CompleteEncounter()
 
 	bComplete = true;
 	bActive = false;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Encounter] complete id=%s"), *EncounterId.ToString());
+	#endif
 	if (UAHCheckpointSubsystem* Checkpoints = GetWorld()->GetSubsystem<UAHCheckpointSubsystem>())
 	{
 		Checkpoints->MarkEncounterCompleted(EncounterId);

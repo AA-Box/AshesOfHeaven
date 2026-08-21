@@ -1,4 +1,5 @@
 #include "Gameplay/Weapons/AHWeaponPickup.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
@@ -27,6 +28,9 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 	case EAHResourcePickupType::Weapon:
 		if (WeaponClass && Character->GetInventoryComponent()->AddWeaponClass(WeaponClass))
 		{
+			#if !UE_BUILD_SHIPPING
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] weapon actor=%s amount=%d"), *GetName(), Amount);
+			#endif
 			Destroy();
 		}
 		break;
@@ -34,11 +38,17 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 		if (AAHWeaponBase* Weapon = Character->GetInventoryComponent()->GetCurrentWeapon())
 		{
 			Weapon->AddReserveAmmo(Amount);
+			#if !UE_BUILD_SHIPPING
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] ammo actor=%s amount=%d"), *GetName(), Amount);
+			#endif
 			Destroy();
 		}
 		break;
 	case EAHResourcePickupType::Grenades:
 		Character->GetInventoryComponent()->AddGrenades(Amount);
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] grenades actor=%s amount=%d"), *GetName(), Amount);
+		#endif
 		Destroy();
 		break;
 	default:

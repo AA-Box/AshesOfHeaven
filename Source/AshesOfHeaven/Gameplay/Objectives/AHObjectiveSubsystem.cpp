@@ -1,4 +1,5 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
+#include "AshesOfHeaven.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
@@ -44,6 +45,9 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 	}
 
 	CompletedObjectives.Add(ObjectiveId);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] complete id=%s index=%d/%d"), *ObjectiveId.ToString(), CurrentObjectiveIndex + 1, Objectives.Num());
+	#endif
 	OnObjectiveCompleted.Broadcast(ObjectiveId);
 	++CurrentObjectiveIndex;
 	if (CurrentObjectiveIndex >= Objectives.Num())
@@ -60,6 +64,9 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 void UAHObjectiveSubsystem::ConfigureObjectives(const TArray<FAHObjectiveDefinition>& NewObjectives, int32 RestoreIndex)
 {
 	Objectives = NewObjectives;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] configure count=%d restore_index=%d"), Objectives.Num(), RestoreIndex);
+	#endif
 	RestoreState(RestoreIndex);
 }
 
@@ -72,6 +79,9 @@ void UAHObjectiveSubsystem::RestoreState(int32 ObjectiveIndex)
 		CompletedObjectives.Add(Objectives[Index].Id);
 	}
 	bMissionComplete = CurrentObjectiveIndex >= Objectives.Num();
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] restore index=%d/%d complete=%s"), CurrentObjectiveIndex, Objectives.Num(), bMissionComplete ? TEXT("true") : TEXT("false"));
+	#endif
 	if (bMissionComplete)
 	{
 		OnMissionComplete.Broadcast();
@@ -104,6 +114,9 @@ void UAHObjectiveSubsystem::BroadcastCurrentObjective()
 {
 	if (!bMissionComplete)
 	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] active index=%d/%d id=%s text=%s"), CurrentObjectiveIndex, Objectives.Num(), *GetCurrentObjective().Id.ToString(), *GetCurrentObjective().DisplayText.ToString());
+		#endif
 		OnObjectiveChanged.Broadcast(GetCurrentObjective().DisplayText, CurrentObjectiveIndex, Objectives.Num());
 		if (ObjectiveChangeSound && GetWorld())
 		{

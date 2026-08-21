@@ -1,4 +1,5 @@
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
@@ -48,7 +49,11 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	RuntimeState.ChapterState.CheckpointId = CheckpointId;
 	RuntimeState.ChapterState.ObjectiveIndex = RuntimeState.ObjectiveIndex;
 	RuntimeState.ChapterState.CompletedEncounters = CompletedEncounters;
-	return Save->SaveCombatCheckpoint(RuntimeState);
+	const bool bSaved = Save->SaveCombatCheckpoint(RuntimeState);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] capture id=%s objective=%d encounters=%d ammo=%d/%d grenades=%d result=%s"), *CheckpointId.ToString(), RuntimeState.ObjectiveIndex, RuntimeState.CompletedEncounters.Num(), RuntimeState.Ammo.Magazine, RuntimeState.Ammo.Reserve, RuntimeState.Grenades, bSaved ? TEXT("success") : TEXT("failure"));
+	#endif
+	return bSaved;
 }
 
 bool UAHCheckpointSubsystem::LoadState()
@@ -92,11 +97,17 @@ bool UAHCheckpointSubsystem::RestoreLatestCheckpoint()
 	}
 	Objectives->RestoreState(RuntimeState.ObjectiveIndex);
 	Chapter->RestoreState(RuntimeState.ChapterState);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] restore id=%s objective=%d encounters=%d ammo=%d/%d grenades=%d"), *RuntimeState.CheckpointId.ToString(), RuntimeState.ObjectiveIndex, RuntimeState.CompletedEncounters.Num(), RuntimeState.Ammo.Magazine, RuntimeState.Ammo.Reserve, RuntimeState.Grenades);
+	#endif
 	return true;
 }
 
 void UAHCheckpointSubsystem::ReloadLatestCheckpoint()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] reload_requested id=%s valid=%s"), *RuntimeState.CheckpointId.ToString(), HasCheckpoint() ? TEXT("true") : TEXT("false"));
+	#endif
 	if (!HasCheckpoint())
 	{
 		UGameplayStatics::OpenLevel(GetWorld(), FName(*GetWorld()->GetName()));
@@ -136,6 +147,9 @@ bool UAHCheckpointSubsystem::IsEncounterCompleted(FName EncounterId) const
 void UAHCheckpointSubsystem::MarkEncounterCompleted(FName EncounterId)
 {
 	RuntimeState.CompletedEncounters.AddUnique(EncounterId);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] encounter_complete id=%s total=%d"), *EncounterId.ToString(), RuntimeState.CompletedEncounters.Num());
+	#endif
 	if (GetWorld() && GetWorld()->GetGameInstance())
 	{
 		if (UAHChapterSubsystem* Chapter = GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>())

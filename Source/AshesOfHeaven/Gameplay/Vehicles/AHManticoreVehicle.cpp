@@ -1,4 +1,5 @@
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Platform/AHPlatformManagerSubsystem.h"
@@ -137,6 +138,9 @@ bool AAHManticoreVehicle::EnterVehicle(AAHCombatPlayerCharacter* Player)
 	Player->SetActorEnableCollision(false);
 	Player->SetActorLocation(GetActorLocation() + FVector(0.0f, 0.0f, 90.0f));
 	PlayerController->Possess(this);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Manticore] enter driver=%s location=%s"), *GetNameSafe(Player), *GetActorLocation().ToCompactString());
+	#endif
 	OnDriverEntered.Broadcast(Player);
 	return true;
 }
@@ -156,6 +160,9 @@ void AAHManticoreVehicle::ExitVehicle()
 	Player->SetActorEnableCollision(true);
 	Driver.Reset();
 	PlayerController->Possess(Player);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Manticore] exit driver=%s location=%s"), *GetNameSafe(Player), *GetActorLocation().ToCompactString());
+	#endif
 	OnDriverExited.Broadcast(Player);
 }
 
@@ -207,6 +214,9 @@ void AAHManticoreVehicle::RestoreVehicleState(const FAHVehicleState& State)
 	Health = FMath::Clamp(State.Health, 0.0f, MaxHealth);
 	bDestroyed = State.bDestroyed;
 	SetActorHiddenInGame(false);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Manticore] restore location=%s health=%0.1f destroyed=%s"), *State.Location.ToCompactString(), State.Health, State.bDestroyed ? TEXT("true") : TEXT("false"));
+	#endif
 }
 
 void AAHManticoreVehicle::HandleMoveInput(const FInputActionValue& Value)
@@ -252,5 +262,8 @@ void AAHManticoreVehicle::DestroyVehicle()
 	{
 		ExitVehicle();
 	}
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase3.2][Manticore] destroyed"));
+	#endif
 	OnVehicleDestroyed.Broadcast();
 }

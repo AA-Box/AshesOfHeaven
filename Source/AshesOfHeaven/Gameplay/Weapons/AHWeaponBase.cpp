@@ -1,4 +1,5 @@
 #include "Gameplay/Weapons/AHWeaponBase.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -98,6 +99,9 @@ void AAHWeaponBase::Reload()
 
 	StopFire();
 	bIsReloading = true;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Weapon] reload_start weapon=%s ammo=%d/%d"), *GetName(), Ammo.Magazine, Ammo.Reserve);
+	#endif
 	if (ReloadSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, ReloadSound, GetActorLocation());
@@ -111,6 +115,9 @@ void AAHWeaponBase::FinishReload()
 	Ammo.Magazine += Transfer;
 	Ammo.Reserve -= Transfer;
 	bIsReloading = false;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Weapon] reload_complete weapon=%s ammo=%d/%d"), *GetName(), Ammo.Magazine, Ammo.Reserve);
+	#endif
 	OnAmmoChanged.Broadcast(Ammo);
 	OnReloaded.Broadcast();
 }
@@ -123,12 +130,18 @@ void AAHWeaponBase::SetAmmoState(const FAHAmmoState& SavedAmmo)
 	Ammo.Magazine = FMath::Clamp(Ammo.Magazine, 0, MagazineCapacity);
 	Ammo.Reserve = FMath::Clamp(Ammo.Reserve, 0, ReserveCapacity);
 	bIsReloading = false;
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Weapon] ammo_restore weapon=%s ammo=%d/%d"), *GetName(), Ammo.Magazine, Ammo.Reserve);
+	#endif
 	OnAmmoChanged.Broadcast(Ammo);
 }
 
 void AAHWeaponBase::AddReserveAmmo(int32 Amount)
 {
 	Ammo.Reserve = FMath::Clamp(Ammo.Reserve + Amount, 0, Ammo.ReserveCapacity);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Weapon] ammo_pickup weapon=%s delta=%d reserve=%d"), *GetName(), Amount, Ammo.Reserve);
+	#endif
 	OnAmmoChanged.Broadcast(Ammo);
 }
 

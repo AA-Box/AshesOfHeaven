@@ -115,6 +115,33 @@ The post-fix commandlet and automation rerun are **BLOCKED in the current execut
 
 Development Editor rebuild through `Build.sh`, Mac Shipping cook/package, and normal-renderer packaged launch were not re-certified after this source change because of that environment block. The previous successful package and normal-renderer process smoke result remains recorded above, but it is not presented as validation of this unbuilt post-fix revision.
 
+### Phase 3.2 — post-fix recertification record — 2026-08-21
+
+The expected post-fix source is `4aa373ad79a378f0f0daba3a449ff9df93752e14` (`fix(combat): reflect objective HUD handlers`). The working tree adds development-only `[Phase3.2]` telemetry and `Scripts/Run-Mac-Playtest.sh`; no gameplay feature or Phase 4/Chapter Two content was added.
+
+Static inventory confirms 14 `AHCombatVerificationCommandlet::BeginTest` checks and 14 `IMPLEMENT_SIMPLE_AUTOMATION_TEST` registrations, including `AshesOfHeaven.Chapter.ObjectiveHUDDelegate`. This is an inventory check only; it is not a substitute for executing the tests.
+
+#### Fresh verification attempts
+
+- **UHT: PASS.** `AshesOfHeavenEditor` processed successfully for Mac arm64, with 0 generated files written. Log: `/tmp/ashes-phase32-uht-r2.log`.
+- **Commandlet: BLOCKED BY EXECUTION ENVIRONMENT.** A fresh `UnrealEditor-Cmd` invocation was bounded at 180 seconds. It emitted only macOS LaunchServices/HIServices XPC connection errors, produced no Unreal startup or test markers, and was stopped without a result. Log: `/tmp/ashes-phase32-commandlet.log`.
+- **Automation: BLOCKED BY EXECUTION ENVIRONMENT.** A fresh `UnrealEditor-Cmd` automation invocation was bounded at 180 seconds and exited via the timeout signal (`142`). It emitted the same LaunchServices/HIServices errors and executed no discovered tests. Log: `/tmp/ashes-phase32-automation.log`.
+- **Process cleanup: NOT VERIFIABLE.** `ps` and `pgrep` were denied by the managed macOS execution environment. No broad process kill was performed.
+
+#### Build and package attempts
+
+- **Development Editor: BLOCKED BY EXECUTION ENVIRONMENT/TOOLCHAIN.** The normal build first failed while rotating `Trace-backup-*.uba` under `~/Library/Application Support/Epic/UnrealBuildTool`. A safe session/log override reached real Clang compilation, then UE 5.8 UBA stopped with `UBA executor is not expected to be invoked from a recursive UBT call`. Log: `/tmp/ashes-phase32-editor-build-r3.log`.
+- **Changed-object compile fallback: PASS, 11/11.** The 11 touched gameplay translation units compiled with the existing Unreal response files and Apple Clang. This is useful source-level evidence but is not a Development Editor build.
+- **Mac Shipping cook/package: BLOCKED BY EXECUTION ENVIRONMENT.** The canonical script was blocked deleting/creating external Unreal AutomationTool log/config paths under `~/Library/Logs/Unreal Engine` and `~/Library/Application Support/Epic/UnrealEngine`. Redirecting UAT logs still hit the protected `XmlConfigCache-...bin` path. No fresh post-fix package was produced.
+- **Codesign: PASS for the existing app only.** `codesign --verify --deep --strict --verbose=2 Builds/macOS/AshesOfHeaven.app` passed, but that app predates the current source changes and is therefore not fresh post-fix evidence.
+- **Normal Metal launch: NOT CERTIFIED.** The stale existing executable was tried directly without `-nullrhi`; it exited immediately with abort status 134 and no stdout/log output in this environment. Because no fresh package could be produced, no post-fix launch result is claimed.
+
+#### Playtest observability and remaining human work
+
+Development builds now emit bounded `[Phase3.2]` logs for objective transitions, stage/dialogue/countdown transitions, checkpoints, inventory/ammo/grenades, encounters, Manticore state, death/restart, and completion. `Scripts/Run-Mac-Playtest.sh` launches the packaged app in a normal window without Null RHI and writes a timestamped log under `Saved/PlaytestLogs`.
+
+Codex did not fake interactive validation. Human Run 1 (normal completion) and Run 2 (inventory → checkpoint → death/restart → encounters → Manticore → completion) remain **UNTESTED**. Phase 4 and Chapter Two remain explicitly out of scope until those two human runs are recorded on a freshly packaged build.
+
 ## Known issues and scope boundaries
 
 - Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design.

@@ -1,4 +1,5 @@
 #include "Gameplay/Game/AHCombatPlayerController.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/AI/AHCombatAIController.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
@@ -139,11 +140,17 @@ void AAHCombatPlayerController::HandleMobileVehicleAxes(float Steering, float Ca
 
 void AAHCombatPlayerController::HandlePlayerDeath()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase3.2][Player] death restart_scheduled=true"));
+	#endif
 	GetWorldTimerManager().SetTimer(DeathRestartTimer, this, &AAHCombatPlayerController::FinishDeathRestart, 1.35f, false);
 }
 
 void AAHCombatPlayerController::FinishDeathRestart()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Player] death_restart_execute"));
+	#endif
 	if (UAHCheckpointSubsystem* Checkpoints = GetWorld()->GetSubsystem<UAHCheckpointSubsystem>())
 	{
 		Checkpoints->ReloadLatestCheckpoint();
@@ -185,6 +192,9 @@ void AAHCombatPlayerController::HandleWeaponShot(const FHitResult& Hit, bool bHi
 
 void AAHCombatPlayerController::HandleObjectiveChanged(FText Objective, int32 Index, int32 Count)
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][HUD] objective index=%d/%d text=%s"), Index, Count, *Objective.ToString());
+	#endif
 	if (AAHCombatHUD* HUD = GetCombatHUD())
 	{
 		HUD->SetObjective(Objective, Index, Count);
@@ -193,6 +203,9 @@ void AAHCombatPlayerController::HandleObjectiveChanged(FText Objective, int32 In
 
 void AAHCombatPlayerController::HandleMissionComplete()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][HUD] mission_complete_display"));
+	#endif
 	if (AAHCombatHUD* HUD = GetCombatHUD())
 	{
 		HUD->ShowMissionComplete();
