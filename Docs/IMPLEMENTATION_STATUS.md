@@ -229,13 +229,63 @@ Human Run 1 (normal completion) and Run 2 (inventory → checkpoint → death/re
 Manticore → completion) remain **UNTESTED**. No interactive playthrough is claimed. Phase 4 and
 Chapter Two remain out of scope until both runs are recorded against a freshly packaged build.
 
+## PHASE 4 — APPROVED VISUAL TARGET IMPLEMENTATION — 2026-08-21
+
+Phase 4 implements four real runtime art-target areas on top of the Phase 3 gameplay layout. It does not begin Chapter Two, rewrite the gameplay framework, or mark the Phase 3 human playthrough as complete.
+
+### Approved references found
+
+All four approved reference files are present under `References/ArtTargets/` and are recorded in [ART_TARGETS.md](ART_TARGETS.md). They were inspected before implementation. They remain reference images; no offline render or generated image is presented as gameplay evidence.
+
+### In-engine implementation
+
+- **Erebus:** layered fortification, defensive wall, wreck/pipe scaffolding, distant ruin silhouettes, warm fire/emergency lights, cold daylight, fog, and low-cost dust. The Cathedral remains a large distant landmark.
+- **Transit:** platform/rail/door-frame language, overhead service pipes, benches, cases, control equipment, authored `NORTH LINE / PLATFORM 02` and `CIVIL DEFENSE / EVACUATION ROUTE` signage, amber/red practicals, dust, and an environment-led route frame.
+- **Cathedral:** monolithic fins, nested void/frame vocabulary, suspended masses, a human expedition walkway and equipment for scale, cold light/fog, and original procedural glyph families.
+- **Present-day Lucian/Maya:** separated industrial composition with table/platform, cold key, restrained warm practical, dark negative space, and legally present UE mannequin display proxies. Final character work is explicitly not claimed.
+- **M91:** reduced first-person occupancy, stable camera hold/recoil frame, first-person primitive tagging, a restrained capacitor/power-architecture scaffold, and dark first-person gauntlet proxies.
+- **Human/Veil:** faction-specific temporary materials, a visible human body proxy, matte Veil silhouette, and a broader Warden shoulder/body silhouette. Final authored soldier meshes/animation remain open.
+- **HUD:** scalable panels and safe margins, legible 1280×720 baseline, objective update prominence/settle behavior, health/armor/ammo/reserve/grenades, interaction, hit/damage feedback, countdown, vehicle state, and completion presentation.
+
+### Architecture and safety
+
+Art-target shapes and display characters are non-colliding and do not affect navigation. The Phase 3 gameplay floor, cover, triggers, checkpoints, encounter actors, Manticore route, and saved nav architecture remain authoritative. Runtime preview is selectable with `Scripts/Run-Mac-ArtTarget.sh` and `-ArtTarget=Erebus|Transit|Cathedral|LucianMaya|M91`.
+
+Material mappings, glyph rules, palette, lighting, VFX limits, provenance, performance budgets, and external-art gaps are canonicalized in [ART_DIRECTION.md](ART_DIRECTION.md). Target-by-target comparison and human review gates are in [ART_TARGETS.md](ART_TARGETS.md).
+
+### Phase 4 validation state
+
+The Phase 4 source and runtime target layer completed a fresh machine validation pass on 2026-08-21 from the current working tree. These are machine/build gates only; they do not claim subjective visual approval or a human playthrough.
+
+#### Fresh machine results — 2026-08-21
+
+| Gate | Exact result |
+| --- | --- |
+| Development Editor | **PASS** — `RunUBT.sh AshesOfHeavenEditor Mac Development -Architecture=arm64 ...`; exit 0, UHT/compile/link succeeded. Log: `/tmp/ashes-phase4-editor-build-r6.log` |
+| `AHCombatVerificationCommandlet` | **PASS** — 14 checks executed, 0 failed checks; `AshesOfHeaven combat commandlet: 14 tests, 0 failed checks, PASS`; 0 errors and 1 known HUD-test cleanup warning. Log: `/tmp/ashes-phase4-commandlet-r3.log` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 15 tests discovered, 15 started, 15 completed with `Result={Success}`, `**** TEST COMPLETE. EXIT CODE: 0 ****`; art manifest included. Log: `/tmp/ashes-phase4-automation-r2.log` |
+| Development cook/package | **PASS** — `BuildCookRun time: 60.05 s`, `BUILD SUCCESSFUL`, ExitCode=0; `Builds/macOS-Development/AshesOfHeaven.app`. Log: `/tmp/ashes-phase4-development-package-r2.log` |
+| Development codesign | **PASS** — `codesign --verify --deep --strict --verbose=2`; valid on disk and designated requirement satisfied. |
+| Development normal renderer | **PASS** — direct packaged executable stayed alive for 15 seconds with Metal/no `-nullrhi`, reached `L_ChapterOne_Greybox`, then was stopped with a controlled termination. Log: `/tmp/ashes-phase4-development-launch-r2.log` |
+| Art-target activation | **PASS** — fresh Development normal-renderer smokes for `Erebus`, `Transit`, `Cathedral`, `LucianMaya`, and `M91` each stayed alive for 8 seconds, logged the matching `[Phase4][ArtTarget] activated=` marker, and showed no fatal/assertion/SIG marker. Logs: `/tmp/ashes-phase4-arttarget-{Erebus,Transit,Cathedral,LucianMaya,M91}-r2.log` |
+| Mac Shipping cook/package | **PASS** — `BuildCookRun time: 51.10 s`, `BUILD SUCCESSFUL`, ExitCode=0; package counter `0.30`; `Builds/macOS/AshesOfHeaven.app`. Log: `/tmp/ashes-phase4-shipping-package-r2.log` |
+| Mac Shipping codesign | **PASS** — `codesign --verify --deep --strict --verbose=2`; valid on disk and designated requirement satisfied. |
+| Mac Shipping normal renderer | **PASS** — `AshesOfHeaven-Mac-Shipping` stayed alive for 15 seconds with Metal/no `-nullrhi`, then was stopped with a controlled termination. No new crash report was produced. |
+
+No actual runtime screenshots were captured in this execution environment. The stable viewpoints are real in-engine positions and can be reviewed with `Scripts/Run-Mac-ArtTarget.sh`; no offline render or fabricated screenshot is claimed. Real device FPS, draw-call, memory, thermal, and mobile measurements were not performed. Subjective target match, final art approval, and the two Phase 3 interactive human runs remain human-gated.
+
 ## Known issues and scope boundaries
 
-- Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design. The
-  lighting added in Phase 3.3 is neutral working light so the level can be seen and played, not
-  art direction; Phase 4 replaces it.
-- Combatants render as block bodies. Verifying enemy state during a human run is therefore a
-  positional judgement, not a visual one.
+- Phase 4 now supplies a procedural visual target layer and art-direction lighting, but authored
+  environment meshes, production materials, final VFX/audio, and production character art remain
+  open gaps. See `Docs/ART_TARGETS.md`; visual match is not claimed without human review.
+- The approved prototype `NS_DustMote` asset is not loaded at runtime because its Stateless Niagara
+  serialization asserts in the installed Mac package. The atmosphere hook is intentionally kept
+  asset-free through fog, layered silhouettes, and practical lights until a cooked-safe authored
+  emitter replaces it; this is a known VFX gap, not a hidden success claim.
+- Combatants still use temporary faction-aware body proxies unless production meshes are supplied.
+- Lucian and Maya are interim UE mannequin display proxies, not final character art and not a
+  likeness claim.
 - The current Chapter One map is one logical map with runtime-built sections; the stage/state architecture is ready for future World Partition or level-streaming splits.
 - The authored map now carries saved navigation data: a `NavMeshBoundsVolume` and a
   `RecastNavMesh-Default` set to `RuntimeGeneration = Dynamic`. Dynamic is required rather than
@@ -256,18 +306,14 @@ The human tester should ignore ugly geometry, placeholder animation, lighting, a
 
 ### Validation environment note — 2026-08-21
 
-An interactive launch attempt was made with the packaged Shipping app through macOS LaunchServices. The process created an 800×632 game window, but it initially opened on an offscreen display. After moving it to the primary display, CoreGraphics confirmed the window while macOS screen capture still returned `could not create image from display`. Without an observable viewport, no honest gameplay input/feel/objective/completion result can be recorded from this environment. The app was stopped cleanly; no crash or reproducible gameplay defect was observed.
+An interactive launch attempt was made with the packaged Shipping app through macOS LaunchServices. The process created an 800×632 game window, but it initially opened on an offscreen display. After moving it to the primary display, CoreGraphics confirmed the window while macOS screen capture still returned `could not create image from display`. Without an observable viewport, no honest gameplay input/feel/objective/completion result can be recorded from that environment. The later direct normal-renderer machine smokes above prove launch only, not gameplay.
 
 The later Phase 3.1 commandlet attempt was also stopped without a result after the macOS service startup failure described above. This is an execution-environment limitation, not interactive gameplay evidence.
 
 ## Next
 
-All machine-verifiable Phase 3 gates pass as of Phase 3.3: 14/14 commandlet, 14/14 automation, a
-fresh Shipping package, codesign, and a launching playtest build that writes a usable log.
-
-Human Run 1 and Run 2 are the only remaining Phase 3 acceptance work. Do not begin Chapter Two or
-Phase 4 until that evidence is recorded.
-
-When judging those runs, note that enemies are block bodies with no animation, so verifying enemy
-state is a positional judgement rather than a visual one. Geometry, animation, lighting, sound and
-VFX remain greybox by design and are not Phase 3 acceptance criteria.
+Phase 4 stops at the four representative visual targets. Do not begin Chapter Two or propagate the
+target language across the whole 20–30 minute chapter until the user has reviewed the actual
+in-engine viewpoints. The remaining work is human visual approval, external environment/material/
+character/VFX/audio authoring, real target-device profiling, and the previously recorded Phase 3
+interactive Run 1/Run 2 acceptance.

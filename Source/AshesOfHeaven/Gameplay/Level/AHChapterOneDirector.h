@@ -14,6 +14,8 @@ class AAHCombatantCharacter;
 class UAHDialogueSubsystem;
 class UMaterialInterface;
 class UStaticMesh;
+class AStaticMeshActor;
+class ASkeletalMeshActor;
 
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHMissionStage
@@ -85,6 +87,11 @@ protected:
 	void SpawnGreyboxLighting();
 	void BuildMissionGraph();
 	void BuildMissionActors();
+	void BuildVisualArtTargets();
+	void BuildErebusArtTarget();
+	void BuildTransitStationArtTarget();
+	void BuildCathedralArtTarget();
+	void BuildPresentDayArtTarget();
 	void ConfigureObjectives();
 	void StartStage(EAHChapterStage Stage);
 	void StartDialogueSequence(FName SequenceId, const TArray<FAHDialogueLine>& Lines);
@@ -94,14 +101,20 @@ protected:
 	void SpawnOpenBattlefieldEncounter();
 	void SpawnEscapeEncounter();
 	void SpawnPresentDayScene();
+	void ActivateArtTargetView(FString TargetName);
 	void SpawnCathedralTerminal();
 	void SpawnManticore();
 	void SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator, UMaterialInterface* MaterialOverride = nullptr);
+	AStaticMeshActor* SpawnVisualShape(const TCHAR* MeshPath, const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator, UMaterialInterface* MaterialOverride = nullptr);
+	void SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
+	void SpawnVisualDust(const FVector& Location, float Scale = 1.0f);
+	void SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale = 1.0f);
+	ASkeletalMeshActor* SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId);
 	void SpawnCheckpoint(const FVector& Location, FName Id);
 	AAHChapterTrigger* SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id);
 	AAHCombatEncounter* SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns, bool bAutoActivate = false);
 	void SpawnFriendly(const FVector& Location, FName DisplayId = NAME_None);
-	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White);
+	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White, float WorldSize = 90.0f, const FRotator& Rotation = FRotator(0.0f, 90.0f, 0.0f));
 	void TeleportPlayer(const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
 	UFUNCTION()
 	void HandleTrigger(FName TriggerId);
@@ -142,6 +155,18 @@ protected:
 	TObjectPtr<UMaterialInterface> CathedralMaterial;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> HumanMetalMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> ConcreteMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> VeilObsidianMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> EmissiveTechnologyMaterial;
+
+	UPROPERTY(Transient)
 	TObjectPtr<AAHCombatEncounter> OpeningEncounter;
 
 	UPROPERTY(Transient)
@@ -173,4 +198,5 @@ protected:
 	bool bNysaSequenceStarted = false;
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
+	bool bVisualArtTargetsBuilt = false;
 };

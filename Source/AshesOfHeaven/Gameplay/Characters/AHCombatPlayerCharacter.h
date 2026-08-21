@@ -7,6 +7,7 @@
 class UInputComponent;
 class UInputAction;
 class AAHWeaponBase;
+class UStaticMeshComponent;
 
 UCLASS()
 class ASHESOFHEAVEN_API AAHCombatPlayerCharacter : public AAHCombatantCharacter
@@ -39,6 +40,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapons")
 	TSubclassOf<AAHWeaponBase> StartingWeaponClass;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Visual Target")
+	TObjectPtr<UStaticMeshComponent> FirstPersonLeftGauntlet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Visual Target")
+	TObjectPtr<UStaticMeshComponent> FirstPersonRightGauntlet;
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;

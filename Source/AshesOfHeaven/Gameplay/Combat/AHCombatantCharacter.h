@@ -11,6 +11,7 @@ class UAHCombatComponent;
 class UAHInteractionComponent;
 class UAHInventoryComponent;
 class USoundBase;
+class UStaticMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FAHCombatDamageFeedbackDelegate, float, Damage, bool, bHeadshot, bool, bArmorHit, bool, bArmorBroken, float, DirectionAngle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHCombatantDeathDelegate);
@@ -100,6 +101,15 @@ public:
 
 protected:
 	void EnsureGreyboxBody();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> GreyboxBodyMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> GreyboxHeadMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> GreyboxShoulderMesh;
 
 
 	UFUNCTION()

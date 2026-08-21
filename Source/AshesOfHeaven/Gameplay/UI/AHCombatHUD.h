@@ -24,6 +24,7 @@ public:
 	bool IsMissionCompleteDisplayed() const { return bMissionComplete; }
 
 private:
+	void DrawPanel(const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color) const;
 	void DrawBar(const FVector2D& Position, const FVector2D& Size, float Percent, const FLinearColor& Color) const;
 	void DrawTextAt(const FText& Text, const FVector2D& Position, const FLinearColor& Color, float Scale = 1.0f) const;
 
@@ -36,4 +37,5 @@ private:
 	FText CurrentObjective;
 	int32 ObjectiveIndex = 0;
 	int32 ObjectiveCount = 5;
+	float ObjectivePulseUntil = 0.0f;
 };

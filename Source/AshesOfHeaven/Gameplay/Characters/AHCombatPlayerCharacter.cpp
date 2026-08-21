@@ -7,9 +7,12 @@
 #include "Platform/AHPlatformManagerSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "InputActionValue.h"
+#include "Materials/MaterialInterface.h"
 
 AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 {
@@ -21,6 +24,36 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
 	StartingWeaponClass = AAHWeaponBase::StaticClass();
+
+	UStaticMesh* GauntletMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	UMaterialInterface* GauntletMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
+	FirstPersonLeftGauntlet = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FirstPersonLeftGauntlet"));
+	FirstPersonLeftGauntlet->SetupAttachment(GetFirstPersonCameraComponent());
+	FirstPersonLeftGauntlet->SetStaticMesh(GauntletMesh);
+	FirstPersonLeftGauntlet->SetRelativeLocation(FVector(32.0f, -18.0f, -16.0f));
+	FirstPersonLeftGauntlet->SetRelativeRotation(FRotator(0.0f, -8.0f, 8.0f));
+	FirstPersonLeftGauntlet->SetRelativeScale3D(FVector(0.20f, 0.15f, 0.52f));
+	FirstPersonLeftGauntlet->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FirstPersonLeftGauntlet->SetOnlyOwnerSee(true);
+	FirstPersonLeftGauntlet->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	if (GauntletMaterial)
+	{
+		FirstPersonLeftGauntlet->SetMaterial(0, GauntletMaterial);
+	}
+
+	FirstPersonRightGauntlet = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FirstPersonRightGauntlet"));
+	FirstPersonRightGauntlet->SetupAttachment(GetFirstPersonCameraComponent());
+	FirstPersonRightGauntlet->SetStaticMesh(GauntletMesh);
+	FirstPersonRightGauntlet->SetRelativeLocation(FVector(40.0f, 18.0f, -13.0f));
+	FirstPersonRightGauntlet->SetRelativeRotation(FRotator(0.0f, 8.0f, -8.0f));
+	FirstPersonRightGauntlet->SetRelativeScale3D(FVector(0.22f, 0.16f, 0.55f));
+	FirstPersonRightGauntlet->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FirstPersonRightGauntlet->SetOnlyOwnerSee(true);
+	FirstPersonRightGauntlet->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	if (GauntletMaterial)
+	{
+		FirstPersonRightGauntlet->SetMaterial(0, GauntletMaterial);
+	}
 }
 
 void AAHCombatPlayerCharacter::BeginPlay()

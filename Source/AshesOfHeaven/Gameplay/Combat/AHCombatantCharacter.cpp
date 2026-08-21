@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "Engine/DamageEvents.h"
@@ -45,7 +46,7 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 	// Greybox characters have no skeletal mesh, so a soldier is invisible while the weapon
 	// attached to them still renders - the level reads as rifles gliding around on their own.
 	// Stand in a block body until real meshes exist; with a mesh assigned this does nothing.
-	if (!GetMesh() || GetMesh()->GetSkeletalMeshAsset())
+	if (!GetMesh() || GetMesh()->GetSkeletalMeshAsset() || GreyboxBodyMesh)
 	{
 		return;
 	}
@@ -56,18 +57,73 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 		return;
 	}
 
-	UStaticMeshComponent* Body = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxBody"));
-	if (!Body)
+	GreyboxBodyMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxBody"));
+	if (!GreyboxBodyMesh)
 	{
 		return;
 	}
-	Body->SetStaticMesh(BlockMesh);
-	Body->SetupAttachment(GetCapsuleComponent());
-	Body->SetRelativeScale3D(FVector(0.55f, 0.55f, 1.9f));
-	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GreyboxBodyMesh->SetStaticMesh(BlockMesh);
+	GreyboxBodyMesh->SetupAttachment(GetCapsuleComponent());
+	GreyboxBodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	const bool bWardenSilhouette = GetClass()->GetName().Contains(TEXT("Warden"), ESearchCase::IgnoreCase);
+	GreyboxBodyMesh->SetRelativeScale3D(bWardenSilhouette ? FVector(0.68f, 0.64f, 1.92f) : FVector(0.48f, 0.48f, 1.75f));
+	GreyboxBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GreyboxBodyMesh->SetCanEverAffectNavigation(false);
+	const TCHAR* BodyMaterialPath = Faction == EAHFaction::Veil
+		? TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark")
+		: TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02");
+	if (UMaterialInterface* BodyMaterial = LoadObject<UMaterialInterface>(nullptr, BodyMaterialPath))
+	{
+		GreyboxBodyMesh->SetMaterial(0, BodyMaterial);
+	}
 	// The owner is looking out of this body, so keep it out of their own view.
-	Body->SetOwnerNoSee(true);
-	Body->RegisterComponent();
+	GreyboxBodyMesh->SetOwnerNoSee(true);
+	GreyboxBodyMesh->SetVisibility(true);
+	AddInstanceComponent(GreyboxBodyMesh);
+	GreyboxBodyMesh->RegisterComponent();
+
+	if (UStaticMesh* HeadMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	{
+		GreyboxHeadMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxHead"));
+		if (GreyboxHeadMesh)
+		{
+			GreyboxHeadMesh->SetStaticMesh(HeadMesh);
+			GreyboxHeadMesh->SetupAttachment(GetCapsuleComponent());
+			GreyboxHeadMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 112.0f));
+			GreyboxHeadMesh->SetRelativeScale3D(FVector(0.34f));
+			GreyboxHeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			GreyboxHeadMesh->SetCanEverAffectNavigation(false);
+			if (UMaterialInterface* HeadMaterial = LoadObject<UMaterialInterface>(nullptr, BodyMaterialPath))
+			{
+				GreyboxHeadMesh->SetMaterial(0, HeadMaterial);
+			}
+			GreyboxHeadMesh->SetOwnerNoSee(true);
+			GreyboxHeadMesh->SetVisibility(true);
+			AddInstanceComponent(GreyboxHeadMesh);
+			GreyboxHeadMesh->RegisterComponent();
+		}
+	}
+
+	if (bWardenSilhouette)
+	{
+		GreyboxShoulderMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxShoulderArmor"));
+		if (GreyboxShoulderMesh)
+		{
+			GreyboxShoulderMesh->SetStaticMesh(BlockMesh);
+			GreyboxShoulderMesh->SetupAttachment(GetCapsuleComponent());
+			GreyboxShoulderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 78.0f));
+			GreyboxShoulderMesh->SetRelativeScale3D(FVector(0.88f, 0.74f, 0.24f));
+			GreyboxShoulderMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			GreyboxShoulderMesh->SetCanEverAffectNavigation(false);
+			if (UMaterialInterface* ShoulderMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round")))
+			{
+				GreyboxShoulderMesh->SetMaterial(0, ShoulderMaterial);
+			}
+			GreyboxShoulderMesh->SetOwnerNoSee(true);
+			AddInstanceComponent(GreyboxShoulderMesh);
+			GreyboxShoulderMesh->RegisterComponent();
+		}
+	}
 }
 
 float AAHCombatantCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)

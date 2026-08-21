@@ -18,10 +18,38 @@
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Engine/GameInstance.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
+#include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHArtTargetAssetManifestTest, "AshesOfHeaven.Art.TargetAssetManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHArtTargetAssetManifestTest::RunTest(const FString& Parameters)
+{
+	const FString ProjectRoot = FPaths::ProjectDir();
+	const TArray<FString> ReferenceFiles = {
+		TEXT("References/ArtTargets/01_Erebus_Battlefield.png"),
+		TEXT("References/ArtTargets/02_Transit_Station.png"),
+		TEXT("References/ArtTargets/03_Cathedral_Interior.png"),
+		TEXT("References/ArtTargets/04_Lucian_Maya.png")
+	};
+	for (const FString& RelativePath : ReferenceFiles)
+	{
+		TestTrue(*FString::Printf(TEXT("Approved reference exists: %s"), *RelativePath), IFileManager::Get().FileExists(*(ProjectRoot / RelativePath)));
+	}
+
+	TestNotNull(TEXT("M91 skeletal mesh resolves"), LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Weapons/Rifle/Meshes/SKM_Rifle.SKM_Rifle")));
+	TestNotNull(TEXT("Human mannequin resolves"), LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")));
+	TestNotNull(TEXT("Maya mannequin scaffold resolves"), LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple")));
+	TestNotNull(TEXT("Transit door frame resolves"), LoadObject<UStaticMesh>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge")));
+	TestNotNull(TEXT("Cathedral material resolves"), LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark")));
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHHealthDamageTest, "AshesOfHeaven.Combat.HealthDamage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHHealthDamageTest::RunTest(const FString& Parameters)

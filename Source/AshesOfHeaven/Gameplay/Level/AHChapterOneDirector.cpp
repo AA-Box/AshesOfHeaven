@@ -17,13 +17,19 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/PointLight.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/SkyLight.h"
+#include "Animation/SkeletalMeshActor.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextRenderActor.h"
 #include "Engine/World.h"
@@ -31,6 +37,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/Parse.h"
 #include "NavigationSystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
@@ -138,6 +145,10 @@ AAHChapterOneDirector::AAHChapterOneDirector()
 	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
 	CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray.MI_PrototypeGrid_Gray"));
+	HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02"));
+	ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round"));
+	VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
+	EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/JumpPad/Assets/Materials/MI_GlowNT.MI_GlowNT"));
 }
 
 void AAHChapterOneDirector::BeginPlay()
@@ -153,6 +164,7 @@ void AAHChapterOneDirector::BeginPlay()
 	Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>();
 	BuildMissionGraph();
 	BuildGreybox();
+	BuildVisualArtTargets();
 	BuildMissionActors();
 	ConfigureObjectives();
 
@@ -167,6 +179,16 @@ void AAHChapterOneDirector::BeginPlay()
 	}
 
 	StartStage(Chapter ? Chapter->GetStage() : EAHChapterStage::OpeningBlack);
+
+#if !UE_BUILD_SHIPPING
+	FString ArtTarget;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ArtTarget="), ArtTarget))
+	{
+		FTimerDelegate ArtTargetDelegate;
+		ArtTargetDelegate.BindUObject(this, &AAHChapterOneDirector::ActivateArtTargetView, ArtTarget);
+		GetWorldTimerManager().SetTimerForNextTick(ArtTargetDelegate);
+	}
+#endif
 }
 
 void AAHChapterOneDirector::Tick(float DeltaSeconds)
@@ -583,6 +605,274 @@ void AAHChapterOneDirector::BuildGreybox()
 	SpawnBattlefieldSimulation();
 }
 
+void AAHChapterOneDirector::BuildVisualArtTargets()
+{
+	if (bVisualArtTargetsBuilt)
+	{
+		return;
+	}
+	bVisualArtTargetsBuilt = true;
+
+	// These are non-colliding presentation layers over the proven Phase 3 layout. The
+	// gameplay blocks, triggers, checkpoints and nav data remain authoritative underneath.
+	BuildErebusArtTarget();
+	BuildTransitStationArtTarget();
+	BuildCathedralArtTarget();
+	BuildPresentDayArtTarget();
+}
+
+void AAHChapterOneDirector::BuildErebusArtTarget()
+{
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+	const TCHAR* ChamferCube = TEXT("/Game/LevelPrototyping/Meshes/SM_ChamferCube.SM_ChamferCube");
+
+	// Foreground: recoverable human fortification pieces with visible industrial mass.
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		const float X = 250.0f + Index * 520.0f;
+		SpawnVisualShape(ChamferCube, FVector(X, -540.0f, 155.0f), FVector(1.5f, 0.9f, 0.55f), FRotator(0.0f, Index % 2 == 0 ? 4.0f : -4.0f, 0.0f), HumanMetalMaterial);
+		SpawnVisualShape(Cube, FVector(X + 160.0f, -520.0f, 320.0f), FVector(0.12f, 0.12f, 2.2f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
+
+	// Midground: a damaged defensive wall, logistics wreck and a readable fire source.
+	SpawnVisualShape(Cube, FVector(1850.0f, 520.0f, 260.0f), FVector(5.5f, 0.28f, 2.6f), FRotator(0.0f, 0.0f, -8.0f), ConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(2120.0f, 520.0f, 430.0f), FVector(1.1f, 0.42f, 0.22f), FRotator(0.0f, 0.0f, 18.0f), HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(1220.0f, 300.0f, 115.0f), FVector(2.2f, 1.0f, 0.3f), FRotator(0.0f, -12.0f, 0.0f), HumanMetalMaterial);
+	SpawnVisualShape(Cylinder, FVector(1220.0f, 300.0f, 215.0f), FVector(0.75f, 0.75f, 1.0f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cylinder, FVector(1550.0f, 700.0f, 74.0f), FVector(0.18f, 0.18f, 7.5f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
+	SpawnVisualShape(Cylinder, FVector(2500.0f, 700.0f, 110.0f), FVector(0.14f, 0.14f, 9.0f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(2440.0f, 680.0f, 185.0f), FVector(1.7f, 0.55f, 0.16f), FRotator(0.0f, 0.0f, -13.0f), HumanMetalMaterial);
+	SpawnVisualLight(FVector(1180.0f, 260.0f, 230.0f), FLinearColor(1.0f, 0.23f, 0.06f), 1800.0f, 850.0f);
+	SpawnVisualLight(FVector(2160.0f, 500.0f, 420.0f), FLinearColor(1.0f, 0.48f, 0.12f), 900.0f, 500.0f);
+	SpawnVisualLight(FVector(4100.0f, 1220.0f, 400.0f), FLinearColor(1.0f, 0.18f, 0.05f), 500.0f, 720.0f);
+
+	// Background: layered ruin forms frame the route and keep the Cathedral silhouette legible.
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		const float X = 4300.0f + Index * 900.0f;
+		SpawnVisualShape(Cube, FVector(X, 1500.0f, 650.0f + (Index % 2) * 180.0f), FVector(1.8f, 0.25f, 6.5f + (Index % 2) * 1.5f), FRotator(0.0f, 0.0f, Index % 2 == 0 ? 3.0f : -4.0f), ConcreteMaterial);
+	}
+	SpawnVisualShape(Cube, FVector(10300.0f, 1550.0f, 850.0f), FVector(1.0f, 0.3f, 8.5f), FRotator(0.0f, 0.0f, -3.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(12600.0f, 1500.0f, 1250.0f), FVector(0.7f, 0.3f, 12.0f), FRotator(0.0f, 0.0f, 2.0f), VeilObsidianMaterial);
+
+	SpawnVisualDust(FVector(950.0f, 0.0f, 420.0f), 1.7f);
+	SpawnVisualDust(FVector(2550.0f, 760.0f, 520.0f), 1.2f);
+	SpawnLabel(FVector(700.0f, -1180.0f, 430.0f), TEXT("EREBUS / DEFENSIVE LINE"), FColor(180, 194, 202), 105.0f);
+}
+
+void AAHChapterOneDirector::BuildTransitStationArtTarget()
+{
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+	const TCHAR* DoorFrame = TEXT("/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge");
+
+	// Platforms and rails form a recognizable transit corridor without changing gameplay collision.
+	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, -30.0f), FVector(16.0f, 9.0f, 0.10f), FRotator::ZeroRotator, ConcreteMaterial);
+	for (const float RailY : {-360.0f, 360.0f})
+	{
+		SpawnVisualShape(Cylinder, FVector(3500.0f, RailY, 18.0f), FVector(0.10f, 0.10f, 28.0f), FRotator(90.0f, 0.0f, 0.0f), HumanMetalMaterial);
+	}
+	SpawnVisualShape(Cube, FVector(3500.0f, -720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, 720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, HumanMetalMaterial);
+
+	// The station entrance is a strong frame on the route, with a practical overhead sign.
+	for (const float PillarY : {-680.0f, 680.0f})
+	{
+		SpawnVisualShape(DoorFrame, FVector(3500.0f, PillarY, 370.0f), FVector(2.4f, 2.4f, 5.2f), FRotator::ZeroRotator, HumanMetalMaterial);
+		SpawnVisualShape(Cube, FVector(3500.0f, PillarY, 740.0f), FVector(0.45f, 0.45f, 3.3f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
+	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, 760.0f), FVector(0.45f, 7.4f, 0.40f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, -735.0f, 760.0f), FVector(0.08f, 1.9f, 0.72f), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
+	SpawnLabel(FVector(3500.0f, -820.0f, 770.0f), TEXT("TRANSIT\nSTATION"), FColor(224, 224, 210), 125.0f);
+	SpawnLabel(FVector(3500.0f, -760.0f, 930.0f), TEXT("NORTH LINE  /  PLATFORM 02"), FColor(232, 190, 118), 72.0f);
+	SpawnLabel(FVector(3500.0f, 790.0f, 710.0f), TEXT("CIVIL DEFENSE\nEVACUATION ROUTE"), FColor(222, 90, 62), 66.0f, FRotator(0.0f, -90.0f, 0.0f));
+
+	// Civilian traces: a few abandoned cases and a control desk, not a prop carpet.
+	SpawnVisualShape(Cube, FVector(3150.0f, -410.0f, 60.0f), FVector(0.45f, 0.30f, 0.28f), FRotator(0.0f, 18.0f, 0.0f), ConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(3270.0f, -450.0f, 52.0f), FVector(0.32f, 0.22f, 0.20f), FRotator(0.0f, -12.0f, 0.0f), ConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 85.0f), FVector(1.8f, 0.24f, 0.12f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 160.0f), FVector(1.65f, 0.12f, 0.58f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 80.0f), FVector(1.3f, 0.22f, 0.10f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 145.0f), FVector(1.15f, 0.10f, 0.45f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 160.0f), FVector(1.3f, 0.65f, 0.72f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 305.0f), FVector(1.1f, 0.58f, 0.08f), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		SpawnVisualShape(Cylinder, FVector(3500.0f + Index * 480.0f, 0.0f, 1080.0f), FVector(0.08f, 0.08f, 4.5f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
+	}
+
+	SpawnVisualLight(FVector(3300.0f, -500.0f, 540.0f), FLinearColor(1.0f, 0.48f, 0.16f), 620.0f, 700.0f);
+	SpawnVisualLight(FVector(3820.0f, 500.0f, 460.0f), FLinearColor(0.95f, 0.08f, 0.03f), 360.0f, 520.0f);
+	SpawnVisualDust(FVector(3500.0f, 0.0f, 520.0f), 0.8f);
+}
+
+void AAHChapterOneDirector::BuildCathedralArtTarget()
+{
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+
+	// A controlled vocabulary of fins, frames and voids establishes the Cathedral language.
+	for (const float X : {14200.0f, 15100.0f, 16000.0f, 17200.0f})
+	{
+		SpawnVisualShape(Cube, FVector(X, -1050.0f, 1300.0f), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, 2.0f), VeilObsidianMaterial);
+		SpawnVisualShape(Cube, FVector(X, 1050.0f, 1300.0f), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, -2.0f), VeilObsidianMaterial);
+	}
+	SpawnVisualShape(Cube, FVector(15000.0f, 0.0f, 2300.0f), FVector(0.28f, 14.0f, 0.28f), FRotator::ZeroRotator, VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(16400.0f, 0.0f, 1700.0f), FVector(0.18f, 9.0f, 0.18f), FRotator(0.0f, 0.0f, 8.0f), CathedralMaterial);
+	SpawnVisualShape(Cube, FVector(17800.0f, 0.0f, 2100.0f), FVector(0.22f, 11.0f, 0.22f), FRotator(0.0f, 0.0f, -5.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(16800.0f, -700.0f, 2050.0f), FVector(1.4f, 3.8f, 0.38f), FRotator(0.0f, 0.0f, 7.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(17400.0f, 650.0f, 2550.0f), FVector(1.0f, 2.8f, 0.32f), FRotator(0.0f, 0.0f, -6.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(18100.0f, 0.0f, 1500.0f), FVector(0.20f, 7.0f, 0.20f), FRotator::ZeroRotator, VeilObsidianMaterial);
+
+	// Familiar human walkway and expedition equipment provide scale against the void.
+	SpawnVisualShape(Cube, FVector(16000.0f, 0.0f, 790.0f), FVector(16.0f, 2.4f, 0.08f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(16000.0f, -245.0f, 900.0f), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(16000.0f, 245.0f, 900.0f), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(17400.0f, -280.0f, 900.0f), FVector(1.5f, 0.85f, 0.65f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cylinder, FVector(17400.0f, -280.0f, 1060.0f), FVector(0.5f, 0.5f, 1.2f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(17650.0f, -280.0f, 920.0f), FVector(0.12f, 0.12f, 1.0f), FRotator(0.0f, 0.0f, 25.0f), EmissiveTechnologyMaterial);
+	SpawnCathedralGlyph(FVector(16000.0f, -255.0f, 1420.0f), 150.0f, 1.0f);
+	SpawnCathedralGlyph(FVector(17600.0f, -255.0f, 1710.0f), 95.0f, 0.72f);
+	SpawnCathedralGlyph(FVector(18100.0f, -250.0f, 1490.0f), 210.0f, 1.35f);
+
+	SpawnVisualLight(FVector(15800.0f, 0.0f, 1350.0f), FLinearColor(0.42f, 0.56f, 1.0f), 700.0f, 1000.0f);
+	SpawnVisualLight(FVector(17900.0f, 0.0f, 1000.0f), FLinearColor(0.72f, 0.82f, 1.0f), 420.0f, 650.0f);
+	SpawnVisualDust(FVector(15800.0f, 0.0f, 1600.0f), 1.4f);
+	SpawnVisualDust(FVector(17700.0f, 260.0f, 1250.0f), 0.9f);
+	SpawnLabel(FVector(15700.0f, -1320.0f, 2700.0f), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
+}
+
+void AAHChapterOneDirector::BuildPresentDayArtTarget()
+{
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	SpawnVisualShape(Cube, FVector(30000.0f, 0.0f, -60.0f), FVector(18.0f, 10.0f, 0.08f), FRotator::ZeroRotator, ConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(30200.0f, -850.0f, 260.0f), FVector(5.0f, 0.08f, 2.6f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(30200.0f, 850.0f, 260.0f), FVector(5.0f, 0.08f, 2.6f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(29700.0f, 540.0f, 120.0f), FVector(0.8f, 0.65f, 0.35f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(29700.0f, 540.0f, 240.0f), FVector(0.25f, 0.55f, 0.03f), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
+	SpawnVisualShape(Cube, FVector(29900.0f, 0.0f, 150.0f), FVector(2.3f, 1.0f, 0.12f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(29900.0f, 0.0f, 230.0f), FVector(0.12f, 0.82f, 0.72f), FRotator::ZeroRotator, HumanMetalMaterial);
+
+	// Existing mannequin assets are used as an honest character scaffold; final Lucian/Maya
+	// meshes, hair, paint, gauntlets and facial animation remain explicit external art work.
+	SpawnVisualCharacter(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"), TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_02_New.MI_Manny_02_New"), FVector(29780.0f, -240.0f, 120.0f), FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("LucianPresentDay")));
+	SpawnVisualCharacter(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"), TEXT("/Game/Characters/Mannequins/Materials/Quinn/MI_Quinn_02.MI_Quinn_02"), FVector(30000.0f, 250.0f, 120.0f), FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("MayaPresentDay")));
+	SpawnVisualLight(FVector(29700.0f, -500.0f, 500.0f), FLinearColor(0.52f, 0.64f, 1.0f), 700.0f, 900.0f);
+	SpawnVisualLight(FVector(30250.0f, 420.0f, 330.0f), FLinearColor(1.0f, 0.42f, 0.16f), 260.0f, 500.0f);
+	SpawnLabel(FVector(30000.0f, -1050.0f, 520.0f), TEXT("PRESENT DAY / UNS VIGIL"), FColor(184, 202, 214), 105.0f);
+}
+
+AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath, const FVector& Location, const FVector& Scale, const FRotator& Rotation, UMaterialInterface* MaterialOverride)
+{
+	if (!GetWorld() || !MeshPath)
+	{
+		return nullptr;
+	}
+	UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath);
+	if (!Mesh)
+	{
+		return nullptr;
+	}
+	AStaticMeshActor* Shape = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(Rotation, Location, Scale));
+	if (Shape && Shape->GetStaticMeshComponent())
+	{
+		UStaticMeshComponent* Component = Shape->GetStaticMeshComponent();
+		Component->SetStaticMesh(Mesh);
+		Component->SetMobility(EComponentMobility::Movable);
+		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Component->SetCanEverAffectNavigation(false);
+		Shape->Tags.Add(FName(TEXT("Phase4Visual")));
+		if (MaterialOverride || BlockMaterial)
+		{
+			Component->SetMaterial(0, MaterialOverride ? MaterialOverride : BlockMaterial.Get());
+		}
+	}
+	return Shape;
+}
+
+void AAHChapterOneDirector::SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (APointLight* PointLight = GetWorld()->SpawnActor<APointLight>(APointLight::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams))
+	{
+		PointLight->SetMobility(EComponentMobility::Movable);
+		if (UPointLightComponent* Light = Cast<UPointLightComponent>(PointLight->GetLightComponent()))
+		{
+			Light->SetLightColor(Color);
+			Light->SetIntensity(Intensity);
+			Light->SetAttenuationRadius(Radius);
+			Light->SetCastShadows(false);
+		}
+	}
+}
+
+void AAHChapterOneDirector::SpawnVisualDust(const FVector& Location, float Scale)
+{
+	// Keep the atmosphere hook deliberately asset-free. The approved prototype dust
+	// emitter is a Stateless Niagara asset that asserts while deserializing in the
+	// installed Mac package; fog, layered silhouettes, and practical lights provide
+	// the target's depth cue until a cooked-safe authored emitter replaces it.
+	(void)Location;
+	(void)Scale;
+}
+
+void AAHChapterOneDirector::SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale)
+{
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const float SafeScale = FMath::Max(0.1f, Scale);
+	// Original glyph grammar: a central axis, a crossbar, four interrupted radial
+	// segments, and two short orbit marks. It is deliberately made from simple
+	// primitives so the language can scale from terminals to monumental surfaces.
+	SpawnVisualShape(Cube, Location, FVector(0.08f, 0.08f, 0.80f * SafeScale), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
+	SpawnVisualShape(Cube, Location, FVector(0.08f, 0.72f * SafeScale, 0.08f), FRotator(0.0f, 0.0f, 90.0f), EmissiveTechnologyMaterial);
+	for (int32 Index = 0; Index < 8; ++Index)
+	{
+		const float Angle = Index * 45.0f;
+		const float Radians = FMath::DegreesToRadians(Angle);
+		const FVector Offset(0.0f, FMath::Sin(Radians) * Radius * SafeScale, FMath::Cos(Radians) * Radius * SafeScale);
+		SpawnVisualShape(Cube, Location + Offset, FVector(0.06f, 0.34f * SafeScale, 0.06f), FRotator(0.0f, 0.0f, Angle), CathedralMaterial);
+	}
+}
+
+ASkeletalMeshActor* AAHChapterOneDirector::SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId)
+{
+	if (!GetWorld() || !MeshPath)
+	{
+		return nullptr;
+	}
+	USkeletalMesh* SkeletalMesh = LoadObject<USkeletalMesh>(nullptr, MeshPath);
+	UMaterialInterface* Material = MaterialPath ? LoadObject<UMaterialInterface>(nullptr, MaterialPath) : nullptr;
+	if (!SkeletalMesh)
+	{
+		return nullptr;
+	}
+	ASkeletalMeshActor* Character = GetWorld()->SpawnActor<ASkeletalMeshActor>(ASkeletalMeshActor::StaticClass(), Location, Rotation);
+	if (!Character || !Character->GetSkeletalMeshComponent())
+	{
+		return Character;
+	}
+	USkeletalMeshComponent* Mesh = Character->GetSkeletalMeshComponent();
+	Mesh->SetSkeletalMesh(SkeletalMesh);
+	Mesh->SetRelativeScale3D(FVector(Scale));
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->SetCanEverAffectNavigation(false);
+	if (Material)
+	{
+		Mesh->SetMaterial(0, Material);
+	}
+	if (DisplayId != NAME_None)
+	{
+		Character->Tags.Add(DisplayId);
+	}
+	return Character;
+}
+
 void AAHChapterOneDirector::BuildMissionActors()
 {
 	if (bMissionActorsBuilt)
@@ -654,8 +944,34 @@ void AAHChapterOneDirector::SpawnPresentDayScene()
 	SpawnBlock(FVector(30000.0f, 0.0f, -80.0f), FVector(18.0f, 10.0f, 0.8f));
 	SpawnBlock(FVector(30200.0f, -850.0f, 250.0f), FVector(5.0f, 0.25f, 2.5f));
 	SpawnBlock(FVector(30200.0f, 850.0f, 250.0f), FVector(5.0f, 0.25f, 2.5f));
-	SpawnFriendly(FVector(30000.0f, 250.0f, 120.0f), FName(TEXT("MayaSol")));
-	SpawnLabel(FVector(30000.0f, -1000.0f, 500.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220));
+	SpawnLabel(FVector(30000.0f, -1000.0f, 500.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220), 105.0f);
+}
+
+void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
+{
+	if (TargetName.Equals(TEXT("Erebus"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Battlefield"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("M91"), ESearchCase::IgnoreCase))
+	{
+		StartStage(EAHChapterStage::ErebusOpening);
+		TeleportPlayer(FVector(600.0f, -250.0f, 150.0f), FRotator::ZeroRotator);
+	}
+	else if (TargetName.Equals(TEXT("Transit"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("TransitStation"), ESearchCase::IgnoreCase))
+	{
+		StartStage(EAHChapterStage::TransitStation);
+		TeleportPlayer(FVector(3150.0f, -100.0f, 150.0f), FRotator::ZeroRotator);
+	}
+	else if (TargetName.Equals(TEXT("Cathedral"), ESearchCase::IgnoreCase))
+	{
+		StartStage(EAHChapterStage::CathedralInterior);
+		TeleportPlayer(FVector(15100.0f, -100.0f, 850.0f), FRotator::ZeroRotator);
+	}
+	else if (TargetName.Equals(TEXT("Present"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("PresentDay"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("LucianMaya"), ESearchCase::IgnoreCase))
+	{
+		StartStage(EAHChapterStage::TenYearsLater);
+		TeleportPlayer(FVector(29200.0f, 0.0f, 150.0f), FRotator::ZeroRotator);
+	}
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] activated=%s"), *TargetName);
+	#endif
 }
 
 void AAHChapterOneDirector::SpawnCathedralTerminal()
@@ -684,7 +1000,26 @@ void AAHChapterOneDirector::SpawnManticore()
 	if (Manticore)
 	{
 		Manticore->VehicleMesh->SetStaticMesh(BlockMesh);
-		Manticore->VehicleMesh->SetMaterial(0, BlockMaterial);
+		Manticore->VehicleMesh->SetMaterial(0, HumanMetalMaterial ? HumanMetalMaterial : BlockMaterial);
+		if (Manticore->HullArmor)
+		{
+			Manticore->HullArmor->SetMaterial(0, ConcreteMaterial ? ConcreteMaterial : BlockMaterial);
+		}
+		if (Manticore->TurretAssembly)
+		{
+			Manticore->TurretAssembly->SetMaterial(0, HumanMetalMaterial ? HumanMetalMaterial : BlockMaterial);
+		}
+		if (Manticore->MountedWeapon)
+		{
+			Manticore->MountedWeapon->SetMaterial(0, EmissiveTechnologyMaterial ? EmissiveTechnologyMaterial : HumanMetalMaterial);
+		}
+		for (UStaticMeshComponent* Wheel : Manticore->WheelVisuals)
+		{
+			if (Wheel)
+			{
+				Wheel->SetMaterial(0, VeilObsidianMaterial ? VeilObsidianMaterial : BlockMaterial);
+			}
+		}
 		Manticore->OnDriverEntered.AddDynamic(this, &AAHChapterOneDirector::HandleVehicleEntered);
 		Manticore->OnDriverExited.AddDynamic(this, &AAHChapterOneDirector::HandleVehicleExited);
 		Manticore->OnVehicleDestroyed.AddDynamic(this, &AAHChapterOneDirector::HandleVehicleDestroyed);
@@ -714,7 +1049,8 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		SunLight->SetMobility(EComponentMobility::Movable);
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
-			SunComponent->SetIntensity(3.5f);
+			SunComponent->SetIntensity(2.2f);
+			SunComponent->SetLightColor(FLinearColor(0.64f, 0.70f, 0.82f));
 			SunComponent->SetAtmosphereSunLight(true);
 		}
 	}
@@ -730,11 +1066,23 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Real-time capture sources ambient from the atmosphere; a static capture of an
 			// unlit scene would just bake black.
 			SkyComponent->SetRealTimeCapture(true);
-			SkyComponent->SetIntensity(1.0f);
+			SkyComponent->SetIntensity(0.45f);
 		}
 	}
 
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Greybox] lighting spawned sun+sky"));
+	if (AExponentialHeightFog* Fog = GetWorld()->SpawnActor<AExponentialHeightFog>(AExponentialHeightFog::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+	{
+		if (UExponentialHeightFogComponent* FogComponent = Fog->GetComponent())
+		{
+			FogComponent->SetMobility(EComponentMobility::Movable);
+			FogComponent->SetFogDensity(0.012f);
+			FogComponent->SetFogHeightFalloff(0.28f);
+			FogComponent->SetFogInscatteringColor(FLinearColor(0.045f, 0.060f, 0.085f));
+			FogComponent->SetStartDistance(650.0f);
+		}
+	}
+
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] lighting spawned cold daylight, war fog, and restrained practicals"));
 }
 
 void AAHChapterOneDirector::SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation, UMaterialInterface* MaterialOverride)
@@ -815,13 +1163,13 @@ void AAHChapterOneDirector::SpawnBattlefieldSimulation()
 	}
 }
 
-void AAHChapterOneDirector::SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color)
+void AAHChapterOneDirector::SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color, float WorldSize, const FRotator& Rotation)
 {
-	if (ATextRenderActor* Label = GetWorld()->SpawnActor<ATextRenderActor>(ATextRenderActor::StaticClass(), Location, FRotator(0.0f, 90.0f, 0.0f)))
+	if (ATextRenderActor* Label = GetWorld()->SpawnActor<ATextRenderActor>(ATextRenderActor::StaticClass(), Location, Rotation))
 	{
 		Label->GetTextRender()->SetText(FText::FromString(Text));
 		Label->GetTextRender()->SetTextRenderColor(Color);
-		Label->GetTextRender()->SetWorldSize(90.0f);
+		Label->GetTextRender()->SetWorldSize(WorldSize);
 		Label->GetTextRender()->SetHorizontalAlignment(EHTA_Center);
 		Label->GetTextRender()->SetVerticalAlignment(EVRTA_TextCenter);
 	}

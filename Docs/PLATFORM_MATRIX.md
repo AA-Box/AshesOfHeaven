@@ -2,11 +2,25 @@
 
 This matrix is evidence-gated. `UNTESTED` means the project has source/config support but no verified interactive run on that target. `BLOCKED BY TOOLCHAIN` means validation cannot be performed on the current build machine. Do not change a cell to `PASS` without a dated device/build record.
 
-The current Phase 3.2 post-fix recertification is additionally blocked by the managed macOS execution environment: fresh Unreal commandlet startup, UBT/UAT external cache/log access, fresh packaging, and post-fix normal-renderer launch were not completed. The earlier dated Mac package record below is historical pre-fix evidence and does not certify the current working tree.
+## Current Phase 4 source target — 2026-08-21
+
+The current source includes four real in-engine visual target areas and the stable preview launcher `Scripts/Run-Mac-ArtTarget.sh`. The visual target layer is non-colliding and preserves the Phase 3 gameplay/nav architecture. Current source-level targets are: Erebus battlefield, Transit Station, Cathedral interior, Present-day Lucian/Maya, M91 framing, faction-aware temporary combatant silhouettes, original Cathedral glyph scaffolding, and a scalable HUD.
+
+The table below remains evidence-gated. The current Phase 4 machine evidence is recorded immediately below; the older Phase 3.2/3.3 records remain historical. Subjective visual match, screenshots, device performance, and human interactive play remain `UNTESTED` unless explicitly recorded.
+
+## Current Phase 4 machine evidence — 2026-08-21
+
+- Development Editor: **PASS** — UE 5.8 Mac arm64 Development compile/link succeeded.
+- Fresh commandlet: **PASS** — 14/14 checks, 0 failed checks, 0 errors, 1 known HUD-test cleanup warning.
+- Full automation: **PASS** — 15/15 project tests completed with `Result={Success}`, exit code 0.
+- Development package: **PASS** — `Builds/macOS-Development/AshesOfHeaven.app`; deep strict codesign passed.
+- Shipping package: **PASS** — `Builds/macOS/AshesOfHeaven.app`; deep strict codesign passed.
+- Normal Metal launch: **PASS** for process-level 15-second smoke on both packages, without `-nullrhi`; all five Development art-target activations (`Erebus`, `Transit`, `Cathedral`, `LucianMaya`, `M91`) also stayed alive for 8 seconds and logged their matching target marker.
+- Gameplay, interactive combat/death/restart/pickup/Manticore/checkpoint progression, screenshots, subjective art match, and target-device performance: **UNTESTED**.
 
 | Feature | Windows | macOS | Android | iOS |
 | --- | --- | --- | --- | --- |
-| Launch | UNTESTED | BLOCKED BY EXECUTION ENVIRONMENT — fresh post-fix package unavailable; stale executable aborted on direct normal-renderer launch (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Launch | UNTESTED | PASS — fresh Development and Shipping packages stayed alive for 15-second normal Metal process smokes (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Main menu | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | New game | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Save/load | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
@@ -22,7 +36,7 @@ The current Phase 3.2 post-fix recertification is additionally blocked by the ma
 | Checkpoints | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Chapter completion | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Suspend/resume | N/A | N/A | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
-| Packaging | BLOCKED BY TOOLCHAIN | BLOCKED BY EXECUTION ENVIRONMENT — fresh post-fix cook/package could not access protected Unreal AutomationTool paths (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Packaging | BLOCKED BY TOOLCHAIN | PASS — fresh Development and Shipping cook/package completed; deep strict codesign passed (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 
 ## Historical pre-fix Mac evidence record
 

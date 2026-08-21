@@ -12,6 +12,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/StaticMesh.h"
 
 AAHManticoreVehicle::AAHManticoreVehicle()
 {
@@ -21,6 +22,41 @@ AAHManticoreVehicle::AAHManticoreVehicle()
 	VehicleMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	VehicleMesh->SetCollisionResponseToAllChannels(ECR_Block);
 	VehicleMesh->SetRelativeScale3D(FVector(2.8f, 1.45f, 0.75f));
+
+	const UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	const UStaticMesh* CylinderMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	HullArmor = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HullArmor"));
+	HullArmor->SetupAttachment(VehicleMesh);
+	HullArmor->SetStaticMesh(const_cast<UStaticMesh*>(CubeMesh));
+	HullArmor->SetRelativeLocation(FVector(35.0f, 0.0f, 82.0f));
+	HullArmor->SetRelativeScale3D(FVector(1.65f, 0.92f, 0.26f));
+	HullArmor->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	TurretAssembly = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TurretAssembly"));
+	TurretAssembly->SetupAttachment(VehicleMesh);
+	TurretAssembly->SetStaticMesh(const_cast<UStaticMesh*>(CylinderMesh));
+	TurretAssembly->SetRelativeLocation(FVector(52.0f, 0.0f, 112.0f));
+	TurretAssembly->SetRelativeScale3D(FVector(0.68f, 0.68f, 0.25f));
+	TurretAssembly->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	MountedWeapon = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MountedWeapon"));
+	MountedWeapon->SetupAttachment(VehicleMesh);
+	MountedWeapon->SetStaticMesh(const_cast<UStaticMesh*>(CubeMesh));
+	MountedWeapon->SetRelativeLocation(FVector(122.0f, 0.0f, 116.0f));
+	MountedWeapon->SetRelativeScale3D(FVector(1.35f, 0.14f, 0.14f));
+	MountedWeapon->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		UStaticMeshComponent* Wheel = CreateDefaultSubobject<UStaticMeshComponent>(*FString::Printf(TEXT("WheelVisual_%d"), Index));
+		Wheel->SetupAttachment(VehicleMesh);
+		Wheel->SetStaticMesh(const_cast<UStaticMesh*>(CylinderMesh));
+		Wheel->SetRelativeLocation(FVector(Index < 2 ? 72.0f : -72.0f, Index % 2 == 0 ? -118.0f : 118.0f, -38.0f));
+		Wheel->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+		Wheel->SetRelativeScale3D(FVector(0.35f, 0.35f, 0.18f));
+		Wheel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		WheelVisuals.Add(Wheel);
+	}
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);

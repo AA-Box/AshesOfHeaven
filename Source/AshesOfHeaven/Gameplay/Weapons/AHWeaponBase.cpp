@@ -3,12 +3,15 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Engine/DamageEvents.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Materials/MaterialInterface.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 
@@ -28,6 +31,18 @@ AAHWeaponBase::AAHWeaponBase()
 	{
 		WeaponMesh->SetSkeletalMesh(RifleMesh);
 	}
+	CapacitorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MagneticCapacitor"));
+	CapacitorMesh->SetupAttachment(WeaponMesh);
+	CapacitorMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+	CapacitorMesh->SetRelativeLocation(FVector(0.0f, -28.0f, -8.0f));
+	CapacitorMesh->SetRelativeScale3D(FVector(0.18f, 0.62f, 0.10f));
+	CapacitorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CapacitorMesh->SetOnlyOwnerSee(true);
+	CapacitorMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	if (UMaterialInterface* RifleMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle")))
+	{
+		CapacitorMesh->SetMaterial(0, RifleMaterial);
+	}
 }
 
 void AAHWeaponBase::BeginPlay()
@@ -42,7 +57,11 @@ void AAHWeaponBase::BeginPlay()
 
 FRotator AAHWeaponBase::GetRestRotation() const
 {
-	return bUsingFirstPersonHold ? FirstPersonHoldRotation : FRotator::ZeroRotator;
+	if (bUsingFirstPersonHold)
+	{
+		return FirstPersonHoldRotation;
+	}
+	return bUsingThirdPersonHold ? ThirdPersonHoldRotation : FRotator::ZeroRotator;
 }
 
 void AAHWeaponBase::Tick(float DeltaSeconds)
@@ -79,20 +98,31 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 
 	if (AAHCombatantCharacter* Combatant = GetCombatantOwner())
 	{
-		USkeletalMeshComponent* AttachTarget = Combatant->GetFirstPersonMesh();
-		if (!Combatant->IsPlayerControlled())
+		const bool bIsPlayer = Combatant->IsPlayerControlled();
+		USkeletalMeshComponent* AttachTarget = bIsPlayer ? Combatant->GetFirstPersonMesh() : Combatant->GetMesh();
+		WeaponMesh->SetOnlyOwnerSee(bIsPlayer);
+		WeaponMesh->FirstPersonPrimitiveType = bIsPlayer ? EFirstPersonPrimitiveType::FirstPerson : EFirstPersonPrimitiveType::WorldSpaceRepresentation;
+		if (CapacitorMesh)
 		{
-			AttachTarget = Combatant->GetMesh();
-			WeaponMesh->SetOnlyOwnerSee(false);
+			CapacitorMesh->SetOnlyOwnerSee(bIsPlayer);
+			CapacitorMesh->FirstPersonPrimitiveType = bIsPlayer ? EFirstPersonPrimitiveType::FirstPerson : EFirstPersonPrimitiveType::WorldSpaceRepresentation;
+		}
+		if (!bIsPlayer)
+		{
+			bUsingFirstPersonHold = false;
 		}
 		const FName GripSocket(TEXT("HandGrip_R"));
 		if (AttachTarget && AttachTarget->DoesSocketExist(GripSocket))
 		{
 			bUsingFirstPersonHold = false;
+			bUsingThirdPersonHold = false;
 			if (WeaponMesh->GetAttachParent() != AttachTarget)
 			{
 				WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocket);
 			}
+			WeaponMesh->SetRelativeLocation(FVector::ZeroVector);
+			WeaponMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			WeaponMesh->SetRelativeScale3D(FVector::OneVector);
 		}
 		else if (AttachTarget)
 		{
@@ -106,11 +136,11 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 			{
 				WeaponMesh->AttachToComponent(FallbackParent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, NAME_None);
 			}
-			// Only the local first person view gets the hold pose. An NPC weapon just rests on
-			// the body block; offsetting it there only detaches it from the soldier carrying it.
 			bUsingFirstPersonHold = FallbackParent != AttachTarget;
-			WeaponMesh->SetRelativeLocation(bUsingFirstPersonHold ? FirstPersonHoldOffset : FVector::ZeroVector);
-			WeaponMesh->SetRelativeRotation(bUsingFirstPersonHold ? FirstPersonHoldRotation : FRotator::ZeroRotator);
+			bUsingThirdPersonHold = !bUsingFirstPersonHold;
+			WeaponMesh->SetRelativeLocation(bUsingFirstPersonHold ? FirstPersonHoldOffset : ThirdPersonHoldOffset);
+			WeaponMesh->SetRelativeRotation(bUsingFirstPersonHold ? FirstPersonHoldRotation : ThirdPersonHoldRotation);
+			WeaponMesh->SetRelativeScale3D(bUsingFirstPersonHold ? FirstPersonHoldScale : FVector::OneVector);
 		}
 	}
 }

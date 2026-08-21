@@ -8,6 +8,7 @@
 
 class USceneComponent;
 class USkeletalMeshComponent;
+class UStaticMeshComponent;
 class USoundBase;
 class AAHCombatantCharacter;
 
@@ -24,6 +25,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UStaticMeshComponent> CapacitorMesh;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon")
 	FName WeaponId = FName(TEXT("M91_Revenant"));
@@ -130,9 +134,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	FRotator FirstPersonHoldRotation = FRotator(0.0f, -90.0f, 0.0f);
 
+	/** Greybox fallback pose used when a third-person hand socket is unavailable. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector ThirdPersonHoldOffset = FVector(20.0f, 24.0f, 42.0f);
+
+	/** The greybox rifle is authored along Y and must face the character's forward axis. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FRotator ThirdPersonHoldRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	/** Keep the prototype rifle readable without occupying the lower-right third of the view. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector FirstPersonHoldScale = FVector(0.78f);
+
 	USceneComponent* GetFirstPersonHoldParent(AAHCombatantCharacter* Combatant, USkeletalMeshComponent* AttachTarget) const;
 
 	bool bUsingFirstPersonHold = false;
+	bool bUsingThirdPersonHold = false;
 
 	FRotator GetRestRotation() const;
 
