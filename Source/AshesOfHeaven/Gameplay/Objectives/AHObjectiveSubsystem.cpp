@@ -59,6 +59,11 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 void UAHObjectiveSubsystem::RestoreState(int32 ObjectiveIndex)
 {
 	CurrentObjectiveIndex = FMath::Clamp(ObjectiveIndex, 0, Objectives.Num());
+	CompletedObjectives.Reset();
+	for (int32 Index = 0; Index < CurrentObjectiveIndex && Objectives.IsValidIndex(Index); ++Index)
+	{
+		CompletedObjectives.Add(Objectives[Index].Id);
+	}
 	bMissionComplete = CurrentObjectiveIndex >= Objectives.Num();
 	if (bMissionComplete)
 	{

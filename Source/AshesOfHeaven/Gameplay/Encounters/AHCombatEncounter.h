@@ -60,6 +60,9 @@ protected:
 	UFUNCTION()
 	void OnEnemyDied();
 
+	UFUNCTION()
+	void OnEnemyDestroyed(AActor* DestroyedActor);
+
 	void CompleteEncounter();
 
 	UPROPERTY(Transient)

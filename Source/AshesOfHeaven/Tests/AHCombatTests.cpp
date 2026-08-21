@@ -7,7 +7,9 @@
 #include "Gameplay/Combat/AHGameplayTypes.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
+#include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -72,10 +74,35 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHObjectiveTransitionTest, "AshesOfHeaven.Comb
 bool FAHObjectiveTransitionTest::RunTest(const FString& Parameters)
 {
 	UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
-	TestEqual(TEXT("Five objectives are configured"), Objectives->GetObjectiveCount(), 5);
-	TestTrue(TEXT("First objective is active"), Objectives->IsCurrentObjective(FName(TEXT("ReachDefensivePosition"))));
-	TestTrue(TEXT("First objective completes through the real subsystem"), Objectives->CompleteObjective(FName(TEXT("ReachDefensivePosition"))));
-	TestTrue(TEXT("Second objective becomes active"), Objectives->IsCurrentObjective(FName(TEXT("EliminateVeilAssault"))));
+	const TArray<FName> ObjectiveChain = {
+		FName(TEXT("ReachDefensivePosition")),
+		FName(TEXT("EliminateVeilAssault")),
+		FName(TEXT("AdvanceThroughBreach")),
+		FName(TEXT("DefendEvacuationGate")),
+		FName(TEXT("ReachExtraction"))
+	};
+	TestEqual(TEXT("Five objectives are configured"), Objectives->GetObjectiveCount(), ObjectiveChain.Num());
+	for (int32 Index = 0; Index < ObjectiveChain.Num(); ++Index)
+	{
+		TestTrue(*FString::Printf(TEXT("Objective %d is active"), Index + 1), Objectives->IsCurrentObjective(ObjectiveChain[Index]));
+		TestTrue(*FString::Printf(TEXT("Objective %d completes"), Index + 1), Objectives->CompleteObjective(ObjectiveChain[Index]));
+	}
+	TestTrue(TEXT("Mission completion is reachable after the fifth objective"), Objectives->IsMissionComplete());
+	TestEqual(TEXT("All objectives are recorded as completed"), Objectives->GetCompletedObjectiveIds().Num(), ObjectiveChain.Num());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHObjectiveRestoreStateTest, "AshesOfHeaven.Combat.ObjectiveRestoreState", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHObjectiveRestoreStateTest::RunTest(const FString& Parameters)
+{
+	UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
+	Objectives->RestoreState(2);
+	TestTrue(TEXT("Checkpoint restores the current objective"), Objectives->IsCurrentObjective(FName(TEXT("AdvanceThroughBreach"))));
+	TestEqual(TEXT("Checkpoint restores completed objective history"), Objectives->GetCompletedObjectiveIds().Num(), 2);
+	TestFalse(TEXT("Partial checkpoint is not mission complete"), Objectives->IsMissionComplete());
+	Objectives->RestoreState(5);
+	TestTrue(TEXT("Completed checkpoint restores mission completion"), Objectives->IsMissionComplete());
+	TestEqual(TEXT("Completed checkpoint restores all objective history"), Objectives->GetCompletedObjectiveIds().Num(), 5);
 	return true;
 }
 
@@ -89,9 +116,10 @@ bool FAHCheckpointSerializationTest::RunTest(const FString& Parameters)
 	Save->CombatState.Armor = 41.0f;
 	Save->CombatState.Ammo.Magazine = 19;
 	Save->CombatState.Ammo.Reserve = 94;
-	Save->CombatState.Grenades = 1;
+	Save->CombatState.Grenades = 3;
 	Save->CombatState.ObjectiveIndex = 2;
 	Save->CombatState.CompletedEncounters.Add(FName(TEXT("Encounter_One")));
+	Save->CombatState.CompletedEncounters.Add(FName(TEXT("Encounter_Two")));
 
 	TArray<uint8> Bytes;
 	TestTrue(TEXT("Checkpoint save serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes));
@@ -102,8 +130,21 @@ bool FAHCheckpointSerializationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Checkpoint id survives serialization"), Loaded->CombatState.CheckpointId, FName(TEXT("Checkpoint_2")));
 		TestEqual(TEXT("Health survives serialization"), Loaded->CombatState.Health, 73.0f);
 		TestEqual(TEXT("Ammo survives serialization"), Loaded->CombatState.Ammo.Magazine, 19);
-		TestTrue(TEXT("Encounter progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_One"))));
+		TestEqual(TEXT("Grenade state survives serialization"), Loaded->CombatState.Grenades, 3);
+		TestEqual(TEXT("Objective state survives serialization"), Loaded->CombatState.ObjectiveIndex, 2);
+		TestTrue(TEXT("Encounter one progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_One"))));
+		TestTrue(TEXT("Encounter two progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_Two"))));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterConfigurationTest, "AshesOfHeaven.Combat.EncounterConfiguration", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHEncounterConfigurationTest::RunTest(const FString& Parameters)
+{
+	AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
+	TestTrue(TEXT("Encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
+	TestFalse(TEXT("New encounter is inactive"), Encounter->IsActive());
+	TestFalse(TEXT("New encounter is incomplete"), Encounter->IsComplete());
 	return true;
 }
 

@@ -71,6 +71,7 @@ void AAHCombatEncounter::ActivateEncounter()
 		{
 			ActiveEnemies.Add(Enemy);
 			Enemy->OnCombatantDeath.AddDynamic(this, &AAHCombatEncounter::OnEnemyDied);
+			Enemy->OnDestroyed.AddDynamic(this, &AAHCombatEncounter::OnEnemyDestroyed);
 		}
 		else if (UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
 		{
@@ -89,6 +90,26 @@ void AAHCombatEncounter::OnEnemyDied()
 	for (int32 Index = ActiveEnemies.Num() - 1; Index >= 0; --Index)
 	{
 		if (!IsValid(ActiveEnemies[Index]) || ActiveEnemies[Index]->IsCombatantDead())
+		{
+			ActiveEnemies.RemoveAt(Index);
+			if (UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
+			{
+				Platform->UnregisterActiveCombatant();
+			}
+		}
+	}
+
+	if (bActive && ActiveEnemies.IsEmpty())
+	{
+		CompleteEncounter();
+	}
+}
+
+void AAHCombatEncounter::OnEnemyDestroyed(AActor* DestroyedActor)
+{
+	for (int32 Index = ActiveEnemies.Num() - 1; Index >= 0; --Index)
+	{
+		if (!IsValid(ActiveEnemies[Index]) || ActiveEnemies[Index].Get() == DestroyedActor)
 		{
 			ActiveEnemies.RemoveAt(Index);
 			if (UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))

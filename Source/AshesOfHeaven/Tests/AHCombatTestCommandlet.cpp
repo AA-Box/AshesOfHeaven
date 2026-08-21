@@ -4,6 +4,8 @@
 #include "Gameplay/Combat/AHGameplayTypes.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -118,10 +120,37 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		const FString TestName = TEXT("AshesOfHeaven.Combat.ObjectiveTransitions");
 		const int32 FailureCountBefore = FailureCount;
 		UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
-		Expect(TestName, TEXT("five objectives are configured"), Objectives->GetObjectiveCount() == 5);
-		Expect(TestName, TEXT("first objective is active"), Objectives->IsCurrentObjective(FName(TEXT("ReachDefensivePosition"))));
-		Expect(TestName, TEXT("first objective completes through the real subsystem"), Objectives->CompleteObjective(FName(TEXT("ReachDefensivePosition"))));
-		Expect(TestName, TEXT("second objective becomes active"), Objectives->IsCurrentObjective(FName(TEXT("EliminateVeilAssault"))));
+		const TArray<FName> ObjectiveChain = {
+			FName(TEXT("ReachDefensivePosition")),
+			FName(TEXT("EliminateVeilAssault")),
+			FName(TEXT("AdvanceThroughBreach")),
+			FName(TEXT("DefendEvacuationGate")),
+			FName(TEXT("ReachExtraction"))
+		};
+		Expect(TestName, TEXT("five objectives are configured"), Objectives->GetObjectiveCount() == ObjectiveChain.Num());
+		for (int32 Index = 0; Index < ObjectiveChain.Num(); ++Index)
+		{
+			Expect(TestName, TEXT("objective chain stays ordered and active"), Objectives->IsCurrentObjective(ObjectiveChain[Index]));
+			Expect(TestName, TEXT("objective completes through the real subsystem"), Objectives->CompleteObjective(ObjectiveChain[Index]));
+		}
+		Expect(TestName, TEXT("mission completion is reachable"), Objectives->IsMissionComplete());
+		Expect(TestName, TEXT("all five objectives are recorded"), Objectives->GetCompletedObjectiveIds().Num() == ObjectiveChain.Num());
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Combat.ObjectiveRestoreState")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Combat.ObjectiveRestoreState");
+		const int32 FailureCountBefore = FailureCount;
+		UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
+		Objectives->RestoreState(2);
+		Expect(TestName, TEXT("partial checkpoint restores current objective"), Objectives->IsCurrentObjective(FName(TEXT("AdvanceThroughBreach"))));
+		Expect(TestName, TEXT("partial checkpoint restores objective history"), Objectives->GetCompletedObjectiveIds().Num() == 2);
+		Expect(TestName, TEXT("partial checkpoint is not complete"), !Objectives->IsMissionComplete());
+		Objectives->RestoreState(5);
+		Expect(TestName, TEXT("completed checkpoint restores mission completion"), Objectives->IsMissionComplete());
+		Expect(TestName, TEXT("completed checkpoint restores all objective history"), Objectives->GetCompletedObjectiveIds().Num() == 5);
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}
@@ -137,9 +166,10 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		Save->CombatState.Armor = 41.0f;
 		Save->CombatState.Ammo.Magazine = 19;
 		Save->CombatState.Ammo.Reserve = 94;
-		Save->CombatState.Grenades = 1;
+		Save->CombatState.Grenades = 3;
 		Save->CombatState.ObjectiveIndex = 2;
 		Save->CombatState.CompletedEncounters.Add(FName(TEXT("Encounter_One")));
+		Save->CombatState.CompletedEncounters.Add(FName(TEXT("Encounter_Two")));
 		TArray<uint8> Bytes;
 		Expect(TestName, TEXT("checkpoint save serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes));
 		UAHSaveGame* Loaded = Cast<UAHSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
@@ -149,8 +179,22 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 			Expect(TestName, TEXT("checkpoint id survives serialization"), Loaded->CombatState.CheckpointId == FName(TEXT("Checkpoint_2")));
 			Expect(TestName, TEXT("health survives serialization"), FMath::IsNearlyEqual(Loaded->CombatState.Health, 73.0f));
 			Expect(TestName, TEXT("ammo survives serialization"), Loaded->CombatState.Ammo.Magazine == 19);
-			Expect(TestName, TEXT("encounter progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_One"))));
+			Expect(TestName, TEXT("grenade state survives serialization"), Loaded->CombatState.Grenades == 3);
+			Expect(TestName, TEXT("objective state survives serialization"), Loaded->CombatState.ObjectiveIndex == 2);
+			Expect(TestName, TEXT("encounter one progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_One"))));
+			Expect(TestName, TEXT("encounter two progression survives serialization"), Loaded->CombatState.CompletedEncounters.Contains(FName(TEXT("Encounter_Two"))));
 		}
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Combat.EncounterConfiguration")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Combat.EncounterConfiguration");
+		const int32 FailureCountBefore = FailureCount;
+		AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
+		Expect(TestName, TEXT("encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
+		Expect(TestName, TEXT("new encounter starts incomplete and inactive"), !Encounter->IsActive() && !Encounter->IsComplete());
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}
