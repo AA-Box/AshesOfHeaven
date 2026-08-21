@@ -120,6 +120,10 @@ Codex did not claim a human interactive playthrough. A human tester must run the
 
 The human tester should ignore ugly geometry, placeholder animation, lighting, and sound when judging Phase 3 acceptance. These interactive combat/death/restart/pickup/Manticore/checkpoint behaviors remain `UNTESTED` in the platform matrix until that playthrough is performed.
 
+### Validation environment note — 2026-08-21
+
+An interactive launch attempt was made with the packaged Shipping app through macOS LaunchServices. The process created an 800×632 game window, but it initially opened on an offscreen display. After moving it to the primary display, CoreGraphics confirmed the window while macOS screen capture still returned `could not create image from display`. Without an observable viewport, no honest gameplay input/feel/objective/completion result can be recorded from this environment. The app was stopped cleanly; no crash or reproducible gameplay defect was observed.
+
 ## Next
 
 Human playthrough and platform evidence are the remaining Phase 3 acceptance work. Do not begin Chapter Two or Phase 4 until that evidence is recorded.
