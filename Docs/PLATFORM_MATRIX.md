@@ -38,7 +38,7 @@ Interactive combat and full end-to-end checkpoint progression still require a hu
 ## Current Phase 3.2 evidence record
 
 - Date: 2026-08-21.
-- Source target: `4aa373ad79a378f0f0daba3a449ff9df93752e14` plus uncommitted development-only telemetry and the playtest launcher script.
+- Source target: `4aa373ad79a378f0f0daba3a449ff9df93752e14`, with the development-only telemetry and playtest launcher included in the Phase 3.2 publication.
 - Fresh commandlet and automation: blocked before Unreal startup by macOS LaunchServices/HIServices XPC errors; no test result claimed.
 - Development Editor: blocked by protected UnrealBuildTool trace/log paths and then a recursive UBA executor failure after safe path overrides.
 - Mac Shipping: blocked by protected Unreal AutomationTool log/config/cache paths; no fresh app produced.
