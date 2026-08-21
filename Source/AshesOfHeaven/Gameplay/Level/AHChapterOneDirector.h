@@ -82,6 +82,7 @@ public:
 
 protected:
 	void BuildGreybox();
+	void SpawnGreyboxLighting();
 	void BuildMissionGraph();
 	void BuildMissionActors();
 	void ConfigureObjectives();
@@ -100,7 +101,6 @@ protected:
 	AAHChapterTrigger* SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id);
 	AAHCombatEncounter* SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns, bool bAutoActivate = false);
 	void SpawnFriendly(const FVector& Location, FName DisplayId = NAME_None);
-	void SpawnNavigationCoverage();
 	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White);
 	void TeleportPlayer(const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
 	UFUNCTION()
