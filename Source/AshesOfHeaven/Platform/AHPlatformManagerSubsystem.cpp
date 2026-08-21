@@ -284,6 +284,10 @@ void UAHPlatformManagerSubsystem::BuildRuntimeInputActions()
 	WeaponNextAction = CreateAction(TEXT("IA_WeaponNext"), EInputActionValueType::Boolean);
 	WeaponPreviousAction = CreateAction(TEXT("IA_WeaponPrevious"), EInputActionValueType::Boolean);
 	PauseAction = CreateAction(TEXT("IA_Pause"), EInputActionValueType::Boolean);
+	VehicleAccelerateAction = CreateAction(TEXT("IA_VehicleAccelerate"), EInputActionValueType::Boolean);
+	VehicleBrakeAction = CreateAction(TEXT("IA_VehicleBrake"), EInputActionValueType::Boolean);
+	VehicleExitAction = CreateAction(TEXT("IA_VehicleExit"), EInputActionValueType::Boolean);
+	VehicleSwitchSeatAction = CreateAction(TEXT("IA_VehicleSwitchSeat"), EInputActionValueType::Boolean);
 
 	AddInputMapping(MoveAction, EKeys::W, false, true);
 	AddInputMapping(MoveAction, EKeys::S, true, true);
@@ -321,6 +325,14 @@ void UAHPlatformManagerSubsystem::BuildRuntimeInputActions()
 	AddInputMapping(WeaponPreviousAction, EKeys::Gamepad_DPad_Left);
 	AddInputMapping(PauseAction, EKeys::Escape);
 	AddInputMapping(PauseAction, EKeys::Gamepad_Special_Right);
+	AddInputMapping(VehicleAccelerateAction, EKeys::W);
+	AddInputMapping(VehicleAccelerateAction, EKeys::Gamepad_RightTrigger);
+	AddInputMapping(VehicleBrakeAction, EKeys::S);
+	AddInputMapping(VehicleBrakeAction, EKeys::Gamepad_LeftTrigger);
+	AddInputMapping(VehicleExitAction, EKeys::F);
+	AddInputMapping(VehicleExitAction, EKeys::Gamepad_FaceButton_Left);
+	AddInputMapping(VehicleSwitchSeatAction, EKeys::Q);
+	AddInputMapping(VehicleSwitchSeatAction, EKeys::Gamepad_DPad_Up);
 }
 
 void UAHPlatformManagerSubsystem::AddInputMapping(UInputAction* Action, const FKey& Key, bool bNegate, bool bSwizzleToY)

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "AHGameplayTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -76,6 +77,9 @@ struct ASHESOFHEAVEN_API FAHCombatCheckpointState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
 	TArray<FName> CompletedEncounters;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	FAHChapterState ChapterState;
 };
 
 UCLASS()

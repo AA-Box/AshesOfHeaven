@@ -16,7 +16,7 @@ class ASHESOFHEAVEN_API UAHSaveGame : public USaveGame
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Save")
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 2;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Save")
 	FString MapName;

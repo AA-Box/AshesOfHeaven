@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "AshesOfHeavenPlayerController.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Platform/AHPlatformTypes.h"
 #include "AHCombatPlayerController.generated.h"
 
 class AAHCombatPlayerCharacter;
 class AAHCombatHUD;
+class AAHManticoreVehicle;
+class AAHChapterOneDirector;
 enum class EAHMobileTouchAction : uint8;
 
 UCLASS()
@@ -47,12 +50,39 @@ public:
 	UFUNCTION(Exec)
 	void TeleportToEncounter(int32 EncounterIndex = 1);
 
+	UFUNCTION(Exec)
+	void ChapterSkipStage(int32 StageIndex = 0);
+
+	UFUNCTION(Exec)
+	void ChapterLoadCheckpoint(FName CheckpointId = NAME_None);
+
+	UFUNCTION(Exec)
+	void ChapterReset();
+
+	UFUNCTION(Exec)
+	void ChapterCompleteEncounter();
+
+	UFUNCTION(Exec)
+	void ChapterSetCountdown(float Seconds = 522.0f);
+
+	UFUNCTION(Exec)
+	void ChapterSpawnManticore();
+
+	UFUNCTION(Exec)
+	void ChapterTeleportCathedral();
+
+	UFUNCTION(Exec)
+	void ChapterTeleportPresent();
+
 protected:
 	UFUNCTION()
 	void HandleMobilePressed(EAHMobileTouchAction Action);
 
 	UFUNCTION()
 	void HandleMobileReleased(EAHMobileTouchAction Action);
+
+	UFUNCTION()
+	void HandleMobileVehicleAxes(float Steering, float Camera);
 
 	UFUNCTION()
 	void HandlePlayerDeath();

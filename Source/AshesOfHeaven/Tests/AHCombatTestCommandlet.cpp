@@ -4,10 +4,14 @@
 #include "Gameplay/Combat/AHGameplayTypes.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
+#include "Gameplay/Vehicles/AHManticoreVehicle.h"
+#include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Parse.h"
 
@@ -23,7 +27,7 @@ UAHCombatVerificationCommandlet::UAHCombatVerificationCommandlet()
 
 int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 {
-	FString Filter = TEXT("AshesOfHeaven.Combat");
+	FString Filter = TEXT("AshesOfHeaven");
 	FParse::Value(*Params, TEXT("Filter="), Filter);
 
 	int32 FailureCount = 0;
@@ -208,6 +212,123 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		Expect(TestName, TEXT("human is hostile to veil"), UAHCombatRulesLibrary::IsHostile(EAHFaction::Human, EAHFaction::Veil));
 		Expect(TestName, TEXT("human allies are not hostile"), !UAHCombatRulesLibrary::IsHostile(EAHFaction::Human, EAHFaction::Player));
 		Expect(TestName, TEXT("neutral is not hostile"), !UAHCombatRulesLibrary::IsHostile(EAHFaction::Neutral, EAHFaction::Veil));
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.StageOrdering")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.StageOrdering");
+		const int32 FailureCountBefore = FailureCount;
+		const TArray<EAHChapterStage> Stages = {
+			EAHChapterStage::OpeningBlack,
+			EAHChapterStage::ErebusOpening,
+			EAHChapterStage::OpeningBattle,
+			EAHChapterStage::TransitStation,
+			EAHChapterStage::VeilRevelation,
+			EAHChapterStage::OpenBattlefield,
+			EAHChapterStage::ManticoreSection,
+			EAHChapterStage::CathedralApproach,
+			EAHChapterStage::FailsafeOrder,
+			EAHChapterStage::CathedralInterior,
+			EAHChapterStage::SaelTransmission,
+			EAHChapterStage::FailsafeTerminal,
+			EAHChapterStage::Escape,
+			EAHChapterStage::OtherLucian,
+			EAHChapterStage::ErebusDestruction,
+			EAHChapterStage::TenYearsLater,
+			EAHChapterStage::MayaScene,
+			EAHChapterStage::NysaTransmission,
+			EAHChapterStage::FleetDeparture,
+			EAHChapterStage::StarsDisappearing,
+			EAHChapterStage::ChapterComplete
+		};
+		Expect(TestName, TEXT("Chapter stage list contains every required stage"), Stages.Num() == 21);
+		for (int32 Index = 1; Index < Stages.Num(); ++Index)
+		{
+			Expect(TestName, TEXT("Chapter stages remain in authored order"), static_cast<uint8>(Stages[Index]) > static_cast<uint8>(Stages[Index - 1]));
+		}
+		Expect(TestName, TEXT("Chapter completion is the terminal stage"), Stages.Last() == EAHChapterStage::ChapterComplete);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.ObjectiveChain")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.ObjectiveChain");
+		const int32 FailureCountBefore = FailureCount;
+		UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
+		TArray<FAHObjectiveDefinition> Definitions;
+		for (int32 Index = 0; Index < 17; ++Index)
+		{
+			Definitions.Add({FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1)), FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
+		}
+		Objectives->ConfigureObjectives(Definitions, 0);
+		Expect(TestName, TEXT("Chapter objective chain contains all seventeen objectives"), Objectives->GetObjectiveCount() == 17);
+		for (const FAHObjectiveDefinition& Definition : Definitions)
+		{
+			Expect(TestName, TEXT("each Chapter objective completes in order"), Objectives->CompleteObjective(Definition.Id));
+		}
+		Expect(TestName, TEXT("Chapter completion state is reachable"), Objectives->IsMissionComplete());
+		Expect(TestName, TEXT("completed Chapter objective history is complete"), Objectives->GetCompletedObjectiveIds().Num() == 17);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.StateSerialization")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.StateSerialization");
+		const int32 FailureCountBefore = FailureCount;
+		UAHSaveGame* Save = NewObject<UAHSaveGame>();
+		Save->CombatState.bValid = true;
+		Save->CombatState.MapName = TEXT("L_ChapterOne_Greybox");
+		Save->CombatState.CheckpointId = FName(TEXT("Ch01_Checkpoint_03"));
+		Save->CombatState.ObjectiveIndex = 7;
+		Save->CombatState.Ammo.Magazine = 14;
+		Save->CombatState.Ammo.Reserve = 121;
+		Save->CombatState.Grenades = 1;
+		Save->CombatState.ChapterState.Stage = EAHChapterStage::FailsafeOrder;
+		Save->CombatState.ChapterState.ObjectiveIndex = 7;
+		Save->CombatState.ChapterState.CheckpointId = FName(TEXT("Ch01_Checkpoint_03"));
+		Save->CombatState.ChapterState.CountdownSeconds = 401.5f;
+		Save->CombatState.ChapterState.bCountdownActive = true;
+		Save->CombatState.ChapterState.bFailsafeConfirmed = false;
+		Save->CombatState.ChapterState.CompletedEncounters.Add(FName(TEXT("Ch01_OpeningBattle")));
+		Save->CombatState.ChapterState.Vehicle.bSpawned = true;
+		Save->CombatState.ChapterState.Vehicle.Health = 287.0f;
+		TArray<uint8> Bytes;
+		Expect(TestName, TEXT("Chapter checkpoint serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes));
+		UAHSaveGame* Loaded = Cast<UAHSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
+		Expect(TestName, TEXT("Chapter checkpoint deserializes"), Loaded != nullptr);
+		if (Loaded)
+		{
+			Expect(TestName, TEXT("Chapter stage survives restore"), Loaded->CombatState.ChapterState.Stage == EAHChapterStage::FailsafeOrder);
+			Expect(TestName, TEXT("Chapter countdown survives restore"), FMath::IsNearlyEqual(Loaded->CombatState.ChapterState.CountdownSeconds, 401.5f));
+			Expect(TestName, TEXT("ammo survives Chapter restore"), Loaded->CombatState.Ammo.Magazine == 14 && Loaded->CombatState.Ammo.Reserve == 121);
+			Expect(TestName, TEXT("grenades survive Chapter restore"), Loaded->CombatState.Grenades == 1);
+			Expect(TestName, TEXT("vehicle state survives Chapter restore"), FMath::IsNearlyEqual(Loaded->CombatState.ChapterState.Vehicle.Health, 287.0f));
+		}
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.CountdownAndNarrativeState")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.CountdownAndNarrativeState");
+		const int32 FailureCountBefore = FailureCount;
+		UGameInstance* TestGameInstance = NewObject<UGameInstance>(GetTransientPackage());
+		UAHChapterSubsystem* Chapter = NewObject<UAHChapterSubsystem>(TestGameInstance);
+		Chapter->StartCountdown(522.0f);
+		Chapter->TickCountdown(22.0f);
+		Expect(TestName, TEXT("failsafe countdown advances deterministically"), FMath::IsNearlyEqual(Chapter->GetCountdownSeconds(), 500.0f));
+		Expect(TestName, TEXT("countdown remains active before expiry"), Chapter->IsCountdownActive());
+		Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_VeilRevelation")));
+		Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_VeilRevelation")));
+		Expect(TestName, TEXT("one-shot narrative events are idempotent"), Chapter->GetState().CompletedNarrativeEvents.Num() == 1);
+		FAHChapterState SavedState = Chapter->GetState();
+		UAHChapterSubsystem* Restored = NewObject<UAHChapterSubsystem>(TestGameInstance);
+		Restored->RestoreState(SavedState);
+		Expect(TestName, TEXT("countdown and narrative state restore together"), FMath::IsNearlyEqual(Restored->GetCountdownSeconds(), 500.0f) && Restored->HasCompletedNarrativeEvent(FName(TEXT("Ch01_VeilRevelation"))));
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}

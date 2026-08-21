@@ -8,9 +8,11 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Level/AHChapterOneDirector.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/UI/AHCombatHUD.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Platform/AHMobileControlsWidget.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
@@ -26,6 +28,7 @@ void AAHCombatPlayerController::BeginPlay()
 	{
 		Mobile->OnActionPressed.AddDynamic(this, &AAHCombatPlayerController::HandleMobilePressed);
 		Mobile->OnActionReleased.AddDynamic(this, &AAHCombatPlayerController::HandleMobileReleased);
+		Mobile->OnVehicleAxesChanged.AddDynamic(this, &AAHCombatPlayerController::HandleMobileVehicleAxes);
 	}
 	if (UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>())
 	{
@@ -53,6 +56,20 @@ AAHCombatHUD* AAHCombatPlayerController::GetCombatHUD() const
 
 void AAHCombatPlayerController::HandleMobilePressed(EAHMobileTouchAction Action)
 {
+	if (AAHManticoreVehicle* Vehicle = Cast<AAHManticoreVehicle>(GetPawn()))
+	{
+		switch (Action)
+		{
+		case EAHMobileTouchAction::Fire: Vehicle->FireMountedWeapon(); break;
+		case EAHMobileTouchAction::VehicleAccelerate: Vehicle->SetMobileThrottle(1.0f); break;
+		case EAHMobileTouchAction::VehicleBrake: Vehicle->SetMobileThrottle(-1.0f); break;
+		case EAHMobileTouchAction::VehicleExit: Vehicle->ExitVehicle(); break;
+		case EAHMobileTouchAction::VehicleSwitchSeat: Vehicle->FireMountedWeapon(); break;
+		default: break;
+		}
+		return;
+	}
+
 	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(GetPawn());
 	if (!Player)
 	{
@@ -77,6 +94,15 @@ void AAHCombatPlayerController::HandleMobilePressed(EAHMobileTouchAction Action)
 
 void AAHCombatPlayerController::HandleMobileReleased(EAHMobileTouchAction Action)
 {
+	if (AAHManticoreVehicle* Vehicle = Cast<AAHManticoreVehicle>(GetPawn()))
+	{
+		if (Action == EAHMobileTouchAction::VehicleAccelerate || Action == EAHMobileTouchAction::VehicleBrake)
+		{
+			Vehicle->SetMobileThrottle(0.0f);
+		}
+		return;
+	}
+
 	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(GetPawn());
 	if (!Player)
 	{
@@ -90,6 +116,15 @@ void AAHCombatPlayerController::HandleMobileReleased(EAHMobileTouchAction Action
 	case EAHMobileTouchAction::Crouch: Player->StopCrouch(); break;
 	case EAHMobileTouchAction::Sprint: Player->StopSprint(); break;
 	default: break;
+	}
+}
+
+void AAHCombatPlayerController::HandleMobileVehicleAxes(float Steering, float Camera)
+{
+	if (AAHManticoreVehicle* Vehicle = Cast<AAHManticoreVehicle>(GetPawn()))
+	{
+		Vehicle->SetMobileSteering(Steering);
+		AddYawInput(Camera);
 	}
 }
 
@@ -228,4 +263,85 @@ void AAHCombatPlayerController::TeleportToEncounter(int32 EncounterIndex)
 			Player->SetActorLocation(Encounters[EncounterIndex - 1]->GetActorLocation());
 		}
 	}
+}
+
+void AAHCombatPlayerController::ChapterSkipStage(int32 StageIndex)
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		const int32 MaxStage = static_cast<int32>(EAHChapterStage::ChapterComplete);
+		Director->DebugSkipToStage(static_cast<EAHChapterStage>(FMath::Clamp(StageIndex, 0, MaxStage)));
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterLoadCheckpoint(FName CheckpointId)
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugLoadCheckpoint(CheckpointId);
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterReset()
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugResetChapter();
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterCompleteEncounter()
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugCompleteCurrentEncounter();
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterSetCountdown(float Seconds)
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugSetCountdown(Seconds);
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterSpawnManticore()
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugSpawnManticore();
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterTeleportCathedral()
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugTeleportToCathedral();
+	}
+#endif
+}
+
+void AAHCombatPlayerController::ChapterTeleportPresent()
+{
+#if !UE_BUILD_SHIPPING
+	if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass())))
+	{
+		Director->DebugTeleportToPresentDay();
+	}
+#endif
 }

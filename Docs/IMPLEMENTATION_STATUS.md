@@ -1,47 +1,125 @@
-# Phase 2 implementation status
+# ASHES OF HEAVEN implementation status
 
-## COMPLETE
+## PHASE 3 — CHAPTER ONE GREYBOX — 2026-08-21
 
-- Erebus combat prototype map is the editor and packaged-game entry point.
-- Reusable player combat foundation: movement, sprint, crouch, mantle probe, health, armor, death, damage direction, god mode, and respawn flow.
-- M91 Revenant automatic hitscan rifle with magazine/reserve ammo, reload transfer, ADS, recoil, hit confirmation, headshots, falloff, muzzle/impact/tracer hooks, and empty/reload audio hooks.
-- Melee trace, knockback, grenade inventory, projectile grenades with fuse/radial falloff/impulse, and pickup interaction.
-- Veil Pilgrim combatants, human soldier friendlies, faction hostility rules, sight perception, target selection, cover-aware movement hooks, fallback movement, repositioning, investigate/last-known behavior, and grenade reaction.
-- Five-objective flow, objective zones, three authored encounters, three checkpoints, checkpoint serialization/restoration, death reload, encounter persistence, mission completion, and restart/debug commands.
-- Canvas HUD with health/armor, ammo, grenades, objective, interaction prompt, crosshair, hit/headshot feedback, armor-break feedback, directional damage indicator, low-health overlay, and completion state.
-- Shared mobile action paths for fire, ADS, reload, grenade, melee, interact, jump, sprint, crouch, and weapon cycling.
-- Mac Development Editor compile, Mac Shipping build/cook/stage/archive, local codesign verification, and a normal Metal-renderer packaged launch smoke check completed on 2026-08-21.
+Chapter One is implemented as a playable greybox slice on top of the Phase 2 combat foundation. The chapter uses a persistent `GameInstance` state, ordered mission stages, dialogue sequences, checkpoint serialization, encounter persistence, a Manticore vehicle, a Veil Warden, terminal interaction, countdown state, debug routing, and a chapter-complete state.
 
-## PHASE 2.1 ACCEPTANCE VERIFICATION — 2026-08-21
+No final art, animation, lighting, sound, or Chapter Two content was added.
 
-- Fresh-process `AHCombatVerificationCommandlet`: 9 tests, 0 failed checks, PASS. The checks covered health/damage, armor/regen, ammo/reload, grenades, the ordered five-objective chain, objective-history restore, checkpoint serialization, encounter configuration, and faction hostility. The old editor process was closed before this run; the commandlet used the absolute project path and `-nullrhi` for deterministic non-interactive verification.
-- Fresh-process `Automation RunTests AshesOfHeaven.Combat`: 9 tests found, 9 completed with `Result={Success}`, 0 failures, `**** TEST COMPLETE. EXIT CODE: 0 ****`.
-- `./Scripts/Build-Mac.sh`: Development Editor and Mac Shipping targets compiled; cook, stage, pak, archive, and local codesign completed successfully. Archive: `Builds/macOS/AshesOfHeaven.app`. `codesign --verify --deep --strict` passed. The packaged app launched normally without `-nullrhi`, remained alive for 1m24s, exposed a visible standard window, and the process sample confirmed `FMetalRHI`/Metal viewport activity. No crash report was created during the smoke run.
-- Acceptance guards verified in code/tests: all five objectives can complete and reach mission completion; objective and encounter state plus ammo/grenade state survive checkpoint serialization/restore; destroyed or invalid active encounter actors are pruned so they cannot strand an encounter; the director owns one-per-world encounter/pickup spawning and restart is a world reload; only Veil Pilgrims are encounter enemies, so friendly soldiers cannot block encounter completion; Veil AI has navigation queries plus a movement fallback path.
-- No major feature work, Chapter One work, or Phase 3 work was started.
+### Chapter path
 
-## IN PROGRESS
+The runtime stage graph contains all required story beats, in order:
 
-- Art, animation, authored cover geometry, navigation-volume tuning, and final audio/VFX assets are still prototype quality. The runtime fallback blockout keeps the slice playable while those assets are produced.
-- Interactive combat progression and mobile device playtest evidence still need to be recorded in the platform matrix.
-- Standard Unreal automation tests are present in `Source/AshesOfHeaven/Tests/AHCombatTests.cpp`, and the direct verification commandlet was rerun successfully from a fresh process after the prior editor session was closed.
+1. `OpeningBlack` — black opening and opening dialogue.
+2. `ErebusOpening` — reach the defensive line.
+3. `OpeningBattle` — hold the Erebus line.
+4. `TransitStation` — enter the transit station.
+5. `VeilRevelation` — Veil says “You came back.”
+6. `OpenBattlefield` — cross the large battlefield.
+7. `ManticoreSection` — enter and operate the Manticore.
+8. `CathedralApproach` — reach the Cathedral approach.
+9. `FailsafeOrder` — receive the order to destroy Erebus; the 08:42 countdown begins.
+10. `CathedralInterior` — enter the Cathedral and meet Sael.
+11. `SaelTransmission` — Sael’s transmission is presented.
+12. `FailsafeTerminal` — inspect and confirm the terminal showing `11,407,231` projected civilian casualties.
+13. `Escape` — escape the Cathedral.
+14. `OtherLucian` — encounter the other Lucian.
+15. `ErebusDestruction` — destruction sequence and transition.
+16. `TenYearsLater` — ten-year transition.
+17. `MayaScene` — Maya scene.
+18. `NysaTransmission` — Nysa transmission.
+19. `FleetDeparture` — fleet departure.
+20. `StarsDisappearing` — disappearing stars.
+21. `ChapterComplete` — `ASHES OF HEAVEN / CHAPTER ONE COMPLETE`.
 
-## KNOWN ISSUES
+The authored objective chain contains 17 objectives, from reaching the defensive line through the title reveal. Narrative-only stages remain in the stage graph without creating duplicate objective entries.
 
-- The runtime blockout constructs geometry and encounters from `AHErebusCombatSliceDirector`; it is intentionally a proving-ground scaffold, not final environmental art.
-- No final first-person animation set, character animation set, authored cover kit, or bespoke audio bank is included yet; all systems expose hooks for them.
-- Unreal emits the installed-machine warnings for unavailable Win64/Android/Linux SDKs during validation. These do not affect the successful Mac build.
-- The blank authored map has no hand-authored navigation mesh asset; AI includes navigation queries plus a movement fallback until the final nav volume is authored.
+### Slice expectations
 
-## BLOCKED BY EXTERNAL TOOLCHAIN
+- Target playtime: approximately 20–30 minutes for a first complete run, depending on combat pace and dialogue timing. This is a design target, not an automated timing result.
+- Systems included: Phase 2 FPS movement and combat, rifle/ADS/reload, grenades, pickups, melee, Veil enemies, human friendlies, objectives, checkpoints, death/restart, dialogue/subtitles, terminal confirmation, countdown, Manticore driving and mounted weapon, barricade destruction, Veil Warden navigation/fallback movement, debug chapter routing, and save-state restoration.
+- Greybox presentation is intentionally functional. Runtime-generated blockout geometry and labels stand in for final level art.
 
-- Windows packaging requires a Windows build environment and Windows SDK.
-- Android packaging requires the Android SDK/NDK and signing configuration; the current host reports Android SDK `r27c` unavailable.
-- iOS device packaging requires the target Apple signing/team provisioning path and a device run.
-- Full controller, touch, suspend/resume, performance, and thermal validation require the target hardware.
+## Verification results
 
-## NEXT
+### Fresh commandlet
 
-- Play the slice from `ReachDefensivePosition` through `ReachExtraction`, verify objective transitions, enemy persistence, checkpoint reload, death/restart, pickup behavior, melee, grenades, and mission completion.
-- Replace runtime blockout meshes with authored Erebus cover/lighting, add NavMeshBoundsVolume, and bind final animation/audio/VFX assets.
-- Record Mac interactive evidence, then repeat the matrix on Windows, Android, and iOS when their toolchains and devices are available.
+The previous editor/hot-reload session was not reused. A fresh Unreal process ran:
+
+```bash
+"$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd" \
+  AshesOfHeaven.uproject \
+  -run=AHCombatVerificationCommandlet -unattended -nop4 -nosplash \
+  -nullrhi -nosound -stdout -FullStdOutLogOutput
+```
+
+Result: **PASS** — 13 project checks, 0 failed checks, and `Success - 0 error(s), 0 warning(s)` in `Saved/Logs/Phase3-AHCombatVerificationCommandlet.log`.
+
+The result includes the nine Phase 2 combat/acceptance checks plus:
+
+- `AshesOfHeaven.Chapter.StageOrdering`
+- `AshesOfHeaven.Chapter.ObjectiveChain`
+- `AshesOfHeaven.Chapter.StateSerialization`
+- `AshesOfHeaven.Chapter.CountdownAndNarrativeState`
+
+### Unreal automation
+
+The full project automation filter was run in a fresh commandlet process:
+
+```bash
+"$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd" \
+  AshesOfHeaven.uproject \
+  -ExecCmds="Automation RunTests AshesOfHeaven;Quit" \
+  -TestExit="Automation Test Queue Empty" -unattended -nop4 -nosplash \
+  -nullrhi -nosound -stdout -FullStdOutLogOutput
+```
+
+Result: **PASS** — 13 tests found, all 13 completed with `Result={Success}`, and `**** TEST COMPLETE. EXIT CODE: 0 ****`. The captured run is `/tmp/ashes-phase3-automation.log` on the validation machine.
+
+### Build and package
+
+`./Scripts/Build-Mac.sh` passed on 2026-08-21. Development Editor and Mac Shipping compiled; cook, stage, pak, archive, and local codesign completed successfully. The packaged application is:
+
+`Builds/macOS/AshesOfHeaven.app`
+
+The final archive has package version counter `0.12`. `codesign --verify --deep --strict --verbose=2` passed with `valid on disk` and `satisfies its Designated Requirement`.
+
+The final packaged executable was launched without `-nullrhi`:
+
+```bash
+./Builds/macOS/AshesOfHeaven.app/Contents/MacOS/AshesOfHeaven-Mac-Shipping \
+  -windowed -ResX=1024 -ResY=576 -nosound
+```
+
+Result: **PASS for process-level normal-renderer launch** — the process remained alive for approximately 20 seconds and was stopped with a controlled interrupt. This is a launch smoke check only; it is not a human playthrough or a claim that the slice was interactively completed.
+
+### Static/runtime guard coverage
+
+- The stage graph and objective tests cover the complete Chapter One path and reachable completion state.
+- Encounter activation prunes invalid, destroyed, and dead actors; friendlies are not encounter enemies.
+- Checkpoint state includes chapter stage, objective index, narrative/section/encounter history, countdown/failsafe flags, player inventory, and Manticore state.
+- Encounter and pickup ownership is director-scoped; restarting reloads the world rather than duplicating the prior world’s actors.
+- Ammo and grenade state are serialized through the existing checkpoint/player save path.
+- Veil Warden movement uses a navigation query and a bounded direct fallback when projection is unavailable.
+- The terminal interaction is staged as inspect then confirm, and the completion route advances through escape, destruction, the ten-year transition, Maya, Nysa, the fleet, disappearing stars, and the chapter title.
+
+## Known issues and scope boundaries
+
+- Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design.
+- The current Chapter One map is one logical map with runtime-built sections; the stage/state architecture is ready for future World Partition or level-streaming splits.
+- The authored map does not yet contain a hand-authored navigation mesh asset. The runtime nav bounds plus Warden query/fallback keep the prototype path valid.
+- Unreal may report unavailable Win64, Android, or Linux SDK warnings on this Mac host; Mac validation succeeded.
+- Windows, Android, iOS, controller, touch, suspend/resume, performance/thermal, and signed-device validation require their respective toolchains or hardware.
+
+## Human validation still required
+
+Codex did not claim a human interactive playthrough. A human tester must run the packaged app twice and record the result:
+
+1. Complete the slice normally, judging controls, gun feel, AI, progression, checkpoints, Manticore operation, dialogue, and whether anything softlocks.
+2. Collect ammo and grenades, reach checkpoint 2 or 3, die, respawn, verify inventory/objectives/enemies, and finish the mission.
+
+The human tester should ignore ugly geometry, placeholder animation, lighting, and sound when judging Phase 3 acceptance. These interactive combat/death/restart/pickup/Manticore/checkpoint behaviors remain `UNTESTED` in the platform matrix until that playthrough is performed.
+
+## Next
+
+Human playthrough and platform evidence are the remaining Phase 3 acceptance work. Do not begin Chapter Two or Phase 4 until that evidence is recorded.

@@ -7,10 +7,14 @@
 #include "Gameplay/Combat/AHGameplayTypes.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
+#include "Gameplay/Vehicles/AHManticoreVehicle.h"
+#include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHHealthDamageTest, "AshesOfHeaven.Combat.HealthDamage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
@@ -156,6 +160,98 @@ bool FAHFactionHostilityTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Human is hostile to Veil"), UAHCombatRulesLibrary::IsHostile(EAHFaction::Human, EAHFaction::Veil));
 	TestFalse(TEXT("Human allies are not hostile"), UAHCombatRulesLibrary::IsHostile(EAHFaction::Human, EAHFaction::Player));
 	TestFalse(TEXT("Neutral is not hostile"), UAHCombatRulesLibrary::IsHostile(EAHFaction::Neutral, EAHFaction::Veil));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterStageOrderingTest, "AshesOfHeaven.Chapter.StageOrdering", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterStageOrderingTest::RunTest(const FString& Parameters)
+{
+	const TArray<EAHChapterStage> Stages = {
+		EAHChapterStage::OpeningBlack, EAHChapterStage::ErebusOpening, EAHChapterStage::OpeningBattle,
+		EAHChapterStage::TransitStation, EAHChapterStage::VeilRevelation, EAHChapterStage::OpenBattlefield,
+		EAHChapterStage::ManticoreSection, EAHChapterStage::CathedralApproach, EAHChapterStage::FailsafeOrder,
+		EAHChapterStage::CathedralInterior, EAHChapterStage::SaelTransmission, EAHChapterStage::FailsafeTerminal,
+		EAHChapterStage::Escape, EAHChapterStage::OtherLucian, EAHChapterStage::ErebusDestruction,
+		EAHChapterStage::TenYearsLater, EAHChapterStage::MayaScene, EAHChapterStage::NysaTransmission,
+		EAHChapterStage::FleetDeparture, EAHChapterStage::StarsDisappearing, EAHChapterStage::ChapterComplete
+	};
+	TestEqual(TEXT("All authored Chapter stages are present"), Stages.Num(), 21);
+	for (int32 Index = 1; Index < Stages.Num(); ++Index)
+	{
+		TestTrue(*FString::Printf(TEXT("Stage %d follows stage %d"), Index, Index - 1), static_cast<uint8>(Stages[Index]) > static_cast<uint8>(Stages[Index - 1]));
+	}
+	TestEqual(TEXT("ChapterComplete is the terminal stage"), Stages.Last(), EAHChapterStage::ChapterComplete);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterObjectiveChainTest, "AshesOfHeaven.Chapter.ObjectiveChain", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterObjectiveChainTest::RunTest(const FString& Parameters)
+{
+	UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
+	TArray<FAHObjectiveDefinition> Definitions;
+	for (int32 Index = 0; Index < 17; ++Index)
+	{
+		Definitions.Add({FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1)), FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
+	}
+	Objectives->ConfigureObjectives(Definitions, 0);
+	TestEqual(TEXT("Chapter objective chain contains seventeen objectives"), Objectives->GetObjectiveCount(), 17);
+	for (const FAHObjectiveDefinition& Definition : Definitions)
+	{
+		TestTrue(*FString::Printf(TEXT("Completes %s"), *Definition.Id.ToString()), Objectives->CompleteObjective(Definition.Id));
+	}
+	TestTrue(TEXT("Chapter completion is reachable"), Objectives->IsMissionComplete());
+	TestEqual(TEXT("All Chapter objective history is retained"), Objectives->GetCompletedObjectiveIds().Num(), 17);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterStateSerializationTest, "AshesOfHeaven.Chapter.StateSerialization", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterStateSerializationTest::RunTest(const FString& Parameters)
+{
+	UAHSaveGame* Save = NewObject<UAHSaveGame>();
+	Save->CombatState.bValid = true;
+	Save->CombatState.MapName = TEXT("L_ChapterOne_Greybox");
+	Save->CombatState.CheckpointId = FName(TEXT("Ch01_Checkpoint_03"));
+	Save->CombatState.ObjectiveIndex = 7;
+	Save->CombatState.Ammo.Magazine = 14;
+	Save->CombatState.Ammo.Reserve = 121;
+	Save->CombatState.Grenades = 1;
+	Save->CombatState.ChapterState.Stage = EAHChapterStage::FailsafeOrder;
+	Save->CombatState.ChapterState.CountdownSeconds = 401.5f;
+	Save->CombatState.ChapterState.bCountdownActive = true;
+	Save->CombatState.ChapterState.Vehicle.bSpawned = true;
+	Save->CombatState.ChapterState.Vehicle.Health = 287.0f;
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("Chapter checkpoint serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes));
+	UAHSaveGame* Loaded = Cast<UAHSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	TestNotNull(TEXT("Chapter checkpoint deserializes"), Loaded);
+	if (Loaded)
+	{
+		TestEqual(TEXT("Chapter stage survives restore"), Loaded->CombatState.ChapterState.Stage, EAHChapterStage::FailsafeOrder);
+		TestEqual(TEXT("Chapter countdown survives restore"), Loaded->CombatState.ChapterState.CountdownSeconds, 401.5f);
+		TestEqual(TEXT("Ammo survives restore"), Loaded->CombatState.Ammo.Magazine, 14);
+		TestEqual(TEXT("Reserve ammo survives restore"), Loaded->CombatState.Ammo.Reserve, 121);
+		TestEqual(TEXT("Grenades survive restore"), Loaded->CombatState.Grenades, 1);
+		TestEqual(TEXT("Manticore state survives restore"), Loaded->CombatState.ChapterState.Vehicle.Health, 287.0f);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterCountdownNarrativeTest, "AshesOfHeaven.Chapter.CountdownAndNarrativeState", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterCountdownNarrativeTest::RunTest(const FString& Parameters)
+{
+	UGameInstance* TestGameInstance = NewObject<UGameInstance>(GetTransientPackage());
+	UAHChapterSubsystem* Chapter = NewObject<UAHChapterSubsystem>(TestGameInstance);
+	Chapter->StartCountdown(522.0f);
+	Chapter->TickCountdown(22.0f);
+	TestEqual(TEXT("Countdown advances by elapsed time"), Chapter->GetCountdownSeconds(), 500.0f);
+	TestTrue(TEXT("Countdown stays active before expiry"), Chapter->IsCountdownActive());
+	Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_VeilRevelation")));
+	Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_VeilRevelation")));
+	TestEqual(TEXT("Narrative events are one-shot"), Chapter->GetState().CompletedNarrativeEvents.Num(), 1);
+	FAHChapterState State = Chapter->GetState();
+	UAHChapterSubsystem* Restored = NewObject<UAHChapterSubsystem>(TestGameInstance);
+	Restored->RestoreState(State);
+	TestTrue(TEXT("Countdown and narrative state restore"), FMath::IsNearlyEqual(Restored->GetCountdownSeconds(), 500.0f) && Restored->HasCompletedNarrativeEvent(FName(TEXT("Ch01_VeilRevelation"))));
 	return true;
 }
 

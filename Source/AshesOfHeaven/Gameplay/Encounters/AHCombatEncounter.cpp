@@ -63,10 +63,29 @@ void AAHCombatEncounter::ActivateEncounter()
 			}
 		}
 
+		TSubclassOf<AAHCombatantCharacter> SpawnClass = EnemyClass;
+		const int32 AdditionalClassStart = FMath::Max(0, EnemyCount - AdditionalEnemyClasses.Num());
+		if (Index >= AdditionalClassStart)
+		{
+			const int32 AdditionalClassIndex = Index - AdditionalClassStart;
+			if (AdditionalEnemyClasses.IsValidIndex(AdditionalClassIndex) && AdditionalEnemyClasses[AdditionalClassIndex])
+			{
+				SpawnClass = AdditionalEnemyClasses[AdditionalClassIndex];
+			}
+		}
+		if (!SpawnClass)
+		{
+			if (UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
+			{
+				Platform->UnregisterActiveCombatant();
+			}
+			continue;
+		}
+
 		const FVector SpawnLocation = SpawnLocations.IsValidIndex(Index) ? SpawnLocations[Index] : GetActorLocation() + FVector(Index * 160.0f, (Index % 2 == 0 ? 1.0f : -1.0f) * 450.0f, 100.0f);
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		AAHCombatantCharacter* Enemy = GetWorld()->SpawnActor<AAHCombatantCharacter>(EnemyClass, SpawnLocation, GetActorRotation(), Params);
+		AAHCombatantCharacter* Enemy = GetWorld()->SpawnActor<AAHCombatantCharacter>(SpawnClass, SpawnLocation, GetActorRotation(), Params);
 		if (Enemy)
 		{
 			ActiveEnemies.Add(Enemy);

@@ -44,6 +44,7 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 	}
 
 	CompletedObjectives.Add(ObjectiveId);
+	OnObjectiveCompleted.Broadcast(ObjectiveId);
 	++CurrentObjectiveIndex;
 	if (CurrentObjectiveIndex >= Objectives.Num())
 	{
@@ -54,6 +55,12 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 
 	BroadcastCurrentObjective();
 	return true;
+}
+
+void UAHObjectiveSubsystem::ConfigureObjectives(const TArray<FAHObjectiveDefinition>& NewObjectives, int32 RestoreIndex)
+{
+	Objectives = NewObjectives;
+	RestoreState(RestoreIndex);
 }
 
 void UAHObjectiveSubsystem::RestoreState(int32 ObjectiveIndex)

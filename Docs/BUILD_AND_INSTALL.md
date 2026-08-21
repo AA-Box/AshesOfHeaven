@@ -79,4 +79,24 @@ After compiling an Editor target, the combat subsystem verification commandlet c
 
 It checks health damage, armor absorption timing, ammo/reload transfer, grenade inventory, objective transitions, checkpoint serialization, and faction hostility. Restart the editor before running it if the editor has an older hot-reloaded project module loaded.
 
+The current Chapter One verification run covers 13 checks: the nine Phase 2 combat/acceptance checks plus `Chapter.StageOrdering`, `Chapter.ObjectiveChain`, `Chapter.StateSerialization`, and `Chapter.CountdownAndNarrativeState`.
+
+To run the complete project automation suite after compiling the Editor target:
+
+```bash
+"$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd" AshesOfHeaven.uproject \
+  -ExecCmds="Automation RunTests AshesOfHeaven;Quit" \
+  -TestExit="Automation Test Queue Empty" -unattended -nop4 -nosplash \
+  -nullrhi -nosound -stdout -FullStdOutLogOutput
+```
+
+On 2026-08-21 this returned 13 discovered tests, 13 successes, and exit code 0. The packaged Mac smoke command is:
+
+```bash
+./Builds/macOS/AshesOfHeaven.app/Contents/MacOS/AshesOfHeaven-Mac-Shipping \
+  -windowed -ResX=1024 -ResY=576 -nosound
+```
+
+This was verified without Null RHI as a process-level normal-renderer launch. It is not a substitute for human interaction testing.
+
 An Unreal-equipped runner should invoke the platform script for its host platform, then run automated tests and archive the output. CI must keep Windows, macOS, Android, and iOS jobs separate because Unreal/SDK/signing toolchains are not interchangeable.

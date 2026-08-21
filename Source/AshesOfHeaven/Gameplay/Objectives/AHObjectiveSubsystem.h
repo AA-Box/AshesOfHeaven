@@ -21,6 +21,7 @@ struct ASHESOFHEAVEN_API FAHObjectiveDefinition
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAHObjectiveChangedDelegate, FText, Objective, int32, ObjectiveIndex, int32, ObjectiveCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHObjectiveMissionCompleteDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHObjectiveCompletedDelegate, FName, ObjectiveId);
 
 UCLASS()
 class ASHESOFHEAVEN_API UAHObjectiveSubsystem : public UWorldSubsystem
@@ -36,6 +37,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Objective")
 	FAHObjectiveMissionCompleteDelegate OnMissionComplete;
+
+	UPROPERTY(BlueprintAssignable, Category="Objective")
+	FAHObjectiveCompletedDelegate OnObjectiveCompleted;
 
 	UFUNCTION(BlueprintPure, Category="Objective")
 	const FAHObjectiveDefinition& GetCurrentObjective() const;
@@ -57,6 +61,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Objective")
 	void RestoreState(int32 ObjectiveIndex);
+
+	UFUNCTION(BlueprintCallable, Category="Objective")
+	void ConfigureObjectives(const TArray<FAHObjectiveDefinition>& NewObjectives, int32 RestoreIndex = 0);
 
 	UFUNCTION(BlueprintCallable, Category="Objective")
 	void DebugAdvanceObjective();

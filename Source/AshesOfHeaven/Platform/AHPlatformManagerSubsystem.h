@@ -79,6 +79,10 @@ public:
 	UInputAction* GetWeaponNextAction() const { return WeaponNextAction; }
 	UInputAction* GetWeaponPreviousAction() const { return WeaponPreviousAction; }
 	UInputAction* GetPauseAction() const { return PauseAction; }
+	UInputAction* GetVehicleAccelerateAction() const { return VehicleAccelerateAction; }
+	UInputAction* GetVehicleBrakeAction() const { return VehicleBrakeAction; }
+	UInputAction* GetVehicleExitAction() const { return VehicleExitAction; }
+	UInputAction* GetVehicleSwitchSeatAction() const { return VehicleSwitchSeatAction; }
 
 	/** Tier-1 AI actors call these methods so all spawners share one budget. */
 	bool TryRegisterActiveCombatant();
@@ -159,4 +163,16 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> PauseAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> VehicleAccelerateAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> VehicleBrakeAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> VehicleExitAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> VehicleSwitchSeatAction;
 };

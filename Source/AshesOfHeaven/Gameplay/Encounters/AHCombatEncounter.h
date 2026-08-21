@@ -28,6 +28,9 @@ public:
 	TSubclassOf<AAHCombatantCharacter> EnemyClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
+	TArray<TSubclassOf<AAHCombatantCharacter>> AdditionalEnemyClasses;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
 	int32 EnemyCount = 4;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")

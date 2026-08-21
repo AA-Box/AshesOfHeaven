@@ -49,7 +49,11 @@ bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointSta
 
 	SaveObject->CheckpointId = State.CheckpointId;
 	SaveObject->MapName = State.MapName;
-	SaveObject->CampaignProgress = FMath::Clamp(State.ObjectiveIndex / 5.0f, 0.0f, 1.0f);
+	const bool bChapterOneState = State.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase)
+		|| State.CheckpointId.ToString().StartsWith(TEXT("Ch01_"))
+		|| State.ChapterState.CompletedSections.Num() > 0;
+	const int32 ObjectiveCount = bChapterOneState ? 17 : 5;
+	SaveObject->CampaignProgress = FMath::Clamp(static_cast<float>(State.ObjectiveIndex) / static_cast<float>(ObjectiveCount), 0.0f, 1.0f);
 	SaveObject->CombatState = State;
 	SaveObject->CombatState.bValid = true;
 	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
