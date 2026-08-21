@@ -6,6 +6,7 @@
 #include "NiagaraSystem.h"
 #include "AHWeaponBase.generated.h"
 
+class USceneComponent;
 class USkeletalMeshComponent;
 class USoundBase;
 class AAHCombatantCharacter;
@@ -121,6 +122,20 @@ public:
 	AAHCombatantCharacter* GetCombatantOwner() const;
 
 protected:
+	/** Where the weapon sits relative to the camera while no hand socket exists (greybox). */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FVector FirstPersonHoldOffset = FVector(34.0f, 14.0f, -16.0f);
+
+	/** SKM_Rifle is authored with its length along Y, so it needs a quarter turn to aim down X. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	FRotator FirstPersonHoldRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	USceneComponent* GetFirstPersonHoldParent(AAHCombatantCharacter* Combatant, USkeletalMeshComponent* AttachTarget) const;
+
+	bool bUsingFirstPersonHold = false;
+
+	FRotator GetRestRotation() const;
+
 	virtual void FireShot();
 	void FinishReload();
 	float GetDamageAtDistance(float Distance) const;

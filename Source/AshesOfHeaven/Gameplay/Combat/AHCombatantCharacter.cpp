@@ -6,6 +6,9 @@
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "Engine/DamageEvents.h"
@@ -26,6 +29,7 @@ AAHCombatantCharacter::AAHCombatantCharacter()
 void AAHCombatantCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	EnsureGreyboxBody();
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeath.AddDynamic(this, &AAHCombatantCharacter::HandleHealthDeath);
@@ -34,6 +38,36 @@ void AAHCombatantCharacter::BeginPlay()
 	{
 		ArmorComponent->OnArmorBroken.AddDynamic(this, &AAHCombatantCharacter::HandleArmorBroken);
 	}
+}
+
+void AAHCombatantCharacter::EnsureGreyboxBody()
+{
+	// Greybox characters have no skeletal mesh, so a soldier is invisible while the weapon
+	// attached to them still renders - the level reads as rifles gliding around on their own.
+	// Stand in a block body until real meshes exist; with a mesh assigned this does nothing.
+	if (!GetMesh() || GetMesh()->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!BlockMesh)
+	{
+		return;
+	}
+
+	UStaticMeshComponent* Body = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxBody"));
+	if (!Body)
+	{
+		return;
+	}
+	Body->SetStaticMesh(BlockMesh);
+	Body->SetupAttachment(GetCapsuleComponent());
+	Body->SetRelativeScale3D(FVector(0.55f, 0.55f, 1.9f));
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// The owner is looking out of this body, so keep it out of their own view.
+	Body->SetOwnerNoSee(true);
+	Body->RegisterComponent();
 }
 
 float AAHCombatantCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)

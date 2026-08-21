@@ -290,7 +290,8 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	StageElapsed = 0.0f;
 	DestructionFadeAlpha = 0.0f;
 	#if !UE_BUILD_SHIPPING
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE);
+	const AActor* LoggedPlayer = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d player=%s"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE, LoggedPlayer ? *LoggedPlayer->GetActorLocation().ToCompactString() : TEXT("none"));
 	#endif
 	Chapter->SetStage(Stage);
 
@@ -550,7 +551,10 @@ void AAHChapterOneDirector::FinishDestructionSequence()
 void AAHChapterOneDirector::BuildGreybox()
 {
 	SpawnGreyboxLighting();
-	SpawnBlock(FVector(14500.0f, 0.0f, -100.0f), FVector(190.0f, 32.0f, 1.0f));
+	// Floor has to cover every ground-level actor in the chapter, from the player start at
+	// X=-1400 through the present day scene at X=30200. At scale 190 it only spanned
+	// X 5000..24000, so the player spawned over open space and fell out of the level.
+	SpawnBlock(FVector(14500.0f, 0.0f, -100.0f), FVector(330.0f, 40.0f, 1.0f));
 	for (int32 Index = 0; Index < 14; ++Index)
 	{
 		const float X = -650.0f + Index * 1150.0f;
