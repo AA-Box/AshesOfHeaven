@@ -99,6 +99,9 @@ public:
 	UAHInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
 protected:
+	void EnsureGreyboxBody();
+
+
 	UFUNCTION()
 	void HandleHealthDeath();
 

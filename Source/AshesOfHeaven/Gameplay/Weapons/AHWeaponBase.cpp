@@ -20,6 +20,10 @@ AAHWeaponBase::AAHWeaponBase()
 	WeaponMesh->SetupAttachment(RootComponent);
 	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WeaponMesh->SetOnlyOwnerSee(true);
+	// Without this the rifle draws at world scale and fills the view. First person primitives
+	// use the camera's FirstPersonFieldOfView/FirstPersonScale, which is what makes a held
+	// weapon read at the right size.
+	WeaponMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
 	if (USkeletalMesh* RifleMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Weapons/Rifle/Meshes/SKM_Rifle.SKM_Rifle")))
 	{
 		WeaponMesh->SetSkeletalMesh(RifleMesh);
@@ -36,14 +40,36 @@ void AAHWeaponBase::BeginPlay()
 	OnAmmoChanged.Broadcast(Ammo);
 }
 
+FRotator AAHWeaponBase::GetRestRotation() const
+{
+	return bUsingFirstPersonHold ? FirstPersonHoldRotation : FRotator::ZeroRotator;
+}
+
 void AAHWeaponBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	if (WeaponMesh)
 	{
+		// Recoil settles back to the rest pose. With a hand socket that rest pose is zero,
+		// because the socket already orients the weapon; without one it is the hold rotation,
+		// otherwise this would drag the weapon back to the mesh's own axes every frame.
+		const FRotator RestRotation = GetRestRotation();
 		const FRotator Current = WeaponMesh->GetRelativeRotation();
-		WeaponMesh->SetRelativeRotation(FMath::RInterpTo(Current, FRotator::ZeroRotator, DeltaSeconds, 14.0f));
+		WeaponMesh->SetRelativeRotation(FMath::RInterpTo(Current, RestRotation, DeltaSeconds, 14.0f));
 	}
+}
+
+USceneComponent* AAHWeaponBase::GetFirstPersonHoldParent(AAHCombatantCharacter* Combatant, USkeletalMeshComponent* AttachTarget) const
+{
+	// Only the local view needs the offset hold pose; NPCs keep their own mesh as the parent.
+	if (Combatant && Combatant->IsPlayerControlled())
+	{
+		if (USceneComponent* Camera = Combatant->GetFirstPersonCameraComponent())
+		{
+			return Camera;
+		}
+	}
+	return AttachTarget;
 }
 
 void AAHWeaponBase::SetWeaponActive(bool bActive)
@@ -59,14 +85,32 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 			AttachTarget = Combatant->GetMesh();
 			WeaponMesh->SetOnlyOwnerSee(false);
 		}
-		if (AttachTarget && WeaponMesh->GetAttachParent() != AttachTarget)
+		const FName GripSocket(TEXT("HandGrip_R"));
+		if (AttachTarget && AttachTarget->DoesSocketExist(GripSocket))
 		{
-			// Greybox characters have no skeletal mesh, so HandGrip_R cannot resolve and the
-			// attachment logs a warning on every transform update. Attach socketless until a
-			// real mesh provides the socket.
-			const FName GripSocket(TEXT("HandGrip_R"));
-			const FName AttachSocket = AttachTarget->DoesSocketExist(GripSocket) ? GripSocket : NAME_None;
-			WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
+			bUsingFirstPersonHold = false;
+			if (WeaponMesh->GetAttachParent() != AttachTarget)
+			{
+				WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocket);
+			}
+		}
+		else if (AttachTarget)
+		{
+			// Greybox characters have no skeletal mesh, so HandGrip_R does not exist. Snapping
+			// to the meshless component drops the weapon on the character's origin, where it
+			// fills the view, and re-resolving the missing socket logs a warning every frame.
+			// Hang it off the camera at a hold offset instead so the weapon reads as carried.
+			// Once a real mesh supplies the socket this branch stops being taken.
+			USceneComponent* FallbackParent = GetFirstPersonHoldParent(Combatant, AttachTarget);
+			if (WeaponMesh->GetAttachParent() != FallbackParent)
+			{
+				WeaponMesh->AttachToComponent(FallbackParent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, NAME_None);
+			}
+			// Only the local first person view gets the hold pose. An NPC weapon just rests on
+			// the body block; offsetting it there only detaches it from the soldier carrying it.
+			bUsingFirstPersonHold = FallbackParent != AttachTarget;
+			WeaponMesh->SetRelativeLocation(bUsingFirstPersonHold ? FirstPersonHoldOffset : FVector::ZeroVector);
+			WeaponMesh->SetRelativeRotation(bUsingFirstPersonHold ? FirstPersonHoldRotation : FRotator::ZeroRotator);
 		}
 	}
 }
@@ -232,7 +276,11 @@ void AAHWeaponBase::FireShot()
 	}
 	if (WeaponMesh)
 	{
-		WeaponMesh->SetRelativeRotation(FRotator(-VerticalRecoil * 2.0f, FMath::FRandRange(-HorizontalRecoil, HorizontalRecoil), 0.0f));
+		// Kick on top of the rest pose, in the parent's frame, so it reads as muzzle rise no
+		// matter how the mesh's own axes sit. Setting the kick as the relative rotation would
+		// throw the hold rotation away and snap the weapon back to the mesh's axes each shot.
+		const FRotator Kick(-VerticalRecoil * 2.0f, FMath::FRandRange(-HorizontalRecoil, HorizontalRecoil), 0.0f);
+		WeaponMesh->SetRelativeRotation(FQuat(Kick) * FQuat(GetRestRotation()));
 	}
 
 	MakeNoise(1.0f, Combatant, Combatant->GetActorLocation(), 3000.0f, Combatant->GetFactionName());
