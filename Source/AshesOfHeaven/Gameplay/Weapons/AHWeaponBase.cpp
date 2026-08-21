@@ -61,7 +61,12 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 		}
 		if (AttachTarget && WeaponMesh->GetAttachParent() != AttachTarget)
 		{
-			WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName(TEXT("HandGrip_R")));
+			// Greybox characters have no skeletal mesh, so HandGrip_R cannot resolve and the
+			// attachment logs a warning on every transform update. Attach socketless until a
+			// real mesh provides the socket.
+			const FName GripSocket(TEXT("HandGrip_R"));
+			const FName AttachSocket = AttachTarget->DoesSocketExist(GripSocket) ? GripSocket : NAME_None;
+			WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
 		}
 	}
 }

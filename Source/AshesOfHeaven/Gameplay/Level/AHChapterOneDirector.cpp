@@ -16,9 +16,14 @@
 #include "Gameplay/Weapons/AHWeaponPickup.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Components/BoxComponent.h"
+#include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextRenderActor.h"
 #include "Engine/World.h"
@@ -27,7 +32,6 @@
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
 #include "NavigationSystem.h"
-#include "NavMesh/NavMeshBoundsVolume.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -545,6 +549,7 @@ void AAHChapterOneDirector::FinishDestructionSequence()
 
 void AAHChapterOneDirector::BuildGreybox()
 {
+	SpawnGreyboxLighting();
 	SpawnBlock(FVector(14500.0f, 0.0f, -100.0f), FVector(190.0f, 32.0f, 1.0f));
 	for (int32 Index = 0; Index < 14; ++Index)
 	{
@@ -571,7 +576,6 @@ void AAHChapterOneDirector::BuildGreybox()
 	SpawnLabel(FVector(7000.0f, -1180.0f, 300.0f), TEXT("OPEN BATTLEFIELD"), FColor(220, 140, 80));
 	SpawnLabel(FVector(13000.0f, -1600.0f, 2600.0f), TEXT("CATHEDRAL"), FColor(160, 120, 255));
 	SpawnLabel(FVector(30000.0f, -1000.0f, 400.0f), TEXT("TEN YEARS LATER"), FColor(120, 220, 190));
-	SpawnNavigationCoverage();
 	SpawnBattlefieldSimulation();
 }
 
@@ -687,6 +691,48 @@ void AAHChapterOneDirector::SpawnManticore()
 	}
 }
 
+void AAHChapterOneDirector::SpawnGreyboxLighting()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	// The greybox map is generated empty and every actor here is spawned at runtime, so
+	// nothing in the level provides illumination. Without these the scene renders black.
+	// Neutral working light only - Phase 4 replaces this with the real lighting pass.
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	if (ADirectionalLight* SunLight = GetWorld()->SpawnActor<ADirectionalLight>(
+		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-42.0f, -35.0f, 0.0f), SpawnParams))
+	{
+		SunLight->SetMobility(EComponentMobility::Movable);
+		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
+		{
+			SunComponent->SetIntensity(3.5f);
+			SunComponent->SetAtmosphereSunLight(true);
+		}
+	}
+
+	GetWorld()->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+
+	if (ASkyLight* Sky = GetWorld()->SpawnActor<ASkyLight>(
+		ASkyLight::StaticClass(), FVector(0.0f, 0.0f, 4000.0f), FRotator::ZeroRotator, SpawnParams))
+	{
+		if (USkyLightComponent* SkyComponent = Sky->GetLightComponent())
+		{
+			SkyComponent->SetMobility(EComponentMobility::Movable);
+			// Real-time capture sources ambient from the atmosphere; a static capture of an
+			// unlit scene would just bake black.
+			SkyComponent->SetRealTimeCapture(true);
+			SkyComponent->SetIntensity(1.0f);
+		}
+	}
+
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Greybox] lighting spawned sun+sky"));
+}
+
 void AAHChapterOneDirector::SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation, UMaterialInterface* MaterialOverride)
 {
 	if (!GetWorld() || !BlockMesh)
@@ -749,14 +795,6 @@ void AAHChapterOneDirector::SpawnFriendly(const FVector& Location, FName Display
 		{
 			Friendly->Tags.Add(DisplayId);
 		}
-	}
-}
-
-void AAHChapterOneDirector::SpawnNavigationCoverage()
-{
-	if (ANavMeshBoundsVolume* Volume = GetWorld()->SpawnActor<ANavMeshBoundsVolume>(ANavMeshBoundsVolume::StaticClass(), FVector(12500.0f, 0.0f, 500.0f), FRotator::ZeroRotator))
-	{
-		Volume->SetActorScale3D(FVector(145.0f, 32.0f, 10.0f));
 	}
 }
 

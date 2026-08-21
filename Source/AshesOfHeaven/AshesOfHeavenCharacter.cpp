@@ -11,6 +11,21 @@
 #include "AshesOfHeaven.h"
 #include "Platform/AHPlatformManagerSubsystem.h"
 
+void AAshesOfHeavenCharacter::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// The camera is attached to the "head" socket of the first person mesh. Until that mesh
+	// has a skeletal mesh asset the socket cannot resolve, and every transform update logs a
+	// warning - tens of thousands of them per playtest. The unresolved socket already falls
+	// back to the component transform, so re-attaching without a socket is the same position
+	// with no spam. Once a real mesh supplies the socket this guard stops firing.
+	if (FirstPersonCameraComponent && FirstPersonMesh && !FirstPersonMesh->DoesSocketExist(FName("head")))
+	{
+		FirstPersonCameraComponent->AttachToComponent(FirstPersonMesh, FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+	}
+}
+
 AAshesOfHeavenCharacter::AAshesOfHeavenCharacter()
 {
 	// Set size for collision capsule
