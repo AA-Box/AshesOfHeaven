@@ -72,6 +72,7 @@ void UAHChapterSubsystem::StartCountdown(float DurationSeconds)
 	State.CountdownSeconds = FMath::Max(0.0f, DurationSeconds);
 	State.bCountdownActive = State.CountdownSeconds > 0.0f;
 	LastCountdownMilestone = FMath::CeilToInt(State.CountdownSeconds);
+	OnCountdownChanged.Broadcast(State.CountdownSeconds, State.bCountdownActive);
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] begin seconds=%0.1f"), State.CountdownSeconds);
 	#endif
@@ -80,6 +81,7 @@ void UAHChapterSubsystem::StartCountdown(float DurationSeconds)
 void UAHChapterSubsystem::StopCountdown()
 {
 	State.bCountdownActive = false;
+	OnCountdownChanged.Broadcast(State.CountdownSeconds, false);
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] stop remaining=%0.1f"), State.CountdownSeconds);
 	#endif
@@ -93,6 +95,7 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 	}
 
 	State.CountdownSeconds = FMath::Max(0.0f, State.CountdownSeconds - FMath::Max(0.0f, DeltaSeconds));
+	const bool bWasActive = State.bCountdownActive;
 	const int32 CurrentMilestone = FMath::FloorToInt(State.CountdownSeconds);
 	if (CurrentMilestone != LastCountdownMilestone)
 	{
@@ -108,6 +111,10 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 	if (State.CountdownSeconds <= 0.0f)
 	{
 		State.bCountdownActive = false;
+	}
+	if (bWasActive && (FMath::FloorToInt(State.CountdownSeconds) != FMath::FloorToInt(State.CountdownSeconds + FMath::Max(0.0f, DeltaSeconds)) || !State.bCountdownActive))
+	{
+		OnCountdownChanged.Broadcast(State.CountdownSeconds, State.bCountdownActive);
 	}
 }
 
@@ -129,4 +136,5 @@ void UAHChapterSubsystem::RestoreState(const FAHChapterState& RestoredState)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] restore stage=%s objective=%d checkpoint=%s countdown=%0.1f vehicle_spawned=%s vehicle_destroyed=%s"), *UEnum::GetValueAsString(State.Stage), State.ObjectiveIndex, *State.CheckpointId.ToString(), State.CountdownSeconds, State.Vehicle.bSpawned ? TEXT("true") : TEXT("false"), State.Vehicle.bDestroyed ? TEXT("true") : TEXT("false"));
 	#endif
 	OnStageChanged.Broadcast(State.Stage);
+	OnCountdownChanged.Broadcast(State.CountdownSeconds, State.bCountdownActive);
 }

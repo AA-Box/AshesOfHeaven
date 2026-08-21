@@ -97,6 +97,12 @@ void AAHManticoreVehicle::Tick(float DeltaSeconds)
 	SetActorLocation(DesiredLocation, true);
 	SuspensionCompression = FMath::Sin(GetWorld()->GetTimeSeconds() * 9.0f) * SpeedRatio * 4.0f;
 	VehicleMesh->SetRelativeLocation(FVector(0.0f, 0.0f, SuspensionCompression));
+	PresentationEventTime -= DeltaSeconds;
+	if (PresentationEventTime <= 0.0f)
+	{
+		PresentationEventTime = 0.10f;
+		OnPresentationStateChanged.Broadcast();
+	}
 }
 
 void AAHManticoreVehicle::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

@@ -6,6 +6,7 @@
 #include "AHChapterTerminal.generated.h"
 
 class UStaticMeshComponent;
+class UWidgetComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHChapterTerminalConfirmedDelegate);
 
@@ -16,9 +17,13 @@ class ASHESOFHEAVEN_API AAHChapterTerminal : public AActor, public IAHInteractab
 
 public:
 	AAHChapterTerminal();
+	virtual void BeginPlay() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UStaticMeshComponent> TerminalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UWidgetComponent> TerminalWidget;
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterTerminalConfirmedDelegate OnConfirmed;

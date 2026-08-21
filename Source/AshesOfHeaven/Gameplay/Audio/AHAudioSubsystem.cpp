@@ -1,6 +1,11 @@
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 
 #include "AshesOfHeaven.h"
+#include "Gameplay/Audio/AHAudioPaletteData.h"
+#include "Gameplay/Audio/AHAudioSettings.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -31,12 +36,25 @@ namespace
 void UAHAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	bAudioPaletteReady = true;
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.1][Audio] runtime palette initialized cues=14 sample_rate=%d"), SampleRate);
+	const UAHAudioSettings* Settings = GetDefault<UAHAudioSettings>();
+	const FSoftObjectPath PalettePath = Settings && Settings->DefaultPalette.IsValid()
+		? Settings->DefaultPalette
+		: FSoftObjectPath(TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
+	AudioPalette = Cast<UAHAudioPaletteData>(PalettePath.TryLoad());
+	bAudioPaletteReady = AudioPalette != nullptr;
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Audio] palette=%s authored=%s generated_fallback=%s"),
+		*PalettePath.ToString(), bAudioPaletteReady ? TEXT("ready") : TEXT("missing"), ShouldUseGeneratedFallback() ? TEXT("enabled") : TEXT("disabled"));
 
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().SetTimer(CleanupTimer, this, &UAHAudioSubsystem::CleanupActiveWaves, 1.0f, true);
+		if (GetWorld()->GetGameInstance())
+		{
+			if (UAHChapterSubsystem* Chapter = GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>())
+			{
+				Chapter->OnStageChanged.AddDynamic(this, &UAHAudioSubsystem::HandleChapterStageChanged);
+			}
+		}
 	}
 }
 
@@ -45,10 +63,19 @@ void UAHAudioSubsystem::Deinitialize()
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(CleanupTimer);
+		if (GetWorld()->GetGameInstance())
+		{
+			if (UAHChapterSubsystem* Chapter = GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>())
+			{
+				Chapter->OnStageChanged.RemoveDynamic(this, &UAHAudioSubsystem::HandleChapterStageChanged);
+			}
+		}
 	}
 	ActiveWaves.Reset();
 	ActiveWaveExpiryTimes.Reset();
 	AmbientWave = nullptr;
+	ActiveEnvironmentComponent = nullptr;
+	AudioPalette = nullptr;
 	bAudioPaletteReady = false;
 	Super::Deinitialize();
 }
@@ -60,14 +87,113 @@ void UAHAudioSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		return;
 	}
-
-	float AmbientDuration = 0.0f;
-	AmbientWave = CreateCueWave(EAHAudioCue::Ambient, AmbientDuration);
-	if (AmbientWave)
+	if (UAHChapterSubsystem* Chapter = InWorld.GetGameInstance() ? InWorld.GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
 	{
-		AmbientWave->OnSoundWaveProceduralUnderflow.BindUObject(this, &UAHAudioSubsystem::HandleAmbientUnderflow);
-		UGameplayStatics::PlaySound2D(this, AmbientWave, 0.12f, 1.0f);
-		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.1][Audio] ambient bed started duration=%0.1fs"), AmbientDuration);
+		HandleChapterStageChanged(Chapter->GetStage());
+	}
+	else
+	{
+		HandleChapterStageChanged(EAHChapterStage::ErebusOpening);
+	}
+}
+
+FName UAHAudioSubsystem::GetSemanticEventName(EAHAudioCue Cue) const
+{
+	switch (Cue)
+	{
+	case EAHAudioCue::Shot: return FName(TEXT("Weapon.M91.Fire"));
+	case EAHAudioCue::Reload: return FName(TEXT("Weapon.M91.Reload"));
+	case EAHAudioCue::Empty: return FName(TEXT("Weapon.M91.Empty"));
+	case EAHAudioCue::Impact: return FName(TEXT("Weapon.M91.Impact"));
+	case EAHAudioCue::Melee: return FName(TEXT("Combat.Melee"));
+	case EAHAudioCue::Hurt: return FName(TEXT("Combat.Hurt"));
+	case EAHAudioCue::Armor: return FName(TEXT("Combat.Armor"));
+	case EAHAudioCue::Death: return FName(TEXT("Combat.Death"));
+	case EAHAudioCue::Grenade: return FName(TEXT("Combat.Grenade"));
+	case EAHAudioCue::Objective: return FName(TEXT("UI.Objective"));
+	case EAHAudioCue::Dialogue: return FName(TEXT("UI.Dialogue"));
+	case EAHAudioCue::Pickup: return FName(TEXT("UI.Pickup"));
+	case EAHAudioCue::Footstep: return FName(TEXT("Player.Footstep"));
+	case EAHAudioCue::Ambient: return FName(TEXT("Environment.Erebus"));
+	default: return NAME_None;
+	}
+}
+
+USoundBase* UAHAudioSubsystem::ResolveAuthoredCue(EAHAudioCue Cue)
+{
+	if (!AudioPalette)
+	{
+		return nullptr;
+	}
+	if (const TSoftObjectPtr<USoundBase>* Entry = AudioPalette->Events.Find(GetSemanticEventName(Cue)))
+	{
+		return Entry->LoadSynchronous();
+	}
+	return nullptr;
+}
+
+USoundBase* UAHAudioSubsystem::ResolveAuthoredEnvironment(FName EnvironmentId)
+{
+	if (!AudioPalette)
+	{
+		return nullptr;
+	}
+	if (const TSoftObjectPtr<USoundBase>* Entry = AudioPalette->Environments.Find(EnvironmentId))
+	{
+		return Entry->LoadSynchronous();
+	}
+	return nullptr;
+}
+
+bool UAHAudioSubsystem::HasAuthoredCue(EAHAudioCue Cue) const
+{
+	return AudioPalette && AudioPalette->Events.Contains(GetSemanticEventName(Cue));
+}
+
+bool UAHAudioSubsystem::ShouldUseGeneratedFallback() const
+{
+	return GetDefault<UAHAudioSettings>()->bAllowGeneratedAudioFallback && !UE_BUILD_SHIPPING;
+}
+
+FName UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage Stage) const
+{
+	switch (Stage)
+	{
+	case EAHChapterStage::TransitStation: return FName(TEXT("Environment.Transit"));
+	case EAHChapterStage::ManticoreSection: return FName(TEXT("Environment.Manticore"));
+	case EAHChapterStage::CathedralApproach:
+	case EAHChapterStage::FailsafeOrder:
+	case EAHChapterStage::CathedralInterior:
+	case EAHChapterStage::SaelTransmission:
+	case EAHChapterStage::FailsafeTerminal:
+	case EAHChapterStage::Escape: return FName(TEXT("Environment.Cathedral"));
+	default: return FName(TEXT("Environment.Erebus"));
+	}
+}
+
+void UAHAudioSubsystem::HandleChapterStageChanged(EAHChapterStage Stage)
+{
+	if (!GetWorld() || IsRunningCommandlet())
+	{
+		return;
+	}
+	const FName EnvironmentId = GetEnvironmentForStage(Stage);
+	if (USoundBase* Environment = ResolveAuthoredEnvironment(EnvironmentId))
+	{
+		if (ActiveEnvironmentComponent)
+		{
+			ActiveEnvironmentComponent->FadeOut(0.6f, 0.0f);
+		}
+		ActiveEnvironmentComponent = UGameplayStatics::SpawnSound2D(this, Environment, 0.35f, 1.0f, 0.0f, nullptr, true, true);
+		if (ActiveEnvironmentComponent)
+		{
+			ActiveEnvironmentComponent->FadeIn(0.8f, 0.35f);
+		}
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Audio] authored environment changed id=%s asset=%s"), *EnvironmentId.ToString(), *GetNameSafe(Environment));
+	}
+	else if (ShouldUseGeneratedFallback())
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.2][Audio] environment missing id=%s; generated fallback is opt-in only"), *EnvironmentId.ToString());
 	}
 }
 
@@ -96,73 +222,30 @@ float UAHAudioSubsystem::GetCueDuration(EAHAudioCue Cue) const
 void UAHAudioSubsystem::FillSamples(EAHAudioCue Cue, TArray<int16>& OutSamples, float StartTimeSeconds) const
 {
 	const float Duration = GetCueDuration(Cue);
-	const int32 NumSamples = OutSamples.Num();
-	for (int32 Index = 0; Index < NumSamples; ++Index)
+	for (int32 Index = 0; Index < OutSamples.Num(); ++Index)
 	{
 		const float Time = StartTimeSeconds + static_cast<float>(Index) / SampleRate;
 		const float LocalTime = FMath::Fmod(Time, Duration);
 		const float Fade = Envelope(LocalTime, Duration, Cue == EAHAudioCue::Ambient ? 0.08f : 0.0025f, Cue == EAHAudioCue::Ambient ? 0.18f : 0.06f);
 		float Sample = 0.0f;
-
 		switch (Cue)
 		{
-		case EAHAudioCue::Shot:
-			Sample = (Tone(92.0f, LocalTime) * 0.58f + Tone(780.0f, LocalTime) * 0.22f + StableNoise(LocalTime) * 0.18f) * Fade;
-			break;
-		case EAHAudioCue::Reload:
-		{
-			const float ClickA = FMath::Exp(-LocalTime * 115.0f) * Tone(1550.0f, LocalTime);
-			const float ClickBTime = FMath::Max(0.0f, LocalTime - 0.115f);
-			const float ClickB = FMath::Exp(-ClickBTime * 105.0f) * Tone(1120.0f, ClickBTime);
-			Sample = (ClickA * 0.50f + ClickB * 0.42f + Tone(120.0f, LocalTime) * 0.16f) * Fade;
-			break;
+		case EAHAudioCue::Shot: Sample = (Tone(92.0f, LocalTime) * 0.58f + Tone(780.0f, LocalTime) * 0.22f + StableNoise(LocalTime) * 0.18f) * Fade; break;
+		case EAHAudioCue::Reload: Sample = (Tone(1550.0f, LocalTime) * FMath::Exp(-LocalTime * 115.0f) + Tone(1120.0f, FMath::Max(0.0f, LocalTime - 0.115f)) * 0.42f) * Fade; break;
+		case EAHAudioCue::Empty: Sample = (Tone(430.0f, LocalTime) * 0.45f + StableNoise(LocalTime) * 0.12f) * Fade; break;
+		case EAHAudioCue::Impact: Sample = (StableNoise(LocalTime) * 0.56f + Tone(86.0f, LocalTime) * 0.42f) * Fade; break;
+		case EAHAudioCue::Melee: Sample = (StableNoise(LocalTime * 1.8f) * 0.38f + Tone(210.0f, LocalTime) * 0.20f) * Fade; break;
+		case EAHAudioCue::Hurt: Sample = (Tone(148.0f, LocalTime) * 0.42f + Tone(310.0f, LocalTime) * 0.12f) * Fade; break;
+		case EAHAudioCue::Armor: Sample = (Tone(980.0f, LocalTime) * 0.35f + Tone(520.0f, LocalTime) * 0.24f) * Fade; break;
+		case EAHAudioCue::Death: Sample = (Tone(FMath::Lerp(260.0f, 72.0f, LocalTime / Duration), LocalTime) * 0.45f + StableNoise(LocalTime) * 0.10f) * Fade; break;
+		case EAHAudioCue::Grenade: Sample = (Tone(58.0f, LocalTime) * 0.68f + StableNoise(LocalTime) * 0.42f) * Fade; break;
+		case EAHAudioCue::Objective: Sample = Tone(LocalTime < 0.11f ? 520.0f : (LocalTime < 0.22f ? 740.0f : 1040.0f), LocalTime) * Fade * 0.34f; break;
+		case EAHAudioCue::Dialogue: Sample = (Tone(420.0f, LocalTime) * 0.22f + Tone(630.0f, LocalTime) * 0.15f) * Fade; break;
+		case EAHAudioCue::Pickup: Sample = Tone(FMath::Lerp(440.0f, 880.0f, LocalTime / Duration), LocalTime) * Fade * 0.26f; break;
+		case EAHAudioCue::Footstep: Sample = (StableNoise(LocalTime * 3.4f) * 0.42f + Tone(72.0f, LocalTime) * 0.26f) * Fade; break;
+		case EAHAudioCue::Ambient: Sample = (Tone(47.0f, Time) * 0.26f + Tone(93.0f, Time) * 0.11f + StableNoise(Time * 0.23f) * 0.035f) * 0.75f; break;
+		default: break;
 		}
-		case EAHAudioCue::Empty:
-			Sample = (Tone(430.0f, LocalTime) * 0.45f + StableNoise(LocalTime) * 0.12f) * Fade;
-			break;
-		case EAHAudioCue::Impact:
-			Sample = (StableNoise(LocalTime) * 0.56f + Tone(86.0f, LocalTime) * 0.42f) * Fade;
-			break;
-		case EAHAudioCue::Melee:
-			Sample = (StableNoise(LocalTime * 1.8f) * 0.38f + Tone(210.0f, LocalTime) * 0.20f) * Fade;
-			break;
-		case EAHAudioCue::Hurt:
-			Sample = (Tone(148.0f, LocalTime) * 0.42f + Tone(310.0f, LocalTime) * 0.12f) * Fade;
-			break;
-		case EAHAudioCue::Armor:
-			Sample = (Tone(980.0f, LocalTime) * 0.35f + Tone(520.0f, LocalTime) * 0.24f) * Fade;
-			break;
-		case EAHAudioCue::Death:
-			Sample = (Tone(FMath::Lerp(260.0f, 72.0f, LocalTime / Duration), LocalTime) * 0.45f + StableNoise(LocalTime) * 0.10f) * Fade;
-			break;
-		case EAHAudioCue::Grenade:
-			Sample = (Tone(58.0f, LocalTime) * 0.68f + StableNoise(LocalTime) * 0.42f) * Fade;
-			break;
-		case EAHAudioCue::Objective:
-		{
-			const float Frequency = LocalTime < 0.11f ? 520.0f : (LocalTime < 0.22f ? 740.0f : 1040.0f);
-			Sample = Tone(Frequency, LocalTime) * Fade * 0.34f;
-			break;
-		}
-		case EAHAudioCue::Dialogue:
-			Sample = (Tone(420.0f, LocalTime) * 0.22f + Tone(630.0f, LocalTime) * 0.15f) * Fade;
-			break;
-		case EAHAudioCue::Pickup:
-		{
-			const float Frequency = FMath::Lerp(440.0f, 880.0f, LocalTime / Duration);
-			Sample = Tone(Frequency, LocalTime) * Fade * 0.26f;
-			break;
-		}
-		case EAHAudioCue::Footstep:
-			Sample = (StableNoise(LocalTime * 3.4f) * 0.42f + Tone(72.0f, LocalTime) * 0.26f) * Fade;
-			break;
-		case EAHAudioCue::Ambient:
-			Sample = (Tone(47.0f, Time) * 0.26f + Tone(93.0f, Time) * 0.11f + StableNoise(Time * 0.23f) * 0.035f) * 0.75f;
-			break;
-		default:
-			break;
-		}
-
 		OutSamples[Index] = static_cast<int16>(FMath::Clamp(Sample, -1.0f, 1.0f) * 32767.0f);
 	}
 }
@@ -174,13 +257,8 @@ USoundWaveProcedural* UAHAudioSubsystem::CreateCueWave(EAHAudioCue Cue, float& O
 	TArray<int16> Samples;
 	Samples.SetNumZeroed(NumSamples);
 	FillSamples(Cue, Samples);
-
 	USoundWaveProcedural* Wave = NewObject<USoundWaveProcedural>(const_cast<UAHAudioSubsystem*>(this));
-	if (!Wave)
-	{
-		return nullptr;
-	}
-
+	if (!Wave) return nullptr;
 	Wave->SetSampleRate(SampleRate);
 	Wave->SetNumFrames(NumSamples);
 	Wave->NumChannels = 1;
@@ -192,70 +270,65 @@ USoundWaveProcedural* UAHAudioSubsystem::CreateCueWave(EAHAudioCue Cue, float& O
 
 void UAHAudioSubsystem::PlayWorldCue(EAHAudioCue Cue, const FVector& Location, float VolumeMultiplier, float PitchMultiplier)
 {
-	if (!bAudioPaletteReady || !GetWorld())
+	if (!bAudioPaletteReady || !GetWorld()) return;
+	if (USoundBase* AuthoredCue = ResolveAuthoredCue(Cue))
 	{
+		UGameplayStatics::PlaySoundAtLocation(this, AuthoredCue, Location, VolumeMultiplier, PitchMultiplier);
 		return;
 	}
-
+	if (!ShouldUseGeneratedFallback())
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.2][Audio] missing authored event=%s; playback skipped"), *GetSemanticEventName(Cue).ToString());
+		return;
+	}
 	float Duration = 0.0f;
-	USoundWaveProcedural* Wave = CreateCueWave(Cue, Duration);
-	if (!Wave)
+	if (USoundWaveProcedural* Wave = CreateCueWave(Cue, Duration))
 	{
-		return;
+		ActiveWaves.Add(Wave);
+		ActiveWaveExpiryTimes.Add(GetWorld()->GetTimeSeconds() + Duration + 0.5f);
+		UGameplayStatics::PlaySoundAtLocation(this, Wave, Location, VolumeMultiplier, PitchMultiplier);
 	}
-
-	ActiveWaves.Add(Wave);
-	ActiveWaveExpiryTimes.Add(GetWorld()->GetTimeSeconds() + Duration + 0.5f);
-	UGameplayStatics::PlaySoundAtLocation(this, Wave, Location, VolumeMultiplier, PitchMultiplier);
 }
 
 void UAHAudioSubsystem::PlayUICue(EAHAudioCue Cue, float VolumeMultiplier, float PitchMultiplier)
 {
-	if (!bAudioPaletteReady || !GetWorld())
+	if (!bAudioPaletteReady || !GetWorld()) return;
+	if (USoundBase* AuthoredCue = ResolveAuthoredCue(Cue))
 	{
+		UGameplayStatics::PlaySound2D(this, AuthoredCue, VolumeMultiplier, PitchMultiplier);
 		return;
 	}
-
+	if (!ShouldUseGeneratedFallback())
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.2][Audio] missing authored UI event=%s; playback skipped"), *GetSemanticEventName(Cue).ToString());
+		return;
+	}
 	float Duration = 0.0f;
-	USoundWaveProcedural* Wave = CreateCueWave(Cue, Duration);
-	if (!Wave)
+	if (USoundWaveProcedural* Wave = CreateCueWave(Cue, Duration))
 	{
-		return;
+		ActiveWaves.Add(Wave);
+		ActiveWaveExpiryTimes.Add(GetWorld()->GetTimeSeconds() + Duration + 0.5f);
+		UGameplayStatics::PlaySound2D(this, Wave, VolumeMultiplier, PitchMultiplier);
 	}
-
-	ActiveWaves.Add(Wave);
-	ActiveWaveExpiryTimes.Add(GetWorld()->GetTimeSeconds() + Duration + 0.5f);
-	UGameplayStatics::PlaySound2D(this, Wave, VolumeMultiplier, PitchMultiplier);
 }
 
 void UAHAudioSubsystem::CleanupActiveWaves()
 {
-	if (!GetWorld())
-	{
-		return;
-	}
-
+	if (!GetWorld()) return;
 	const float Now = GetWorld()->GetTimeSeconds();
 	for (int32 Index = ActiveWaves.Num() - 1; Index >= 0; --Index)
 	{
 		if (!ActiveWaveExpiryTimes.IsValidIndex(Index) || ActiveWaveExpiryTimes[Index] <= Now)
 		{
 			ActiveWaves.RemoveAt(Index);
-			if (ActiveWaveExpiryTimes.IsValidIndex(Index))
-			{
-				ActiveWaveExpiryTimes.RemoveAt(Index);
-			}
+			if (ActiveWaveExpiryTimes.IsValidIndex(Index)) ActiveWaveExpiryTimes.RemoveAt(Index);
 		}
 	}
 }
 
 void UAHAudioSubsystem::HandleAmbientUnderflow(USoundWaveProcedural* Wave, int32 SamplesNeeded)
 {
-	if (!Wave || Wave != AmbientWave || SamplesNeeded <= 0)
-	{
-		return;
-	}
-
+	if (!Wave || Wave != AmbientWave || SamplesNeeded <= 0) return;
 	TArray<int16> Samples;
 	Samples.SetNumZeroed(SamplesNeeded);
 	FillSamples(EAHAudioCue::Ambient, Samples, AmbientTimeSeconds);

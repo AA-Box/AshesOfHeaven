@@ -51,6 +51,10 @@ void AAHCombatPlayerController::BindObjectiveEvents(UAHObjectiveSubsystem* Objec
 void AAHCombatPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (AAHCombatHUD* HUD = GetCombatHUD())
+	{
+		HUD->SetPossessedPawn(InPawn);
+	}
 	if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(InPawn))
 	{
 		Player->OnCombatantDeath.AddDynamic(this, &AAHCombatPlayerController::HandlePlayerDeath);

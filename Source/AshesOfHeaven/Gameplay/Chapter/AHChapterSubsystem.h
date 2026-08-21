@@ -7,6 +7,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHChapterStageChangedDelegate, EAHChapterStage, Stage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHChapterCountdownMilestoneDelegate, int32, SecondsRemaining);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAHChapterCountdownChangedDelegate, float, SecondsRemaining, bool, bActive);
 
 UCLASS()
 class ASHESOFHEAVEN_API UAHChapterSubsystem : public UGameInstanceSubsystem
@@ -21,6 +22,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterCountdownMilestoneDelegate OnCountdownMilestone;
+
+	UPROPERTY(BlueprintAssignable, Category="Chapter")
+	FAHChapterCountdownChangedDelegate OnCountdownChanged;
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	const FAHChapterState& GetState() const { return State; }

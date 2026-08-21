@@ -10,6 +10,9 @@
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
+#include "Gameplay/UI/AHHUDRootWidget.h"
+#include "Gameplay/Audio/AHAudioPaletteData.h"
+#include "Gameplay/Presentation/AHPresentationData.h"
 #include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
@@ -20,6 +23,12 @@
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Parse.h"
 #include "UObject/UnrealType.h"
+#include "Blueprint/UserWidget.h"
+#include "Engine/Blueprint.h"
+#include "Engine/AssetManager.h"
+#include "Materials/MaterialInterface.h"
+#include "NiagaraSystem.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 UAHCombatVerificationCommandlet::UAHCombatVerificationCommandlet()
 {
@@ -420,6 +429,56 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		UAHChapterSubsystem* Restored = NewObject<UAHChapterSubsystem>(TestGameInstance);
 		Restored->RestoreState(SavedState);
 		Expect(TestName, TEXT("countdown and narrative state restore together"), FMath::IsNearlyEqual(Restored->GetCountdownSeconds(), 500.0f) && Restored->HasCompletedNarrativeEvent(FName(TEXT("Ch01_VeilRevelation"))));
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Presentation.AssetManifest")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Presentation.AssetManifest");
+		const int32 FailureCountBefore = FailureCount;
+		TArray<FAssetData> PresentationAssets;
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get().GetAssetsByPath(FName(TEXT("/Game/Ashes")), PresentationAssets, true);
+		Expect(TestName, TEXT("Asset Registry contains the saved presentation tree"), PresentationAssets.Num() >= 60);
+		const TArray<FString> WidgetPaths = {
+			TEXT("/Game/Ashes/UI/HUD/WBP_HUD_Root.WBP_HUD_Root_C"), TEXT("/Game/Ashes/UI/HUD/WBP_Objective.WBP_Objective_C"),
+			TEXT("/Game/Ashes/UI/HUD/WBP_PlayerStatus.WBP_PlayerStatus_C"), TEXT("/Game/Ashes/UI/HUD/WBP_WeaponStatus.WBP_WeaponStatus_C"),
+			TEXT("/Game/Ashes/UI/HUD/WBP_Crosshair.WBP_Crosshair_C"), TEXT("/Game/Ashes/UI/HUD/WBP_InteractionPrompt.WBP_InteractionPrompt_C"),
+			TEXT("/Game/Ashes/UI/HUD/WBP_DamageIndicator.WBP_DamageIndicator_C"), TEXT("/Game/Ashes/UI/HUD/WBP_Countdown.WBP_Countdown_C"),
+			TEXT("/Game/Ashes/UI/HUD/WBP_Dialogue.WBP_Dialogue_C"), TEXT("/Game/Ashes/UI/HUD/WBP_TerminalIntel.WBP_TerminalIntel_C"),
+			TEXT("/Game/Ashes/UI/HUD/WBP_ManticoreHUD.WBP_ManticoreHUD_C"), TEXT("/Game/Ashes/UI/HUD/WBP_ChapterTitle.WBP_ChapterTitle_C"),
+			TEXT("/Game/Ashes/UI/Terminal/WBP_TerminalWorld.WBP_TerminalWorld_C")
+		};
+		for (const FString& Path : WidgetPaths)
+		{
+			UClass* WidgetClass = LoadObject<UClass>(nullptr, *Path);
+			Expect(TestName, TEXT("saved UMG widget class exists"), WidgetClass && WidgetClass->IsChildOf(UUserWidget::StaticClass()));
+		}
+		UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
+		Expect(TestName, TEXT("audio palette data asset exists"), Palette != nullptr);
+		Expect(TestName, TEXT("audio palette contains semantic events"), Palette && Palette->Events.Num() >= 7);
+		Expect(TestName, TEXT("audio palette contains environment events"), Palette && Palette->Environments.Num() >= 3);
+		for (const TCHAR* Path : {
+			TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Fire.MS_M91_Fire"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Impact.MS_M91_Impact"),
+			TEXT("/Game/Ashes/Audio/MetaSounds/MS_Erebus_Ambience.MS_Erebus_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Transit_Ambience.MS_Transit_Ambience"),
+			TEXT("/Game/Ashes/Audio/MetaSounds/MS_Cathedral_Ambience.MS_Cathedral_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Manticore_Engine.MS_Manticore_Engine"),
+			TEXT("/Game/Ashes/Audio/MetaSounds/MS_UI_Objective.MS_UI_Objective") })
+		{
+			Expect(TestName, TEXT("MetaSound presentation asset exists"), LoadObject<USoundBase>(nullptr, Path) != nullptr);
+		}
+		for (const TCHAR* Path : {
+			TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_HumanArmor.M_HumanArmor"), TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"),
+			TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter"), TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"), TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph") })
+		{
+			Expect(TestName, TEXT("authored material exists"), LoadObject<UMaterialInterface>(nullptr, Path) != nullptr);
+		}
+		for (const TCHAR* Path : {
+			TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
+			TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"),
+			TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"), TEXT("/Game/Ashes/VFX/NS_CathedralParticles.NS_CathedralParticles") })
+		{
+			Expect(TestName, TEXT("cooked-safe Niagara asset exists"), LoadObject<UNiagaraSystem>(nullptr, Path) != nullptr);
+		}
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}

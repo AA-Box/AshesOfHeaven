@@ -4,6 +4,9 @@
 #include "GameFramework/HUD.h"
 #include "AHCombatHUD.generated.h"
 
+class UAHHUDRootWidget;
+class APawn;
+
 UCLASS()
 class ASHESOFHEAVEN_API AAHCombatHUD : public AHUD
 {
@@ -12,8 +15,11 @@ class ASHESOFHEAVEN_API AAHCombatHUD : public AHUD
 public:
 	AAHCombatHUD();
 
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void DrawHUD() override;
 
+	void SetPossessedPawn(APawn* NewPawn);
 	void ShowHitMarker(bool bHeadshot);
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
 	void SetObjective(const FText& NewObjective, int32 NewIndex, int32 Count);
@@ -22,22 +28,14 @@ public:
 	int32 GetObjectiveIndex() const { return ObjectiveIndex; }
 	int32 GetObjectiveCount() const { return ObjectiveCount; }
 	bool IsMissionCompleteDisplayed() const { return bMissionComplete; }
+	UAHHUDRootWidget* GetRootWidget() const { return RootWidget; }
 
 private:
-	void DrawPanel(const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color) const;
-	void DrawTacticalFrame(const FVector2D& Position, const FVector2D& Size, const FLinearColor& Accent, float FillAlpha = 0.66f) const;
-	void DrawLine(const FVector2D& Start, const FVector2D& End, const FLinearColor& Color, float Thickness = 1.0f) const;
-	void DrawBar(const FVector2D& Position, const FVector2D& Size, float Percent, const FLinearColor& Color) const;
-	void DrawTextAt(const FText& Text, const FVector2D& Position, const FLinearColor& Color, float Scale = 1.0f) const;
+	UPROPERTY(Transient)
+	TObjectPtr<UAHHUDRootWidget> RootWidget;
 
-	float HitMarkerUntil = 0.0f;
-	float DamageFeedbackUntil = 0.0f;
-	bool bHitWasHeadshot = false;
-	bool bArmorBreak = false;
-	float DamageDirectionAngle = 0.0f;
 	bool bMissionComplete = false;
 	FText CurrentObjective;
 	int32 ObjectiveIndex = 0;
 	int32 ObjectiveCount = 5;
-	float ObjectivePulseUntil = 0.0f;
 };

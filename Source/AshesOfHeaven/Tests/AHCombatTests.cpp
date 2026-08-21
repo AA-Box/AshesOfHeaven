@@ -13,6 +13,8 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
+#include "Gameplay/UI/AHHUDRootWidget.h"
+#include "Gameplay/Audio/AHAudioPaletteData.h"
 #include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
@@ -25,8 +27,11 @@
 #include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
+#include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
 #include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
+#include "Blueprint/UserWidget.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHArtTargetAssetManifestTest, "AshesOfHeaven.Art.TargetAssetManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHArtTargetAssetManifestTest::RunTest(const FString& Parameters)
@@ -48,6 +53,54 @@ bool FAHArtTargetAssetManifestTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Maya mannequin scaffold resolves"), LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple")));
 	TestNotNull(TEXT("Transit door frame resolves"), LoadObject<UStaticMesh>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge")));
 	TestNotNull(TEXT("Cathedral material resolves"), LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHPresentationAssetManifestTest, "AshesOfHeaven.Presentation.AssetManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
+{
+	const TArray<FString> WidgetPaths = {
+		TEXT("/Game/Ashes/UI/HUD/WBP_HUD_Root.WBP_HUD_Root_C"), TEXT("/Game/Ashes/UI/HUD/WBP_Objective.WBP_Objective_C"),
+		TEXT("/Game/Ashes/UI/HUD/WBP_PlayerStatus.WBP_PlayerStatus_C"), TEXT("/Game/Ashes/UI/HUD/WBP_WeaponStatus.WBP_WeaponStatus_C"),
+		TEXT("/Game/Ashes/UI/HUD/WBP_Crosshair.WBP_Crosshair_C"), TEXT("/Game/Ashes/UI/HUD/WBP_InteractionPrompt.WBP_InteractionPrompt_C"),
+		TEXT("/Game/Ashes/UI/HUD/WBP_DamageIndicator.WBP_DamageIndicator_C"), TEXT("/Game/Ashes/UI/HUD/WBP_Countdown.WBP_Countdown_C"),
+		TEXT("/Game/Ashes/UI/HUD/WBP_Dialogue.WBP_Dialogue_C"), TEXT("/Game/Ashes/UI/HUD/WBP_TerminalIntel.WBP_TerminalIntel_C"),
+		TEXT("/Game/Ashes/UI/HUD/WBP_ManticoreHUD.WBP_ManticoreHUD_C"), TEXT("/Game/Ashes/UI/HUD/WBP_ChapterTitle.WBP_ChapterTitle_C"),
+		TEXT("/Game/Ashes/UI/Terminal/WBP_TerminalWorld.WBP_TerminalWorld_C")
+	};
+	for (const FString& Path : WidgetPaths)
+	{
+		UClass* WidgetClass = LoadObject<UClass>(nullptr, *Path);
+		TestTrue(TEXT("saved UMG widget class exists"), WidgetClass && WidgetClass->IsChildOf(UUserWidget::StaticClass()));
+	}
+	UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
+	TestNotNull(TEXT("audio palette data asset exists"), Palette);
+	if (Palette)
+	{
+		TestTrue(TEXT("semantic audio event map is populated"), Palette->Events.Num() >= 7);
+		TestTrue(TEXT("environment audio event map is populated"), Palette->Environments.Num() >= 3);
+	}
+	for (const TCHAR* Path : {
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Fire.MS_M91_Fire"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Impact.MS_M91_Impact"),
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Erebus_Ambience.MS_Erebus_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Transit_Ambience.MS_Transit_Ambience"),
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Cathedral_Ambience.MS_Cathedral_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Manticore_Engine.MS_Manticore_Engine"),
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_UI_Objective.MS_UI_Objective") })
+	{
+		TestNotNull(TEXT("MetaSound presentation asset exists"), LoadObject<USoundBase>(nullptr, Path));
+	}
+	for (const TCHAR* Path : {
+		TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_HumanArmor.M_HumanArmor"), TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"),
+		TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter"), TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"), TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph") })
+	{
+		TestNotNull(TEXT("authored material exists"), LoadObject<UMaterialInterface>(nullptr, Path));
+	}
+	for (const TCHAR* Path : {
+		TEXT("/Game/Ashes/VFX/NS_Ash.NS_Ash"), TEXT("/Game/Ashes/VFX/NS_Embers.NS_Embers"), TEXT("/Game/Ashes/VFX/NS_Sparks.NS_Sparks"),
+		TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"),
+		TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"), TEXT("/Game/Ashes/VFX/NS_CathedralParticles.NS_CathedralParticles") })
+	{
+		TestNotNull(TEXT("cooked-safe Niagara asset exists"), LoadObject<UNiagaraSystem>(nullptr, Path));
+	}
 	return true;
 }
 

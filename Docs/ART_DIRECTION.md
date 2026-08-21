@@ -135,3 +135,25 @@ Development launch examples:
 ```
 
 The viewpoint system only selects real in-engine positions. It never substitutes an offline render or generated image for a playable scene. Human visual review is still required for subjective match, route readability, enemy readability, and final art approval.
+
+## Phase 4.2 presentation pipeline — 2026-08-21
+
+The implementation now has a saved Unreal-native presentation layer under `/Game/Ashes`. The
+production HUD lifecycle is UMG through `WBP_HUD_Root`; the old Canvas implementation is retained
+only as an empty compatibility override. The root uses safe-zone anchors and delegate-driven
+objective, status, weapon, interaction, dialogue, countdown, Manticore, damage, and completion
+presentation. The target is deliberately quieter than the former programmer HUD: no permanent
+Lucian name dossier, no large objective metadata frame, and no giant dialogue black strip.
+
+The audio runtime now resolves semantic events from `DA_AudioPalette_Default` and region changes
+from the saved Erebus/Transit/Cathedral/Manticore palette entries. Runtime-generated PCM is
+diagnostic-only and disabled by default. The current SoundCue sources are integration content,
+not final sound design approval; final M91 layers, authored ambience, Veil language, Cathedral
+resonance, Manticore machinery, voice, music, mix, and silence still require sound authoring and
+human listening review.
+
+The saved master material family, instances, Niagara systems, reusable art-target Blueprint props,
+and presentation data assets are validated through the runtime Asset Registry manifest. These
+assets establish the content boundary while preserving the Phase 3 gameplay/nav/collision graph.
+They do not claim final textures, meshes, character art, animations, lighting grade, VFX polish,
+or cross-device performance.

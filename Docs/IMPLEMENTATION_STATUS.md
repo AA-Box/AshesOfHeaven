@@ -376,3 +376,94 @@ target language across the whole 20–30 minute chapter until the user has revie
 in-engine viewpoints. The remaining work is human visual approval, external environment/material/
 character/VFX/audio authoring, real target-device profiling, and the previously recorded Phase 3
 interactive Run 1/Run 2 acceptance.
+
+## PHASE 4.2 — Unreal-native presentation recertification — 2026-08-21
+
+Phase 4.2 is implemented as a presentation pipeline only. Gameplay systems, the Chapter One
+stage/objective graph, checkpoints, encounter logic, and navigation architecture were preserved.
+Chapter Two/Phase 5 was not started.
+
+### Implemented
+
+- Production HUD now enters through `AAHCombatHUD` but renders through saved UMG
+  `/Game/Ashes/UI/HUD/WBP_HUD_Root`; the old Canvas `DrawHUD` path is an empty compatibility
+  override, not the production presentation path.
+- `UAHHUDRootWidget` uses a safe-zone-aware adaptive layout and binds event-driven objective,
+  health, armor, ammo, grenades, interaction, dialogue, countdown, damage, completion, and
+  Manticore state. It does not poll gameplay in Tick.
+- Saved UMG assets exist for root, objective, player status, weapon status, crosshair,
+  interaction, damage, countdown, dialogue, terminal intel, Manticore, chapter title, and terminal
+  world presentation.
+- `UAHAudioPaletteData` and `UAHAudioSettings` provide semantic audio resolution. Project-contained
+  SoundCue integration assets are used in the default palette; MetaSound target assets and region
+  palette entries are saved below `Content/Ashes/Audio`.
+- Procedural PCM generation is now opt-in diagnostic fallback only, disabled by default and forced
+  off in Shipping. Missing authored events log and skip instead of silently synthesizing tones.
+- The M91 no longer directly loads the template grenade-launcher-family path; it resolves the
+  project-local M91 semantic source.
+- Stage changes cross-fade the authored Erebus, Transit, Cathedral, and Manticore environment
+  events. Development debug commands cover the requested UI/audio/material paths.
+- Saved material masters/instances, Niagara systems, reusable Blueprint presentation props, and
+  presentation data assets exist under `Content/Ashes`. The director consumes them first with
+  explicit greybox fallback paths; dust uses cooked-safe `NS_Dust` when available.
+- The terminal owns a world-space `WBP_TerminalWorld` widget component. Manticore and countdown
+  publish low-rate/event-driven presentation updates.
+
+### Machine verification — fresh Unreal processes
+
+Commands were run against UE 5.8.1 at `/Users/Shared/Epic Games/UE_5.8` from the current checkout.
+
+| Check | Result |
+| --- | --- |
+| `AshesOfHeavenEditor Mac Development` | **PASS** — compiled and linked successfully |
+| `Scripts/GeneratePhase42Assets.py` | **PASS** — completed with no script error; saved assets under `Content/Ashes` |
+| `AHCombatVerificationCommandlet` | **PASS** — 15 checks, 15 PASS, 0 failed checks; final log `Saved/Logs/Phase42-AHCombatVerificationCommandlet-Final.log` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 16 project tests, all `Result={Success}`, exit code 0; final log `Saved/Logs/Phase42-Automation-Final.log` |
+| Asset Registry presentation manifest | **PASS** — required UMG/audio/material/Niagara assets loaded |
+
+The automation harness emitted two unrelated Unreal engine self-test “Condition failed” lines
+before project discovery; no project test failed and the automation process exited 0. The
+commandlet emitted one known test-world cleanup warning (`AHObjectiveHUDTestWorld`) after its
+15 passing checks; it did not affect the result.
+
+### Build/package status for this revision
+
+Development Editor, Mac Development and Mac Shipping cook/package, deep strict codesign, and
+normal Metal/CoreAudio launch checks are complete for this revision. Both packaged processes
+stayed alive for 15 seconds without `-nullrhi` or `-nosound` and exited with controlled status 0.
+The first Development package exposed a real cook omission for `WBP_HUD_Root`; the package was
+rebuilt after adding `/Game/Ashes` to `DirectoriesToAlwaysCook`, and the final Development launch
+loaded the palette and did not report the missing HUD class. The two deferred-decal masters were
+also corrected to a valid `BLEND_ALPHA_COMPOSITE` mode; the final cook completed with 0 warnings.
+
+Exact final runtime logs:
+
+- `Saved/Logs/Phase42-AssetGeneration-Final.log`
+- `Saved/Logs/Phase42-AHCombatVerificationCommandlet.log`
+- `Saved/Logs/Phase42-Automation.log`
+- `Saved/Logs/Phase42-Development-NormalLaunch-Final.log`
+- `Saved/Logs/Phase42-Shipping-NormalLaunch.log`
+- `Saved/Logs/Phase42-AHCombatVerificationCommandlet-Final.log`
+- `Saved/Logs/Phase42-Automation-Final.log`
+
+Final packages:
+
+- `Builds/macOS-Development/AshesOfHeaven.app`
+- `Builds/macOS/AshesOfHeaven.app`
+
+### Explicit human review still required
+
+No human approval is being faked. The following remain open:
+
+- actual HUD readability and visual match at 1280×720, ultrawide, and mobile safe zones;
+- sound-design listening review: M91 identity, material impacts, footsteps, Erebus/Transit/Cathedral
+  ambience, Veil language, Manticore machinery, dialogue, mix, tails, and silence;
+- normal interactive combat, objective clarity without relying on debug text, enemy/friendly AI,
+  movement/ADS/recoil/reload, grenades/melee/pickups, death/restart/checkpoint inventory restore,
+  Manticore enter/drive/fire/exit, dialogue timing, countdown, terminal progression, and Chapter
+  One completion;
+- final visual comparison against the four approved targets, character art/animation, lighting,
+  fog, fire/smoke/VFX quality, Windows/iOS/Android packaging, and real-device performance.
+
+The next authorized step is human review of the fresh packages. Do not start Phase 5 or Chapter
+Two from this record.

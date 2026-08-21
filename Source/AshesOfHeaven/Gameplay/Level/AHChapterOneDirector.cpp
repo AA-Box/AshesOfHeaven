@@ -15,6 +15,7 @@
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Gameplay/Weapons/AHWeaponPickup.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -24,6 +25,8 @@
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
@@ -144,11 +147,16 @@ AAHChapterOneDirector::AAHChapterOneDirector()
 	PrimaryActorTick.bCanEverTick = true;
 	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
-	CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray.MI_PrototypeGrid_Gray"));
-	HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02"));
-	ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round"));
-	VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
-	EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/JumpPad/Assets/Materials/MI_GlowNT.MI_GlowNT"));
+	CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_CathedralMatter_Dark.MI_CathedralMatter_Dark"));
+	HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark"));
+	ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"));
+	VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black"));
+	EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_EmissiveGlyph_Cyan.MI_EmissiveGlyph_Cyan"));
+	if (!CathedralMaterial) CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray.MI_PrototypeGrid_Gray"));
+	if (!HumanMetalMaterial) HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02"));
+	if (!ConcreteMaterial) ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round"));
+	if (!VeilObsidianMaterial) VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
+	if (!EmissiveTechnologyMaterial) EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/JumpPad/Assets/Materials/MI_GlowNT.MI_GlowNT"));
 }
 
 void AAHChapterOneDirector::BeginPlay()
@@ -814,12 +822,11 @@ void AAHChapterOneDirector::SpawnVisualLight(const FVector& Location, const FLin
 
 void AAHChapterOneDirector::SpawnVisualDust(const FVector& Location, float Scale)
 {
-	// Keep the atmosphere hook deliberately asset-free. The approved prototype dust
-	// emitter is a Stateless Niagara asset that asserts while deserializing in the
-	// installed Mac package; fog, layered silhouettes, and practical lights provide
-	// the target's depth cue until a cooked-safe authored emitter replaces it.
-	(void)Location;
-	(void)Scale;
+	UNiagaraSystem* DustSystem = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Ashes/VFX/NS_Dust.NS_Dust"));
+	if (DustSystem && GetWorld())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), DustSystem, Location, FRotator::ZeroRotator, FVector(Scale), true, true, ENCPoolMethod::AutoRelease);
+	}
 }
 
 void AAHChapterOneDirector::SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale)
@@ -968,6 +975,16 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 	{
 		StartStage(EAHChapterStage::TenYearsLater);
 		TeleportPlayer(FVector(29200.0f, 0.0f, 150.0f), FRotator::ZeroRotator);
+	}
+	else if (TargetName.Equals(TEXT("UI"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Audio"), ESearchCase::IgnoreCase))
+	{
+		if (TargetName.Equals(TEXT("Audio"), ESearchCase::IgnoreCase) && GetWorld())
+		{
+			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
+			{
+				Audio->PlayUICue(EAHAudioCue::Objective);
+			}
+		}
 	}
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] activated=%s"), *TargetName);

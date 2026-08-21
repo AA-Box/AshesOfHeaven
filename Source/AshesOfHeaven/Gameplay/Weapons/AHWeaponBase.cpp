@@ -44,7 +44,7 @@ AAHWeaponBase::AAHWeaponBase()
 	{
 		CapacitorMesh->SetMaterial(0, RifleMaterial);
 	}
-	if (USoundBase* RifleFireSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Weapons/GrenadeLauncher/Audio/FirstPersonTemplateWeaponFire02.FirstPersonTemplateWeaponFire02")))
+	if (USoundBase* RifleFireSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire.SC_M91_Fire")))
 	{
 		ShotSound = RifleFireSound;
 	}

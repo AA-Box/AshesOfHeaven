@@ -14,6 +14,7 @@ class AAHCombatPlayerCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHManticoreDriverDelegate, APawn*, Driver);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHManticoreDestroyedDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHManticorePresentationChangedDelegate);
 
 UCLASS()
 class ASHESOFHEAVEN_API AAHManticoreVehicle : public APawn, public IAHInteractable
@@ -73,6 +74,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Manticore")
 	FAHManticoreDestroyedDelegate OnVehicleDestroyed;
 
+	/** Low-rate presentation event; HUDs never need to poll vehicle simulation every frame. */
+	UPROPERTY(BlueprintAssignable, Category="Manticore")
+	FAHManticorePresentationChangedDelegate OnPresentationStateChanged;
+
 	virtual void Interact_Implementation(AActor* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
 
@@ -115,4 +120,5 @@ protected:
 	float Steering = 0.0f;
 	float SuspensionCompression = 0.0f;
 	bool bDestroyed = false;
+	float PresentationEventTime = 0.0f;
 };

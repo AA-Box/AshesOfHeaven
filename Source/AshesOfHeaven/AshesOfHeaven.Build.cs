@@ -12,6 +12,7 @@ public class AshesOfHeaven : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"AssetRegistry",
 			"InputCore",
 			"EnhancedInput",
 			"DeveloperSettings",

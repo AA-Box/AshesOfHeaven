@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120">
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1114"/>
+      <stop offset="0.55" stop-color="#12181b"/>
+      <stop offset="1" stop-color="#090b0d"/>
+    </linearGradient>
+    <linearGradient id="erebus" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#141a1b"/>
+      <stop offset="0.52" stop-color="#1d2524"/>
+      <stop offset="1" stop-color="#32251e"/>
+    </linearGradient>
+    <linearGradient id="cathedral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080d12"/>
+      <stop offset="0.58" stop-color="#121d27"/>
+      <stop offset="1" stop-color="#091014"/>
+    </linearGradient>
+    <linearGradient id="dialogue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#201b1a"/>
+      <stop offset="0.5" stop-color="#151719"/>
+      <stop offset="1" stop-color="#0c1113"/>
+    </linearGradient>
+    <linearGradient id="vehicle" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171d1d"/>
+      <stop offset="0.65" stop-color="#232a27"/>
+      <stop offset="1" stop-color="#161311"/>
+    </linearGradient>
+    <filter id="glowAmber" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowCool" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grain" width="38" height="38" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="7" r="0.7" fill="#d8d1bf" opacity="0.08"/>
+      <circle cx="19" cy="27" r="0.5" fill="#d8d1bf" opacity="0.06"/>
+      <circle cx="31" cy="14" r="0.6" fill="#8fa1a3" opacity="0.05"/>
+    </pattern>
+    <style>
+      .title { font-family: 'Avenir Next', 'Helvetica Neue', Arial, sans-serif; letter-spacing: 4px; fill: #d8d1bf; }
+      .label { font-family: 'Avenir Next', 'Helvetica Neue', Arial, sans-serif; letter-spacing: 2.2px; fill: #8b9692; }
+      .micro { font-family: 'Avenir Next', 'Helvetica Neue', Arial, sans-serif; letter-spacing: 1.6px; fill: #8b9692; }
+      .hud { font-family: 'Avenir Next', 'Helvetica Neue', Arial, sans-serif; letter-spacing: 1.4px; fill: #d8d1bf; }
+      .hud-muted { font-family: 'Avenir Next', 'Helvetica Neue', Arial, sans-serif; letter-spacing: 1.4px; fill: #9ba39b; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1120" fill="url(#board)"/>
+  <rect x="26" y="26" width="1748" height="1068" rx="4" fill="none" stroke="#394246" stroke-width="1"/>
+
+  <text x="64" y="78" class="title" font-size="22">ASHES OF HEAVEN // PHASE 4.2</text>
+  <text x="64" y="107" class="label" font-size="12">HUD VISUAL TARGET — DRAFT 01 — INFORMATION LEAVES THE WORLD VISIBLE</text>
+  <text x="1736" y="78" text-anchor="end" class="label" font-size="11">REFERENCE-DRIVEN / NOT YET APPROVED</text>
+  <line x1="64" y1="132" x2="1736" y2="132" stroke="#394246"/>
+
+  <!-- INFANTRY -->
+  <g>
+    <rect x="64" y="164" width="810" height="410" rx="3" fill="url(#erebus)" stroke="#4b514d"/>
+    <rect x="64" y="164" width="810" height="410" fill="url(#grain)" opacity="0.65"/>
+    <path d="M64 475 L280 408 L436 435 L602 378 L874 449 L874 574 L64 574 Z" fill="#0a0e0f" opacity="0.52"/>
+    <path d="M64 454 L260 402 M480 424 L874 408" stroke="#59605a" stroke-width="2" opacity="0.6"/>
+    <path d="M742 251 L779 210 L812 251" fill="none" stroke="#c28a4b" stroke-width="3" opacity="0.8"/>
+    <circle cx="778" cy="263" r="4" fill="#c28a4b" filter="url(#glowAmber)"/>
+
+    <!-- transient objective reveal -->
+    <g transform="translate(100 205)">
+      <rect x="0" y="0" width="4" height="42" fill="#c28a4b"/>
+      <text x="20" y="15" class="micro" font-size="10" fill="#c28a4b">ACTIVE OBJECTIVE</text>
+      <text x="20" y="36" class="hud" font-size="17">REACH THE TRANSIT STATION</text>
+      <line x1="20" y1="49" x2="296" y2="49" stroke="#c28a4b" stroke-width="1" opacity="0.7"/>
+    </g>
+
+    <!-- restrained contextual reticle -->
+    <g transform="translate(470 352)" stroke="#d8d1bf" fill="none" opacity="0.86">
+      <path d="M-14 0 H-5 M5 0 H14 M0 -14 V-5 M0 5 V14" stroke-width="1"/>
+      <circle r="2" fill="#d8d1bf" stroke="none"/>
+    </g>
+
+    <!-- compact peripheral vitals; no nameplate -->
+    <g transform="translate(100 500)">
+      <text x="0" y="0" class="micro" font-size="9">ARM</text>
+      <rect x="31" y="-8" width="104" height="3" fill="#3c4948"/>
+      <rect x="31" y="-8" width="87" height="3" fill="#8fa1a3"/>
+      <text x="0" y="19" class="micro" font-size="9">VIT</text>
+      <rect x="31" y="11" width="104" height="3" fill="#3c4948"/>
+      <rect x="31" y="11" width="96" height="3" fill="#c28a4b"/>
+    </g>
+
+    <!-- minimal ammo, integrated not boxed -->
+    <g transform="translate(714 488)">
+      <text x="0" y="0" class="micro" font-size="9" text-anchor="end">M91 // 5.56</text>
+      <text x="0" y="38" class="hud" font-size="31" text-anchor="end">36</text>
+      <text x="10" y="37" class="hud-muted" font-size="13">/ 180</text>
+      <line x1="-88" y1="48" x2="80" y2="48" stroke="#8b9692" stroke-width="1" opacity="0.45"/>
+    </g>
+    <text x="86" y="552" class="label" font-size="11">INFANTRY / NORMAL COMBAT</text>
+    <text x="852" y="552" text-anchor="end" class="label" font-size="10">REVEAL → COLLAPSE → DISAPPEAR</text>
+  </g>
+
+  <!-- CATHEDRAL QUIET -->
+  <g>
+    <rect x="926" y="164" width="810" height="410" rx="3" fill="url(#cathedral)" stroke="#4b5860"/>
+    <rect x="926" y="164" width="810" height="410" fill="url(#grain)" opacity="0.35"/>
+    <path d="M1050 574 L1186 226 L1268 574 M1370 574 L1474 197 L1574 574" fill="#060a0e" stroke="#2d3b44" stroke-width="2"/>
+    <path d="M1268 574 L1268 225 M1474 574 L1474 197" stroke="#66808c" stroke-width="3" opacity="0.25" filter="url(#glowCool)"/>
+    <path d="M1004 342 H1657" stroke="#607984" stroke-width="1" opacity="0.23"/>
+    <path d="M1088 412 H1587" stroke="#607984" stroke-width="1" opacity="0.18"/>
+
+    <!-- almost clean screen -->
+    <g transform="translate(1330 367)" stroke="#b4c1bd" fill="none" opacity="0.63">
+      <path d="M-11 0 H-4 M4 0 H11 M0 -11 V-4 M0 4 V11" stroke-width="1"/>
+      <circle r="1.8" fill="#b4c1bd" stroke="none"/>
+    </g>
+    <g transform="translate(1002 506)">
+      <line x1="0" y1="0" x2="78" y2="0" stroke="#8fa1a3" opacity="0.4"/>
+      <text x="0" y="19" class="micro" font-size="9">VIT 96</text>
+    </g>
+    <g transform="translate(1638 506)">
+      <text x="0" y="0" class="micro" font-size="9" text-anchor="end" fill="#6d7674">M91 36</text>
+    </g>
+    <text x="948" y="552" class="label" font-size="11">CATHEDRAL / QUIET STATE</text>
+    <text x="1714" y="552" text-anchor="end" class="label" font-size="10">HUD REDUCES TO RETICLE + NEED-TO-KNOW</text>
+  </g>
+
+  <!-- DIALOGUE -->
+  <g>
+    <rect x="64" y="625" width="810" height="410" rx="3" fill="url(#dialogue)" stroke="#4b514d"/>
+    <rect x="64" y="625" width="810" height="410" fill="url(#grain)" opacity="0.55"/>
+    <path d="M64 967 C227 884 334 906 475 946 S731 994 874 902 L874 1035 L64 1035 Z" fill="#080b0c" opacity="0.72"/>
+    <path d="M127 695 L180 658 L239 708 L316 672" stroke="#9a6d48" stroke-width="2" opacity="0.52"/>
+    <circle cx="737" cy="761" r="36" fill="#9d6440" opacity="0.14"/>
+    <circle cx="737" cy="761" r="19" fill="#bd8254" opacity="0.16" filter="url(#glowAmber)"/>
+
+    <!-- cinematic subtitle: no black strip -->
+    <g transform="translate(122 916)">
+      <line x1="0" y1="0" x2="55" y2="0" stroke="#c28a4b" stroke-width="2"/>
+      <text x="0" y="25" class="micro" font-size="10" fill="#c28a4b">MAYA</text>
+      <text x="0" y="55" class="hud" font-size="19">The light is not above us.</text>
+      <text x="0" y="80" class="hud" font-size="19">It is waiting beneath the stone.</text>
+    </g>
+    <g transform="translate(100 679)">
+      <text x="0" y="0" class="micro" font-size="9" fill="#c28a4b">DIALOGUE ACTIVE</text>
+      <line x1="0" y1="13" x2="126" y2="13" stroke="#c28a4b" opacity="0.5"/>
+    </g>
+    <text x="86" y="1012" class="label" font-size="11">DIALOGUE / CINEMATIC SUBTITLE</text>
+    <text x="852" y="1012" text-anchor="end" class="label" font-size="10">WORLD REMAINS VISIBLE</text>
+  </g>
+
+  <!-- MANTICORE -->
+  <g>
+    <rect x="926" y="625" width="810" height="410" rx="3" fill="url(#vehicle)" stroke="#4b514d"/>
+    <rect x="926" y="625" width="810" height="410" fill="url(#grain)" opacity="0.5"/>
+    <path d="M926 950 L1044 828 L1256 785 L1418 819 L1736 738 L1736 1035 L926 1035 Z" fill="#090c0d" opacity="0.73"/>
+    <path d="M1005 911 L1194 778 L1440 780 L1605 899" fill="none" stroke="#727467" stroke-width="3" opacity="0.56"/>
+    <path d="M1144 804 L1268 700 L1392 804" fill="none" stroke="#a36f48" stroke-width="2" opacity="0.6"/>
+    <circle cx="1268" cy="792" r="4" fill="#c28a4b" filter="url(#glowAmber)"/>
+
+    <!-- vehicle state around sightline, still compact -->
+    <g transform="translate(1330 799)" stroke="#d8d1bf" fill="none" opacity="0.88">
+      <path d="M-19 0 H-7 M7 0 H19 M0 -19 V-7 M0 7 V19" stroke-width="1"/>
+      <circle r="3" fill="#c28a4b" stroke="none"/>
+    </g>
+    <g transform="translate(1010 949)">
+      <text x="0" y="0" class="micro" font-size="9">MANTICORE // HULL</text>
+      <rect x="0" y="12" width="160" height="4" fill="#3c4948"/>
+      <rect x="0" y="12" width="125" height="4" fill="#8fa1a3"/>
+      <text x="176" y="17" class="hud" font-size="12">78%</text>
+    </g>
+    <g transform="translate(1630 950)">
+      <text x="0" y="0" class="micro" font-size="9" text-anchor="end">CANNON 06</text>
+      <text x="0" y="31" class="hud" font-size="25" text-anchor="end">42</text>
+      <text x="10" y="30" class="hud-muted" font-size="12">/ 120</text>
+      <text x="0" y="53" class="micro" font-size="9" text-anchor="end">SPEED 18</text>
+    </g>
+    <text x="948" y="1012" class="label" font-size="11">MANTICORE / VEHICLE CONTEXT</text>
+    <text x="1714" y="1012" text-anchor="end" class="label" font-size="10">HULL + WEAPON + SPEED — NO DASHBOARD</text>
+  </g>
+
+  <!-- bottom direction strip -->
+  <line x1="64" y1="1070" x2="1736" y2="1070" stroke="#394246"/>
+  <text x="64" y="1091" class="label" font-size="10">PALETTE  /  BONE #D8D1BF  ·  AMBER #C28A4B  ·  COOL #8FA1A3  ·  ALERT #B45F52  ·  INK #0D1114</text>
+  <text x="1736" y="1091" text-anchor="end" class="label" font-size="10">MOTION  /  REVEAL 280ms  ·  COLLAPSE 900ms  ·  VANISH 180ms</text>
+</svg>

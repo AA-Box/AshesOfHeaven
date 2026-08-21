@@ -132,3 +132,14 @@ KNOWN GAP: The current shot still visibly contains mannequin proxies; it must no
 PERFORMANCE: Two non-colliding skeletal display actors and two lights; measure animation/material cost after production meshes are supplied.
 
 HUMAN REVIEW REQUIRED: Originality, silhouette, face-paint narrative, Maya's institutional contrast, body language, and whether the shot carries the approved seriousness without copying a real person.
+
+## Phase 4.2 content status
+
+The four art targets now consume the saved Phase 4.2 presentation boundary: UMG HUD assets,
+semantic audio palettes, saved material masters/instances, cooked-safe Niagara systems, and
+reusable environment Blueprint props. `Erebus`, `Transit`, `Cathedral`, `LucianMaya`, `M91`, `UI`,
+and `Audio` are available through the development art-target launcher.
+
+Machine validation proves asset existence, class loading, buildability, and packaged integration.
+It does not prove subjective reference match, final sound quality, final character quality, mobile
+performance, or human gameplay approval. Those remain explicitly `HUMAN REVIEW REQUIRED`.

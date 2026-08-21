@@ -1,5 +1,8 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "UObject/SoftObjectPath.h"
 
 AAHChapterTerminal::AAHChapterTerminal()
 {
@@ -8,6 +11,24 @@ AAHChapterTerminal::AAHChapterTerminal()
 	RootComponent = TerminalMesh;
 	TerminalMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	TerminalMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	TerminalWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("TerminalWidget"));
+	TerminalWidget->SetupAttachment(TerminalMesh);
+	TerminalWidget->SetWidgetSpace(EWidgetSpace::World);
+	TerminalWidget->SetDrawSize(FVector2D(420.0f, 240.0f));
+	TerminalWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 135.0f));
+	TerminalWidget->SetRelativeRotation(FRotator(0.0f, 180.0f, 90.0f));
+}
+
+void AAHChapterTerminal::BeginPlay()
+{
+	Super::BeginPlay();
+	if (TerminalWidget)
+	{
+		if (UClass* WidgetClass = FSoftClassPath(TEXT("/Game/Ashes/UI/Terminal/WBP_TerminalWorld.WBP_TerminalWorld_C")).TryLoadClass<UUserWidget>())
+		{
+			TerminalWidget->SetWidgetClass(WidgetClass);
+		}
+	}
 }
 
 void AAHChapterTerminal::Interact_Implementation(AActor* Interactor)
