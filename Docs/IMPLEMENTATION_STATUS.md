@@ -42,6 +42,11 @@ The authored objective chain contains 17 objectives, from reaching the defensive
 
 ## Verification results
 
+> **Superseded.** The 13-check/13-test results in this section are the original Phase 3
+> record and are kept as history. The authoritative current results are in
+> [Phase 3.3](#phase-33--machine-recertification--2026-08-21), which recorded 14/14 on both
+> suites against a freshly packaged build.
+
 ### Fresh commandlet
 
 The previous editor/hot-reload session was not reused. A fresh Unreal process ran:
@@ -111,11 +116,19 @@ Regression coverage now exercises the live controller/HUD path, dynamic objectiv
 
 UHT regeneration succeeded for `AshesOfHeavenEditor` and wrote the new delegate receiver reflection output. The changed Development Editor objects compiled successfully with the generated Unreal response files and linked successfully into the editor module.
 
-The post-fix commandlet and automation rerun are **BLOCKED in the current execution environment**, not marked as passing: a fresh `UnrealEditor-Cmd` process emitted only macOS LaunchServices connection errors and did not reach Unreal startup logging before the bounded run was stopped. The standard UnrealBuildTool build path is separately blocked before compilation because this environment denies rotation of the external UnrealBuildTool trace-backup file under `~/Library/Application Support/Epic/UnrealBuildTool`. Therefore the earlier 13-check/13-test Phase 3 results above remain historical pre-fix evidence; no 14-check/14-test result is claimed here.
+**Superseded by Phase 3.3.** The blockers described in the rest of this section were specific
+to the execution environment in use at the time; none of them reproduced on the normal macOS
+session, where every command below ran to completion. Retained as history.
+
+The post-fix commandlet and automation rerun were **BLOCKED in that execution environment**, not marked as passing: a fresh `UnrealEditor-Cmd` process emitted only macOS LaunchServices connection errors and did not reach Unreal startup logging before the bounded run was stopped. The standard UnrealBuildTool build path is separately blocked before compilation because this environment denies rotation of the external UnrealBuildTool trace-backup file under `~/Library/Application Support/Epic/UnrealBuildTool`. Therefore the earlier 13-check/13-test Phase 3 results above remain historical pre-fix evidence; no 14-check/14-test result is claimed here.
 
 Development Editor rebuild through `Build.sh`, Mac Shipping cook/package, and normal-renderer packaged launch were not re-certified after this source change because of that environment block. The previous successful package and normal-renderer process smoke result remains recorded above, but it is not presented as validation of this unbuilt post-fix revision.
 
 ### Phase 3.2 — post-fix recertification record — 2026-08-21
+
+**Superseded by Phase 3.3.** Every item recorded below as BLOCKED or NOT CERTIFIED has since
+been executed successfully from a normal macOS session. The expected source recorded here,
+`4aa373ad`, is no longer the current target. Retained as history.
 
 The expected post-fix source is `4aa373ad79a378f0f0daba3a449ff9df93752e14` (`fix(combat): reflect objective HUD handlers`). The working tree adds development-only `[Phase3.2]` telemetry and `Scripts/Run-Mac-Playtest.sh`; no gameplay feature or Phase 4/Chapter Two content was added.
 
@@ -142,11 +155,93 @@ Development builds now emit bounded `[Phase3.2]` logs for objective transitions,
 
 Codex did not fake interactive validation. Human Run 1 (normal completion) and Run 2 (inventory → checkpoint → death/restart → encounters → Manticore → completion) remain **UNTESTED**. Phase 4 and Chapter Two remain explicitly out of scope until those two human runs are recorded on a freshly packaged build.
 
+### Phase 3.3 — machine recertification — 2026-08-21
+
+Source: `f5499f72b773049d6da04e1e9a8df20d91880e87` on `main`. Every command below was run from a
+normal macOS session against UE 5.8 at `/Users/Shared/Epic Games/UE_5.8`, Xcode 26.1.1. None of the
+execution-environment blockers recorded in Phase 3.1 and 3.2 reproduced.
+
+#### Results
+
+| Gate | Result |
+| --- | --- |
+| `./Scripts/Build-Mac.sh` | **PASS** — `BUILD SUCCESSFUL`, ExitCode=0 |
+| `AHCombatVerificationCommandlet` | **PASS** — 14 executed, 14 PASS, 0 FAIL |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 14 started, 14 completed, 14 `Result={Success}`, 0 failures, `TEST COMPLETE. EXIT CODE: 0` |
+| Fresh Mac Shipping package | **PASS** — `Builds/macOS/AshesOfHeaven.app`, package version counter `0.27` |
+| `codesign --verify --deep --strict` | **PASS** — `valid on disk`, `satisfies its Designated Requirement` |
+| Development playtest package | **PASS** — `Builds/macOS-Development/AshesOfHeaven.app` |
+| `./Scripts/Run-Mac-Playtest.sh` | **PASS** — launches a normal-renderer window, loads `L_ChapterOne_Greybox`, writes the playtest log |
+
+The 14 results are executed test results, not a static inventory. Both suites are counted from
+per-test markers: `: PASS` lines for the commandlet, `Test Completed. Result={Success}` for
+automation.
+
+#### Defects found and fixed during recertification
+
+The gates did not pass as they stood. Seven defects were found and fixed:
+
+1. **Cook failed on a full disk.** The first packaging run died `ExitCode=25` with roughly 300
+   `Zen: Insufficient Storage (507)` errors at 1.7 GiB free. Not a code defect; recorded because it
+   presents as an opaque cook failure.
+2. **The package shipped stale cooked content.** UAT's `-archive` copies
+   `Binaries/Mac/<Target>.app`, whose `Contents/UE` can still hold cooked data from an earlier run,
+   and `Build-Mac.sh` used `ditto`, which merges rather than replaces. A freshly built executable was
+   being bonded to paks from a previous build, and the stale files survived every rebuild. The script
+   now sources the app from `Saved/StagedBuilds` and replaces the destination.
+3. **A Shipping package cannot write a playtest log.** The Phase 3.2 telemetry is guarded by
+   `#if !UE_BUILD_SHIPPING`, and an installed engine ships Core with `NO_LOGGING` for Shipping, so
+   there is no log sink. `bUseLoggingInShipping` is not a way out: UBT rejects it on a shared build
+   environment, and forcing it with `bOverrideBuildEnvironment` recompiles only the project module
+   while Core stays prebuilt. `Build-Mac.sh` now takes `CLIENT_CONFIG` (default `Shipping`) and the
+   playtest launcher defaults to the Development package. A packaged build also ignores both `-log`
+   and `-abslog` and emits everything on stdout, so the launcher tees the stream.
+4. **The greybox rendered black.** The map is generated empty and the director builds all geometry
+   at runtime, but nothing created a light. With static lighting off and Lumen on, a scene with no
+   lights renders black. The director now spawns a directional sun, a sky atmosphere and a
+   real-time-capture sky light.
+5. **The player fell out of the level.** Every ground-level actor sits at Z≈120, but the floor
+   spanned X 5000..24000 while the player start is at X=-1400. The player spawned over open space and
+   fell, and because falling through empty sky looks identical to standing still it read as frozen
+   input. The floor now covers X -2000..31000 and Y ±2000.
+6. **The weapon was unusable.** `WeaponMesh` was never tagged as a first-person primitive, so it drew
+   at world scale and filled the view; `SKM_Rifle` is authored along Y and the hand socket used to
+   supply the quarter turn that aims it down X; and `FireShot` replaced the relative rotation with a
+   bare kick rotator, snapping the weapon side-on with every shot.
+7. **Soldiers were invisible while their weapons were not.** Combatants have no skeletal mesh, so a
+   soldier rendered as nothing while the weapon attached to them still drew. Meshless combatants now
+   get a block body.
+
+Two log-quality defects were fixed alongside these: roughly 42,000 `GetSocketInfoByName` warnings per
+run, from attachments to sockets on a meshless component re-resolving every frame, and a navmesh
+rebuilt through the navigation system's recovery path on every launch. A 60-second run now produces a
+101 KB log with 0 errors, against 11 MB before.
+
+#### Playtest observability
+
+`Scripts/Run-Mac-Playtest.sh` writes a timestamped log under `Saved/PlaytestLogs` containing the
+`[Phase3.2]` markers. The chapter-stage marker now also records the player's world location, without
+which a fall out of the level is invisible in a playtest log.
+
+#### Remaining human work
+
+Human Run 1 (normal completion) and Run 2 (inventory → checkpoint → death/restart → encounters →
+Manticore → completion) remain **UNTESTED**. No interactive playthrough is claimed. Phase 4 and
+Chapter Two remain out of scope until both runs are recorded against a freshly packaged build.
+
 ## Known issues and scope boundaries
 
-- Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design.
+- Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design. The
+  lighting added in Phase 3.3 is neutral working light so the level can be seen and played, not
+  art direction; Phase 4 replaces it.
+- Combatants render as block bodies. Verifying enemy state during a human run is therefore a
+  positional judgement, not a visual one.
 - The current Chapter One map is one logical map with runtime-built sections; the stage/state architecture is ready for future World Partition or level-streaming splits.
-- The authored map does not yet contain a hand-authored navigation mesh asset. The runtime nav bounds plus Warden query/fallback keep the prototype path valid.
+- The authored map now carries saved navigation data: a `NavMeshBoundsVolume` and a
+  `RecastNavMesh-Default` set to `RuntimeGeneration = Dynamic`. Dynamic is required rather than
+  cosmetic, because the greybox geometry is spawned at runtime and the navmesh genuinely has to
+  rebuild then; what changed is that this is now the configured path instead of the navigation
+  system's recovery path, which previously logged a warning on every launch.
 - Unreal may report unavailable Win64, Android, or Linux SDK warnings on this Mac host; Mac validation succeeded.
 - Windows, Android, iOS, controller, touch, suspend/resume, performance/thermal, and signed-device validation require their respective toolchains or hardware.
 
@@ -167,4 +262,12 @@ The later Phase 3.1 commandlet attempt was also stopped without a result after t
 
 ## Next
 
-Human playthrough and platform evidence are the remaining Phase 3 acceptance work. Do not begin Chapter Two or Phase 4 until that evidence is recorded.
+All machine-verifiable Phase 3 gates pass as of Phase 3.3: 14/14 commandlet, 14/14 automation, a
+fresh Shipping package, codesign, and a launching playtest build that writes a usable log.
+
+Human Run 1 and Run 2 are the only remaining Phase 3 acceptance work. Do not begin Chapter Two or
+Phase 4 until that evidence is recorded.
+
+When judging those runs, note that enemies are block bodies with no animation, so verifying enemy
+state is a positional judgement rather than a visual one. Geometry, animation, lighting, sound and
+VFX remain greybox by design and are not Phase 3 acceptance criteria.
