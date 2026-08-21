@@ -8,12 +8,18 @@
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
+#include "Gameplay/Game/AHCombatPlayerController.h"
+#include "Gameplay/UI/AHCombatHUD.h"
+#include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Parse.h"
+#include "UObject/UnrealType.h"
 
 UAHCombatVerificationCommandlet::UAHCombatVerificationCommandlet()
 {
@@ -155,6 +161,91 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		Objectives->RestoreState(5);
 		Expect(TestName, TEXT("completed checkpoint restores mission completion"), Objectives->IsMissionComplete());
 		Expect(TestName, TEXT("completed checkpoint restores all objective history"), Objectives->GetCompletedObjectiveIds().Num() == 5);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.ObjectiveHUDDelegate")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.ObjectiveHUDDelegate");
+		const int32 FailureCountBefore = FailureCount;
+		const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
+			.InitializeScenes(false)
+			.AllowAudioPlayback(false)
+			.RequiresHitProxies(false)
+			.CreatePhysicsScene(false)
+			.CreateNavigation(false)
+			.CreateAISystem(false)
+			.ShouldSimulatePhysics(false)
+			.EnableTraceCollision(false)
+			.SetTransactional(false)
+			.CreateFXSystem(false);
+		UWorld* TestWorld = UWorld::CreateWorld(
+			EWorldType::Game,
+			false,
+			FName(TEXT("AHObjectiveHUDTestWorld")),
+			nullptr,
+			true,
+			ERHIFeatureLevel::Num,
+			&WorldInitialization,
+			false);
+		Expect(TestName, TEXT("objective HUD test world is created"), TestWorld != nullptr);
+		if (TestWorld)
+		{
+			UAHObjectiveSubsystem* Objectives = TestWorld->GetSubsystem<UAHObjectiveSubsystem>();
+			AAHCombatPlayerController* Controller = TestWorld->SpawnActor<AAHCombatPlayerController>();
+			AAHCombatHUD* HUD = TestWorld->SpawnActor<AAHCombatHUD>();
+			UAHObjectiveHUDDelegateTestReceiver* DelegateReceiver = NewObject<UAHObjectiveHUDDelegateTestReceiver>(TestWorld);
+			Expect(TestName, TEXT("objective subsystem exists in the test world"), Objectives != nullptr);
+			Expect(TestName, TEXT("objective HUD test controller is spawned"), Controller != nullptr);
+			Expect(TestName, TEXT("objective HUD test HUD is spawned"), HUD != nullptr);
+			Expect(TestName, TEXT("objective delegate receiver is created"), DelegateReceiver != nullptr);
+			if (!Objectives || !Controller || !HUD || !DelegateReceiver)
+			{
+				TestWorld->DestroyWorld(false);
+			}
+			else
+			{
+				FObjectPropertyBase* HUDProperty = FindFProperty<FObjectPropertyBase>(APlayerController::StaticClass(), TEXT("MyHUD"));
+				Expect(TestName, TEXT("player controller HUD property is available"), HUDProperty != nullptr);
+				if (HUDProperty)
+				{
+					HUDProperty->SetObjectPropertyValue_InContainer(Controller, HUD);
+				}
+				Expect(TestName, TEXT("controller exposes the injected HUD"), Controller->GetHUD() == HUD);
+				DelegateReceiver->Configure(Controller);
+				HUD->SetObjective(FText::FromString(TEXT("DIRECT HUD TEST")), 1, 5);
+				Expect(TestName, TEXT("HUD presentation state can be updated directly"), HUD->GetObjectiveIndex() == 1);
+				Expect(TestName, TEXT("objective subsystem starts at objective zero"), Objectives->GetCurrentObjectiveIndex() == 0);
+				TestWorld->SetBegunPlay(true);
+				TestWorld->BeginPlay();
+				Controller->DispatchBeginPlay();
+				Expect(TestName, TEXT("controller retains the injected HUD after BeginPlay"), Controller->GetHUD() == HUD);
+				Expect(TestName, TEXT("objective change delegate is bound"), Objectives->OnObjectiveChanged.IsBound());
+				Expect(TestName, TEXT("mission complete delegate is bound"), Objectives->OnMissionComplete.IsBound());
+				Objectives->OnObjectiveChanged.AddDynamic(DelegateReceiver, &UAHObjectiveHUDDelegateTestReceiver::HandleObjectiveChanged);
+				Objectives->OnMissionComplete.AddDynamic(DelegateReceiver, &UAHObjectiveHUDDelegateTestReceiver::HandleMissionComplete);
+				Expect(TestName, TEXT("initial HUD objective index is zero"), HUD->GetObjectiveIndex() == 0);
+				Expect(TestName, TEXT("objective change handler is reflected"), Controller->FindFunction(TEXT("HandleObjectiveChanged")) != nullptr);
+				Expect(TestName, TEXT("mission complete handler is reflected"), Controller->FindFunction(TEXT("HandleMissionComplete")) != nullptr);
+				const FName FirstObjective = Objectives->GetCurrentObjective().Id;
+				Objectives->DebugAdvanceObjective();
+				Expect(TestName, TEXT("one ObjectiveDebug invocation advances exactly one objective"), Objectives->GetCurrentObjectiveIndex() == 1);
+				Expect(TestName, TEXT("objective delegate handler is invoked"), DelegateReceiver->WasObjectiveCallbackInvoked());
+				Expect(TestName, TEXT("HUD index follows objective change"), HUD->GetObjectiveIndex() == 1);
+				Expect(TestName, TEXT("HUD text follows objective change"), HUD->GetCurrentObjective().EqualTo(Objectives->GetCurrentObjective().DisplayText));
+				Expect(TestName, TEXT("first objective is no longer current"), !Objectives->IsCurrentObjective(FirstObjective));
+				while (!Objectives->IsMissionComplete())
+				{
+					Objectives->CompleteObjective(Objectives->GetCurrentObjective().Id);
+				}
+				Expect(TestName, TEXT("mission complete delegate handler is invoked"), DelegateReceiver->WasMissionCompleteCallbackInvoked());
+				Expect(TestName, TEXT("mission complete reaches HUD delegate state"), HUD->IsMissionCompleteDisplayed());
+				Controller->Destroy();
+				HUD->Destroy();
+				TestWorld->DestroyWorld(false);
+			}
+		}
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}

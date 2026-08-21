@@ -10,6 +10,8 @@ class AAHCombatPlayerCharacter;
 class AAHCombatHUD;
 class AAHManticoreVehicle;
 class AAHChapterOneDirector;
+class UAHObjectiveSubsystem;
+class UAHObjectiveHUDDelegateTestReceiver;
 enum class EAHMobileTouchAction : uint8;
 
 UCLASS()
@@ -76,6 +78,12 @@ public:
 
 protected:
 	UFUNCTION()
+	void HandleObjectiveChanged(FText Objective, int32 Index, int32 Count);
+
+	UFUNCTION()
+	void HandleMissionComplete();
+
+	UFUNCTION()
 	void HandleMobilePressed(EAHMobileTouchAction Action);
 
 	UFUNCTION()
@@ -91,11 +99,12 @@ protected:
 	void HandleDamageFeedback(float Damage, bool bHeadshot, bool bArmorHit, bool bArmorBroken, float DirectionAngle);
 
 	void HandleWeaponShot(const FHitResult& Hit, bool bHit);
-	void HandleObjectiveChanged(FText Objective, int32 Index, int32 Count);
-	void HandleMissionComplete();
 	void FinishDeathRestart();
+	void BindObjectiveEvents(UAHObjectiveSubsystem* Objectives);
 
 	AAHCombatHUD* GetCombatHUD() const;
+
+	friend class UAHObjectiveHUDDelegateTestReceiver;
 
 	bool bGodMode = false;
 	bool bInfiniteAmmo = false;

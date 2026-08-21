@@ -103,6 +103,18 @@ Result: **PASS for process-level normal-renderer launch** — the process remain
 - Veil Warden movement uses a navigation query and a bounded direct fallback when projection is unavailable.
 - The terminal interaction is staged as inspect then confirm, and the completion route advances through escape, destruction, the ten-year transition, Maya, Nysa, the fleet, disappearing stars, and the chapter title.
 
+### Phase 3.1 — objective HUD delegate fix
+
+The first fresh-runtime regression pass found a real defect in the objective presentation boundary: `AAHCombatPlayerController::HandleObjectiveChanged` and `HandleMissionComplete` were used as dynamic delegate targets without `UFUNCTION()` reflection. The handlers are now reflected, objective binding is isolated in `BindObjectiveEvents`, and the HUD exposes read-only presentation state for verification.
+
+Regression coverage now exercises the live controller/HUD path, dynamic objective and mission-complete delegate targets, one-step `ObjectiveDebug` progression, objective text/index synchronization, and the reachable HUD completion state. All other `AddDynamic` targets in `Source/AshesOfHeaven` were audited and have reflected handlers.
+
+UHT regeneration succeeded for `AshesOfHeavenEditor` and wrote the new delegate receiver reflection output. The changed Development Editor objects compiled successfully with the generated Unreal response files and linked successfully into the editor module.
+
+The post-fix commandlet and automation rerun are **BLOCKED in the current execution environment**, not marked as passing: a fresh `UnrealEditor-Cmd` process emitted only macOS LaunchServices connection errors and did not reach Unreal startup logging before the bounded run was stopped. The standard UnrealBuildTool build path is separately blocked before compilation because this environment denies rotation of the external UnrealBuildTool trace-backup file under `~/Library/Application Support/Epic/UnrealBuildTool`. Therefore the earlier 13-check/13-test Phase 3 results above remain historical pre-fix evidence; no 14-check/14-test result is claimed here.
+
+Development Editor rebuild through `Build.sh`, Mac Shipping cook/package, and normal-renderer packaged launch were not re-certified after this source change because of that environment block. The previous successful package and normal-renderer process smoke result remains recorded above, but it is not presented as validation of this unbuilt post-fix revision.
+
 ## Known issues and scope boundaries
 
 - Geometry, animation, lighting, sound, and VFX are greybox/prototype quality by design.
@@ -123,6 +135,8 @@ The human tester should ignore ugly geometry, placeholder animation, lighting, a
 ### Validation environment note — 2026-08-21
 
 An interactive launch attempt was made with the packaged Shipping app through macOS LaunchServices. The process created an 800×632 game window, but it initially opened on an offscreen display. After moving it to the primary display, CoreGraphics confirmed the window while macOS screen capture still returned `could not create image from display`. Without an observable viewport, no honest gameplay input/feel/objective/completion result can be recorded from this environment. The app was stopped cleanly; no crash or reproducible gameplay defect was observed.
+
+The later Phase 3.1 commandlet attempt was also stopped without a result after the macOS service startup failure described above. This is an execution-environment limitation, not interactive gameplay evidence.
 
 ## Next
 

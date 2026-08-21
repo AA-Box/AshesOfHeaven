@@ -32,10 +32,19 @@ void AAHCombatPlayerController::BeginPlay()
 	}
 	if (UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>())
 	{
-		Objectives->OnObjectiveChanged.AddDynamic(this, &AAHCombatPlayerController::HandleObjectiveChanged);
-		Objectives->OnMissionComplete.AddDynamic(this, &AAHCombatPlayerController::HandleMissionComplete);
-		HandleObjectiveChanged(Objectives->GetCurrentObjective().DisplayText, Objectives->GetCurrentObjectiveIndex(), Objectives->GetObjectiveCount());
+		BindObjectiveEvents(Objectives);
 	}
+}
+
+void AAHCombatPlayerController::BindObjectiveEvents(UAHObjectiveSubsystem* Objectives)
+{
+	if (!Objectives)
+	{
+		return;
+	}
+	Objectives->OnObjectiveChanged.AddDynamic(this, &AAHCombatPlayerController::HandleObjectiveChanged);
+	Objectives->OnMissionComplete.AddDynamic(this, &AAHCombatPlayerController::HandleMissionComplete);
+	HandleObjectiveChanged(Objectives->GetCurrentObjective().DisplayText, Objectives->GetCurrentObjectiveIndex(), Objectives->GetObjectiveCount());
 }
 
 void AAHCombatPlayerController::OnPossess(APawn* InPawn)

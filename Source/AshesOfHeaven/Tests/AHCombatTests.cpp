@@ -11,11 +11,17 @@
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
+#include "Gameplay/Game/AHCombatPlayerController.h"
+#include "Gameplay/UI/AHCombatHUD.h"
+#include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHHealthDamageTest, "AshesOfHeaven.Combat.HealthDamage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHHealthDamageTest::RunTest(const FString& Parameters)
@@ -107,6 +113,95 @@ bool FAHObjectiveRestoreStateTest::RunTest(const FString& Parameters)
 	Objectives->RestoreState(5);
 	TestTrue(TEXT("Completed checkpoint restores mission completion"), Objectives->IsMissionComplete());
 	TestEqual(TEXT("Completed checkpoint restores all objective history"), Objectives->GetCompletedObjectiveIds().Num(), 5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHObjectiveHUDDelegateTest, "AshesOfHeaven.Chapter.ObjectiveHUDDelegate", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHObjectiveHUDDelegateTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
+		.InitializeScenes(false)
+		.AllowAudioPlayback(false)
+		.RequiresHitProxies(false)
+		.CreatePhysicsScene(false)
+		.CreateNavigation(false)
+		.CreateAISystem(false)
+		.ShouldSimulatePhysics(false)
+		.EnableTraceCollision(false)
+		.SetTransactional(false)
+		.CreateFXSystem(false);
+	UWorld* TestWorld = UWorld::CreateWorld(
+		EWorldType::Game,
+		false,
+		FName(TEXT("AHObjectiveHUDTestWorld")),
+		nullptr,
+		true,
+		ERHIFeatureLevel::Num,
+		&WorldInitialization,
+		false);
+	TestNotNull(TEXT("Objective HUD test world is created"), TestWorld);
+	if (!TestWorld)
+	{
+		return false;
+	}
+
+	UAHObjectiveSubsystem* Objectives = TestWorld->GetSubsystem<UAHObjectiveSubsystem>();
+	AAHCombatPlayerController* Controller = TestWorld->SpawnActor<AAHCombatPlayerController>();
+	AAHCombatHUD* HUD = TestWorld->SpawnActor<AAHCombatHUD>();
+	UAHObjectiveHUDDelegateTestReceiver* DelegateReceiver = NewObject<UAHObjectiveHUDDelegateTestReceiver>(TestWorld);
+	TestNotNull(TEXT("Objective subsystem exists in the test world"), Objectives);
+	TestNotNull(TEXT("Objective HUD test controller is spawned"), Controller);
+	TestNotNull(TEXT("Objective HUD test HUD is spawned"), HUD);
+	TestNotNull(TEXT("Objective delegate receiver is created"), DelegateReceiver);
+	if (!Objectives || !Controller || !HUD || !DelegateReceiver)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+
+	FObjectPropertyBase* HUDProperty = FindFProperty<FObjectPropertyBase>(APlayerController::StaticClass(), TEXT("MyHUD"));
+	TestNotNull(TEXT("Player controller HUD property is available"), HUDProperty);
+	if (HUDProperty)
+	{
+		HUDProperty->SetObjectPropertyValue_InContainer(Controller, HUD);
+	}
+	TestTrue(TEXT("Controller exposes the injected HUD"), Controller->GetHUD() == HUD);
+	DelegateReceiver->Configure(Controller);
+	HUD->SetObjective(FText::FromString(TEXT("DIRECT HUD TEST")), 1, 5);
+	TestEqual(TEXT("HUD presentation state can be updated directly"), HUD->GetObjectiveIndex(), 1);
+
+	TestEqual(TEXT("Objective subsystem starts at objective zero"), Objectives->GetCurrentObjectiveIndex(), 0);
+	TestWorld->SetBegunPlay(true);
+	TestWorld->BeginPlay();
+	Controller->DispatchBeginPlay();
+	TestTrue(TEXT("Controller retains the injected HUD after BeginPlay"), Controller->GetHUD() == HUD);
+	TestTrue(TEXT("Objective change delegate is bound"), Objectives->OnObjectiveChanged.IsBound());
+	TestTrue(TEXT("Mission complete delegate is bound"), Objectives->OnMissionComplete.IsBound());
+	Objectives->OnObjectiveChanged.AddDynamic(DelegateReceiver, &UAHObjectiveHUDDelegateTestReceiver::HandleObjectiveChanged);
+	Objectives->OnMissionComplete.AddDynamic(DelegateReceiver, &UAHObjectiveHUDDelegateTestReceiver::HandleMissionComplete);
+	TestEqual(TEXT("Initial HUD objective index is zero"), HUD->GetObjectiveIndex(), 0);
+	TestEqual(TEXT("Initial HUD objective count is five"), HUD->GetObjectiveCount(), Objectives->GetObjectiveCount());
+	TestTrue(TEXT("Objective change handler is reflected"), Controller->FindFunction(TEXT("HandleObjectiveChanged")) != nullptr);
+	TestTrue(TEXT("Mission complete handler is reflected"), Controller->FindFunction(TEXT("HandleMissionComplete")) != nullptr);
+
+	const FName FirstObjective = Objectives->GetCurrentObjective().Id;
+	Objectives->DebugAdvanceObjective();
+	TestEqual(TEXT("One ObjectiveDebug invocation advances exactly one objective"), Objectives->GetCurrentObjectiveIndex(), 1);
+	TestTrue(TEXT("Objective delegate handler is invoked"), DelegateReceiver->WasObjectiveCallbackInvoked());
+	TestEqual(TEXT("HUD objective index follows the objective delegate"), HUD->GetObjectiveIndex(), 1);
+	TestEqual(TEXT("HUD objective count follows the objective delegate"), HUD->GetObjectiveCount(), Objectives->GetObjectiveCount());
+	TestTrue(TEXT("HUD objective text follows the objective delegate"), HUD->GetCurrentObjective().EqualTo(Objectives->GetCurrentObjective().DisplayText));
+	TestFalse(TEXT("The first objective is no longer current"), Objectives->IsCurrentObjective(FirstObjective));
+
+	while (!Objectives->IsMissionComplete())
+	{
+		Objectives->CompleteObjective(Objectives->GetCurrentObjective().Id);
+	}
+	TestTrue(TEXT("Mission complete delegate handler is invoked"), DelegateReceiver->WasMissionCompleteCallbackInvoked());
+	TestTrue(TEXT("Mission complete reaches the HUD delegate path"), HUD->IsMissionCompleteDisplayed());
+	Controller->Destroy();
+	HUD->Destroy();
+	TestWorld->DestroyWorld(false);
 	return true;
 }
 

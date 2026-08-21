@@ -18,6 +18,10 @@ public:
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
 	void SetObjective(const FText& NewObjective, int32 NewIndex, int32 Count);
 	void ShowMissionComplete();
+	const FText& GetCurrentObjective() const { return CurrentObjective; }
+	int32 GetObjectiveIndex() const { return ObjectiveIndex; }
+	int32 GetObjectiveCount() const { return ObjectiveCount; }
+	bool IsMissionCompleteDisplayed() const { return bMissionComplete; }
 
 private:
 	void DrawBar(const FVector2D& Position, const FVector2D& Size, float Percent, const FLinearColor& Color) const;
