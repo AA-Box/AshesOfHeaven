@@ -1007,9 +1007,10 @@ void AAHChapterOneDirector::BuildErebusArtTarget()
 	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"), FVector(-900.0f, 700.0f, 49.0f), FRotator(0.0f, -15.0f, 0.0f), FVector(1.1f));
 	SpawnVisualShape(Cylinder, FVector(-1120.0f, -280.0f, -34.0f), FVector(0.15f, 0.15f, 5.6f), FRotator(88.0f, 24.0f, 0.0f), DarkStructureMaterial);
 	SpawnVisualShape(Cylinder, FVector(-990.0f, -240.0f, -20.0f), FVector(0.35f, 0.35f, 0.85f), FRotator(4.0f, 0.0f, 6.0f), RuinSilhouetteMaterial);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(-990.0f, -240.0f, 18.0f), FVector(0.35f));
+	// ponytail: no near-player fire sprites — the factory-default plume reads as a glowing
+	// slab, not fire; the orange point light + embers + smoke carry the burning-barrel read.
 	SpawnVisualLight(FVector(-990.0f, -240.0f, 120.0f), FLinearColor(1.0f, 0.42f, 0.12f), 1400.0f, 620.0f);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(-1100.0f, 200.0f, 250.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(-1100.0f, 200.0f, 250.0f), FVector(0.4f));
 
 	// The defensive line itself sits at the Objective 01 trigger (X=-600): flanking
 	// barricades and a staggered sandbag row with an open lane, a practical light and a
@@ -1026,7 +1027,6 @@ void AAHChapterOneDirector::BuildErebusArtTarget()
 		SpawnVisualShape(Cube, FVector(-635.0f + (Index % 2) * 20.0f, Y + 28.0f, -20.0f), FVector(0.38f, 0.24f, 0.20f), FRotator(0.0f, Index * -7.0f + 12.0f, 0.0f), DarkStructureMaterial);
 	}
 	SpawnVisualLight(FVector(-540.0f, -140.0f, 260.0f), FLinearColor(1.0f, 0.45f, 0.15f), 1200.0f, 700.0f);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(-660.0f, -420.0f, -46.0f), FVector(0.35f));
 
 	// --- Midground props along the route.
 	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"), FVector(800.0f, -620.0f, 112.0f), FRotator(0.0f, 8.0f, 0.0f), FVector(1.8f));
@@ -1077,14 +1077,12 @@ void AAHChapterOneDirector::BuildErebusArtTarget()
 	SpawnVisualShape(Cube, FVector(10300.0f, 1550.0f, 850.0f), FVector(1.0f, 0.3f, 8.5f), FRotator(0.0f, 0.0f, -3.0f), RuinSilhouetteMaterial);
 	SpawnVisualShape(Cube, FVector(12600.0f, 1500.0f, 1250.0f), FVector(0.7f, 0.3f, 12.0f), FRotator(0.0f, 0.0f, 2.0f), RuinSilhouetteMaterial);
 
-	SpawnVisualDust(FVector(950.0f, 0.0f, 420.0f), 1.7f);
-	SpawnVisualDust(FVector(2550.0f, 760.0f, 520.0f), 1.2f);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(2500.0f, 0.0f, 480.0f), FVector(2.5f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(-800.0f, 0.0f, 380.0f), FVector(2.0f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(1250.0f, -260.0f, 210.0f), FVector(1.2f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(1180.0f, 260.0f, -46.0f), FVector(0.35f));
+	// ponytail: no dust-sheet sprites over the Erebus lane — the opaque grime sheet reads
+	// as a pale monolith, not haze. AshField particles + fog carry the airborne read.
+	// ponytail: ash-field sprites cluster into a pale column over the lane (same failure
+	// as the dust sheets). Height fog + ember drift carry the airborne ash read.
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(1250.0f, -260.0f, 210.0f), FVector(0.4f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(2160.0f, 500.0f, -40.0f), FVector(1.2f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), FVector(950.0f, -820.0f, -46.0f), FVector(0.6f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(950.0f, -840.0f, -40.0f), FVector(1.6f));
 	SpawnVisualLight(FVector(950.0f, -780.0f, 160.0f), FLinearColor(1.0f, 0.34f, 0.09f), 2200.0f, 1100.0f);
 	SpawnLabel(FVector(700.0f, -1180.0f, 430.0f), TEXT("EREBUS / DEFENSIVE LINE"), FColor(180, 194, 202), 105.0f);
@@ -1101,38 +1099,38 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Bench.BP_Transit_Bench_C"), FVector(3780.0f, 380.0f, 120.0f), FRotator(0.0f, -90.0f, 0.0f), FVector(1.0f));
 
 	// Platforms and rails form a recognizable transit corridor without changing gameplay collision.
-	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, -30.0f), FVector(16.0f, 9.0f, 0.10f), FRotator::ZeroRotator, ConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, -30.0f), FVector(16.0f, 9.0f, 0.10f), FRotator::ZeroRotator, WallConcreteMaterial);
 	for (const float RailY : {-360.0f, 360.0f})
 	{
-		SpawnVisualShape(Cylinder, FVector(3500.0f, RailY, 18.0f), FVector(0.10f, 0.10f, 28.0f), FRotator(90.0f, 0.0f, 0.0f), HumanMetalMaterial);
+		SpawnVisualShape(Cylinder, FVector(3500.0f, RailY, 18.0f), FVector(0.10f, 0.10f, 28.0f), FRotator(90.0f, 0.0f, 0.0f), DarkStructureMaterial);
 	}
-	SpawnVisualShape(Cube, FVector(3500.0f, -720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(3500.0f, 720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, -720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, 720.0f, 95.0f), FVector(16.0f, 0.08f, 0.95f), FRotator::ZeroRotator, DarkStructureMaterial);
 
 	// The station entrance is a strong frame on the route, with a practical overhead sign.
 	for (const float PillarY : {-680.0f, 680.0f})
 	{
-		SpawnVisualShape(DoorFrame, FVector(3500.0f, PillarY, 370.0f), FVector(2.4f, 2.4f, 5.2f), FRotator::ZeroRotator, HumanMetalMaterial);
-		SpawnVisualShape(Cube, FVector(3500.0f, PillarY, 740.0f), FVector(0.45f, 0.45f, 3.3f), FRotator::ZeroRotator, HumanMetalMaterial);
+		SpawnVisualShape(DoorFrame, FVector(3500.0f, PillarY, 370.0f), FVector(2.4f, 2.4f, 5.2f), FRotator::ZeroRotator, DarkStructureMaterial);
+		SpawnVisualShape(Cube, FVector(3500.0f, PillarY, 740.0f), FVector(0.45f, 0.45f, 3.3f), FRotator::ZeroRotator, DarkStructureMaterial);
 	}
-	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, 760.0f), FVector(0.45f, 7.4f, 0.40f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, 760.0f), FVector(0.45f, 7.4f, 0.40f), FRotator::ZeroRotator, DarkStructureMaterial);
 	SpawnVisualShape(Cube, FVector(3500.0f, -735.0f, 760.0f), FVector(0.08f, 1.9f, 0.72f), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
 	SpawnLabel(FVector(3500.0f, -820.0f, 770.0f), TEXT("TRANSIT\nSTATION"), FColor(224, 224, 210), 125.0f);
 	SpawnLabel(FVector(3500.0f, -760.0f, 930.0f), TEXT("NORTH LINE  /  PLATFORM 02"), FColor(232, 190, 118), 72.0f);
 	SpawnLabel(FVector(3500.0f, 790.0f, 710.0f), TEXT("CIVIL DEFENSE\nEVACUATION ROUTE"), FColor(222, 90, 62), 66.0f, FRotator(0.0f, -90.0f, 0.0f));
 
 	// Civilian traces: a few abandoned cases and a control desk, not a prop carpet.
-	SpawnVisualShape(Cube, FVector(3150.0f, -410.0f, 60.0f), FVector(0.45f, 0.30f, 0.28f), FRotator(0.0f, 18.0f, 0.0f), ConcreteMaterial);
-	SpawnVisualShape(Cube, FVector(3270.0f, -450.0f, 52.0f), FVector(0.32f, 0.22f, 0.20f), FRotator(0.0f, -12.0f, 0.0f), ConcreteMaterial);
-	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 85.0f), FVector(1.8f, 0.24f, 0.12f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 160.0f), FVector(1.65f, 0.12f, 0.58f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 80.0f), FVector(1.3f, 0.22f, 0.10f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 145.0f), FVector(1.15f, 0.10f, 0.45f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 160.0f), FVector(1.3f, 0.65f, 0.72f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, FVector(3150.0f, -410.0f, 60.0f), FVector(0.45f, 0.30f, 0.28f), FRotator(0.0f, 18.0f, 0.0f), WallConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(3270.0f, -450.0f, 52.0f), FVector(0.32f, 0.22f, 0.20f), FRotator(0.0f, -12.0f, 0.0f), WallConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 85.0f), FVector(1.8f, 0.24f, 0.12f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(3440.0f, -250.0f, 160.0f), FVector(1.65f, 0.12f, 0.58f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 80.0f), FVector(1.3f, 0.22f, 0.10f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 145.0f), FVector(1.15f, 0.10f, 0.45f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 160.0f), FVector(1.3f, 0.65f, 0.72f), FRotator::ZeroRotator, DarkStructureMaterial);
 	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 305.0f), FVector(1.1f, 0.58f, 0.08f), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
 	for (int32 Index = 0; Index < 4; ++Index)
 	{
-		SpawnVisualShape(Cylinder, FVector(3500.0f + Index * 480.0f, 0.0f, 1080.0f), FVector(0.08f, 0.08f, 4.5f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
+		SpawnVisualShape(Cylinder, FVector(3500.0f + Index * 480.0f, 0.0f, 1080.0f), FVector(0.08f, 0.08f, 4.5f), FRotator(0.0f, 90.0f, 0.0f), DarkStructureMaterial);
 	}
 
 	SpawnVisualLight(FVector(3300.0f, -500.0f, 540.0f), FLinearColor(1.0f, 0.48f, 0.16f), 620.0f, 700.0f);

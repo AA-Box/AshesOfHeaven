@@ -142,8 +142,10 @@ void AAHPresentationPropActor::OnConstruction(const FTransform& Transform)
 	{
 		PropMesh->SetStaticMesh(Cylinder);
 		PropMesh->SetRelativeScale3D(FVector(0.6f, 0.6f, 1.2f));
-		AddDetailMesh(this, DetailMeshes, TEXT("LightHousing"), Sphere, FVector(0.f, 0.f, 145.f), FRotator::ZeroRotator, FVector(0.85f, 0.85f, 0.6f));
-		AddDetailMesh(this, DetailMeshes, TEXT("LightCrown"), Cone, FVector(0.f, 0.f, 215.f), FRotator::ZeroRotator, FVector(0.5f, 0.5f, 0.5f));
+		// Head sits directly on the pole top (pole half-height 60); a gap here reads as a
+		// floating orb in the first playable frame.
+		AddDetailMesh(this, DetailMeshes, TEXT("LightHousing"), Sphere, FVector(0.f, 0.f, 118.f), FRotator::ZeroRotator, FVector(0.85f, 0.85f, 0.6f));
+		AddDetailMesh(this, DetailMeshes, TEXT("LightCrown"), Cone, FVector(0.f, 0.f, 168.f), FRotator::ZeroRotator, FVector(0.5f, 0.5f, 0.5f));
 	}
 	else if (Style.Contains(TEXT("BlastWall")))
 	{
