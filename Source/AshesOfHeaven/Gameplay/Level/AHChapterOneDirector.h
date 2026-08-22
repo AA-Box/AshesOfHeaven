@@ -123,6 +123,11 @@ protected:
 	/** Runtime material variant of an authored master/instance; parameter names follow the Phase 4.2 masters (BaseTint/Roughness/Wetness/Grime). Negative scalars leave the parent value. */
 	UMaterialInterface* MakeTintedMaterial(UMaterialInterface* Parent, const FLinearColor& BaseTint, float Roughness = -1.0f, float Wetness = -1.0f, float Grime = -1.0f, float Metallic = -1.0f);
 	void BuildErebusSkyline();
+	/** Streams the authored Erebus opening presentation level at the canonical stage anchor.
+	 * Returns true when the level loaded with content; the legacy primitive build is the fallback. */
+	bool TryLoadAuthoredErebusZone();
+	/** Fires/smoke/ash for the authored zone via the proven runtime Niagara spawn path. */
+	void BuildErebusZoneEffects();
 	void SpawnBannerMonolith(const FVector& BaseCenter, const FVector& Scale, float YawDegrees);
 	void SpawnRubblePatch(const FVector& Center, float Radius, int32 Count, uint32 Seed);
 	void SpawnPuddle(const FVector& Center, const FVector2D& Extent, float YawDegrees);
@@ -256,6 +261,7 @@ protected:
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;
+	bool bErebusAuthoredZoneActive = false;
 	int32 PresentationActorCount = 0;
 	int32 PresentationVFXCount = 0;
 	int32 MissingPresentationAssets = 0;

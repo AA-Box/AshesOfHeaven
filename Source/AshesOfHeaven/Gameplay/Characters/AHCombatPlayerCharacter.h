@@ -88,4 +88,5 @@ protected:
 	bool bGodMode = false;
 	float FootstepTimeRemaining = 0.0f;
 	float LookInputEnableTime = 0.0f;
+	int32 TicksSinceBeginPlay = 0;
 };

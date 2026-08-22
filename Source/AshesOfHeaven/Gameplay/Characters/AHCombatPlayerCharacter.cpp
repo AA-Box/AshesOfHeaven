@@ -83,6 +83,7 @@ void AAHCombatPlayerCharacter::BeginPlay()
 void AAHCombatPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	++TicksSinceBeginPlay;
 	RefreshMovementSpeed();
 	if (GetCharacterMovement() && GetCharacterMovement()->IsMovingOnGround() && GetVelocity().SizeSquared2D() > FMath::Square(35.0f))
 	{
@@ -144,7 +145,10 @@ void AAHCombatPlayerCharacter::DoMove(float Right, float Forward)
 
 void AAHCombatPlayerCharacter::DoAim(float Yaw, float Pitch)
 {
-	if (GetWorld() && GetWorld()->GetTimeSeconds() < LookInputEnableTime)
+	// The 0.35s window alone is not enough: a long blocking hitch during startup (level
+	// streaming flush) can consume the whole window in one clamped tick, letting the OS
+	// mouse-capture warp rail the pitch afterwards. Require real rendered frames too.
+	if (TicksSinceBeginPlay < 3 || (GetWorld() && GetWorld()->GetTimeSeconds() < LookInputEnableTime))
 	{
 		return;
 	}

@@ -26,6 +26,7 @@
 #include "Sections/MovieSceneFloatSection.h"
 #include "Tracks/MovieSceneFloatTrack.h"
 #include "NiagaraEmitter.h"
+#include "NiagaraScript.h"
 #include "NiagaraSpriteRendererProperties.h"
 #include "NiagaraSystem.h"
 #include "NiagaraEmitterFactoryNew.h"
@@ -393,21 +394,18 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 	{
 		const FString EmitterAssetPath = EmitterPath / (TEXT("NE_") + Effect);
 		const FString SystemAssetPath = VFXPath / (TEXT("NS_") + Effect);
-		// Remove prior template duplicates so regeneration always leaves only authored
-		// emitters and systems in the project namespace.
-		if (UEditorAssetLibrary::DoesAssetExist(SystemAssetPath))
-		{
-			UEditorAssetLibrary::DeleteAsset(SystemAssetPath);
-		}
-		if (UEditorAssetLibrary::DoesAssetExist(EmitterAssetPath))
-		{
-			UEditorAssetLibrary::DeleteAsset(EmitterAssetPath);
-		}
 
-		UNiagaraEmitterFactoryNew* EmitterFactory = NewObject<UNiagaraEmitterFactoryNew>();
-		EmitterFactory->bAddDefaultModulesAndRenderersToEmptyEmitter = true;
-		UNiagaraEmitter* Emitter = Cast<UNiagaraEmitter>(FAssetToolsModule::GetModule().Get().CreateAsset(
-			TEXT("NE_") + Effect, EmitterPath, UNiagaraEmitter::StaticClass(), EmitterFactory));
+		// Update in place when the asset exists: DeleteAsset followed by CreateAsset at
+		// the same path returns null in the same editor session (stale package), which
+		// destroyed the whole family once. Load-or-create is the only safe idempotent path.
+		UNiagaraEmitter* Emitter = LoadObject<UNiagaraEmitter>(nullptr, *(EmitterAssetPath + TEXT(".NE_") + Effect));
+		if (!Emitter)
+		{
+			UNiagaraEmitterFactoryNew* EmitterFactory = NewObject<UNiagaraEmitterFactoryNew>();
+			EmitterFactory->bAddDefaultModulesAndRenderersToEmptyEmitter = true;
+			Emitter = Cast<UNiagaraEmitter>(FAssetToolsModule::GetModule().Get().CreateAsset(
+				TEXT("NE_") + Effect, EmitterPath, UNiagaraEmitter::StaticClass(), EmitterFactory));
+		}
 		if (!Emitter)
 		{
 			UE_LOG(LogTemp, Error, TEXT("[Phase4.3][VFX] failed to author emitter %s"), *Effect);
@@ -462,13 +460,42 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 					Sprite->SortMode = Effect.Contains(TEXT("Smoke")) || Effect.Contains(TEXT("Ash")) ? ENiagaraSortMode::ViewDepth : ENiagaraSortMode::None;
 				}
 			}
+
+			// The factory starter emitter is a generic fountain: every effect inherits its
+			// spawn rate, sprite size and velocity unless the module defaults are re-authored.
+			// Those module inputs live in the scripts' rapid-iteration parameter stores.
+			// Discovery pass: log every parameter name/type once so the per-effect table
+			// below can target real names on this engine version.
+			const TArray<UNiagaraScript*> EmitterScripts = {
+				EmitterData->SpawnScriptProps.Script,
+				EmitterData->UpdateScriptProps.Script
+			};
+			if (Effect == TEXT("EmberDrift"))
+			{
+				for (UNiagaraScript* Script : EmitterScripts)
+				{
+					if (!Script)
+					{
+						continue;
+					}
+					for (const FNiagaraVariableWithOffset& Variable : Script->RapidIterationParameters.ReadParameterVariables())
+					{
+						UE_LOG(LogTemp, Display, TEXT("[Phase4.5][VFXParamDiscovery] %s | %s : %s"),
+							*Effect, *Variable.GetName().ToString(), *Variable.GetType().GetName());
+					}
+				}
+			}
 		}
 		UEditorAssetLibrary::SaveAsset(EmitterAssetPath, false);
 
-		UNiagaraSystemFactoryNew* SystemFactory = NewObject<UNiagaraSystemFactoryNew>();
-		SystemFactory->EmittersToAddToNewSystem.Add(FVersionedNiagaraEmitter(Emitter, Emitter->GetExposedVersion().VersionGuid));
-		UNiagaraSystem* System = Cast<UNiagaraSystem>(FAssetToolsModule::GetModule().Get().CreateAsset(
-			TEXT("NS_") + Effect, VFXPath, UNiagaraSystem::StaticClass(), SystemFactory));
+		UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *(SystemAssetPath + TEXT(".NS_") + Effect));
+		if (!System)
+		{
+			UNiagaraSystemFactoryNew* SystemFactory = NewObject<UNiagaraSystemFactoryNew>();
+			SystemFactory->EmittersToAddToNewSystem.Add(FVersionedNiagaraEmitter(Emitter, Emitter->GetExposedVersion().VersionGuid));
+			System = Cast<UNiagaraSystem>(FAssetToolsModule::GetModule().Get().CreateAsset(
+				TEXT("NS_") + Effect, VFXPath, UNiagaraSystem::StaticClass(), SystemFactory));
+		}
 		if (!System)
 		{
 			UE_LOG(LogTemp, Error, TEXT("[Phase4.3][VFX] failed to author system %s"), *Effect);

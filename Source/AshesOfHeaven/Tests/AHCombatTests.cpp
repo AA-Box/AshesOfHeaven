@@ -50,6 +50,7 @@
 #include "Sound/SoundWave.h"
 #include "Sound/SoundBase.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
 #include "Blueprint/UserWidget.h"
@@ -1027,6 +1028,112 @@ bool FAHObjective01ReachableTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("route ground continues at X=%.0f"), X),
 			Fixture.World->LineTraceSingleByChannel(Ground, FVector(X, 0.0f, 400.0f), FVector(X, 0.0f, -1500.0f), ECC_Visibility));
 	}
+
+	Fixture.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHErebusKitManifestTest, "AshesOfHeaven.Presentation.ErebusKitManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHErebusKitManifestTest::RunTest(const FString& Parameters)
+{
+	// The authored zone level must exist as cooked/saved content.
+	TestTrue(TEXT("authored Erebus presentation level package exists"),
+		FPackageName::DoesPackageExist(TEXT("/Game/Ashes/Environment/Erebus/L_ErebusOpening_Presentation")));
+
+	// A representative slice of the authored modular kit: each mesh must load, carry real
+	// geometry and at least one material slot, and must not be an SM_AH primitive copy.
+	const TCHAR* KitMeshes[] = {
+		TEXT("SM_Erebus_BlastWall_A"), TEXT("SM_Erebus_BunkerWall_A"), TEXT("SM_Erebus_IndustrialWall_A"),
+		TEXT("SM_Erebus_RuinedFacade_A"), TEXT("SM_Erebus_Pipe_Large_A"), TEXT("SM_Erebus_Barricade_A"),
+		TEXT("SM_Erebus_Wreckage_A"), TEXT("SM_Erebus_RubbleLarge_A"), TEXT("SM_Erebus_TrenchWall_A"),
+		TEXT("SM_Erebus_SandbagRow_A"), TEXT("SM_Erebus_MudBase_A"), TEXT("SM_Erebus_Monolith_A"),
+		TEXT("SM_Erebus_CathedralSpire_A"), TEXT("SM_Erebus_RuinBlock_A"), TEXT("SM_Erebus_GantryTower_A")
+	};
+	for (const TCHAR* Name : KitMeshes)
+	{
+		UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Game/Ashes/Environment/Erebus/Meshes/%s.%s"), Name, Name));
+		TestNotNull(*FString::Printf(TEXT("kit mesh resolves: %s"), Name), Mesh);
+		if (Mesh)
+		{
+			TestTrue(*FString::Printf(TEXT("kit mesh has render geometry: %s"), Name), Mesh->GetNumTriangles(0) > 12);
+			TestTrue(*FString::Printf(TEXT("kit mesh has material slots: %s"), Name), Mesh->GetStaticMaterials().Num() >= 1);
+			TestNotNull(*FString::Printf(TEXT("kit mesh slot 0 material assigned: %s"), Name),
+				Mesh->GetStaticMaterials().Num() >= 1 ? Mesh->GetStaticMaterials()[0].MaterialInterface.Get() : nullptr);
+		}
+	}
+
+	// Erebus material instances ride the authored masters with real variation.
+	const TCHAR* Instances[] = {
+		TEXT("MI_Erebus_Concrete_Dry"), TEXT("MI_Erebus_Concrete_Wet"), TEXT("MI_Erebus_Concrete_Burned"),
+		TEXT("MI_Erebus_Steel_Dark"), TEXT("MI_Erebus_Steel_Painted"), TEXT("MI_Erebus_Steel_Scorched"),
+		TEXT("MI_Erebus_Mud"), TEXT("MI_Erebus_WreckMetal"), TEXT("MI_Erebus_Rubber"), TEXT("MI_Erebus_Glass_Damaged")
+	};
+	for (const TCHAR* Name : Instances)
+	{
+		TestNotNull(*FString::Printf(TEXT("Erebus material instance resolves: %s"), Name),
+			LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/Ashes/Materials/Instances/%s.%s"), Name, Name)));
+	}
+
+	// Authored assembly Blueprints resolve.
+	for (const TCHAR* Prop : { TEXT("BP_Erebus_Bunker_A"), TEXT("BP_Erebus_DefensivePosition_A"), TEXT("BP_Erebus_WreckCluster_A") })
+	{
+		TestNotNull(*FString::Printf(TEXT("Erebus assembly blueprint resolves: %s"), Prop),
+			LoadObject<UClass>(nullptr, *FString::Printf(TEXT("/Game/Ashes/Blueprints/Environment/%s.%s_C"), Prop, Prop)));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHErebusAuthoredZoneTest, "AshesOfHeaven.Chapter.ErebusAuthoredZone", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHErebusAuthoredZoneTest::RunTest(const FString& Parameters)
+{
+	using namespace AHObjective01TestSupport;
+	FChapterOneWorldFixture Fixture;
+	TestTrue(TEXT("Chapter One world fixture boots"), Fixture.Boot());
+	if (!Fixture.World)
+	{
+		return false;
+	}
+
+	// The authored streamed zone is the normal-gameplay Erebus presentation.
+	int32 AuthoredCount = 0;
+	int32 LegacyErebusPrimitives = 0;
+	for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+	{
+		if (It->Tags.Contains(FName(TEXT("AH.AuthoredZone"))))
+		{
+			++AuthoredCount;
+		}
+		// Legacy SpawnVisualShape primitives carry Phase4Visual; none may remain visible in
+		// the Erebus opening band (Transit content starts past X=3100 and stays untouched).
+		if (It->Tags.Contains(FName(TEXT("Phase4Visual"))) && !It->IsHidden()
+			&& It->GetActorLocation().X > -2500.0f && It->GetActorLocation().X < 2900.0f)
+		{
+			++LegacyErebusPrimitives;
+		}
+	}
+	TestTrue(*FString::Printf(TEXT("authored Erebus zone streamed in (%d tagged actors, expected >= 100)"), AuthoredCount), AuthoredCount >= 100);
+	TestEqual(TEXT("no visible legacy primitive presentation remains in the Erebus opening band"), LegacyErebusPrimitives, 0);
+
+	// The objective-01 corridor keeps presentation coverage from the authored zone.
+	const FVector ObjectiveCenter(-600.0f, 0.0f, 120.0f);
+	const FVector ObjectiveExtent(280.0f, 1000.0f, 160.0f);
+	const FBox ObjectiveBox(ObjectiveCenter - ObjectiveExtent, ObjectiveCenter + ObjectiveExtent);
+	int32 PresentationAtObjective = 0;
+	for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+	{
+		if (!It->Tags.Contains(FName(TEXT("Phase4Presentation"))) || It->IsHidden())
+		{
+			continue;
+		}
+		FVector Origin;
+		FVector Extent;
+		It->GetActorBounds(false, Origin, Extent);
+		if (ObjectiveBox.Intersect(FBox(Origin - Extent, Origin + Extent)))
+		{
+			++PresentationAtObjective;
+		}
+	}
+	TestTrue(*FString::Printf(TEXT("authored presentation covers the objective corridor (%d actors, expected >= 8)"), PresentationAtObjective), PresentationAtObjective >= 8);
 
 	Fixture.Teardown();
 	return true;
