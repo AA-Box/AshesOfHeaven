@@ -108,6 +108,8 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	void SetWeaponActive(bool bActive);
+	/** Hides only the local first-person mesh while retaining weapon/gameplay state. */
+	void SetLocalPresentationVisible(bool bVisible);
 	void StartFire();
 	void StopFire();
 	void Reload();
@@ -128,7 +130,7 @@ public:
 protected:
 	/** Where the weapon sits relative to the camera while no hand socket exists (greybox). */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonHoldOffset = FVector(34.0f, 14.0f, -16.0f);
+	FVector FirstPersonHoldOffset = FVector(45.0f, 24.0f, -28.0f);
 
 	/** SKM_Rifle is authored with its length along Y, so it needs a quarter turn to aim down X. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
@@ -144,12 +146,13 @@ protected:
 
 	/** Keep the prototype rifle readable without occupying the lower-right third of the view. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonHoldScale = FVector(0.78f);
+	FVector FirstPersonHoldScale = FVector(0.52f);
 
 	USceneComponent* GetFirstPersonHoldParent(AAHCombatantCharacter* Combatant, USkeletalMeshComponent* AttachTarget) const;
 
 	bool bUsingFirstPersonHold = false;
 	bool bUsingThirdPersonHold = false;
+	bool bLocalPresentationVisible = true;
 
 	FRotator GetRestRotation() const;
 

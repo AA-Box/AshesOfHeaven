@@ -23,8 +23,8 @@ AAHManticoreVehicle::AAHManticoreVehicle()
 	VehicleMesh->SetCollisionResponseToAllChannels(ECR_Block);
 	VehicleMesh->SetRelativeScale3D(FVector(2.8f, 1.45f, 0.75f));
 
-	const UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	const UStaticMesh* CylinderMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	const UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
+	const UStaticMesh* CylinderMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder"));
 	HullArmor = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HullArmor"));
 	HullArmor->SetupAttachment(VehicleMesh);
 	HullArmor->SetStaticMesh(const_cast<UStaticMesh*>(CubeMesh));

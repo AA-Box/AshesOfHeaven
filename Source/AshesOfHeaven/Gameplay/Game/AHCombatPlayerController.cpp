@@ -13,6 +13,7 @@
 #include "Gameplay/Level/AHChapterOneDirector.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/UI/AHCombatHUD.h"
+#include "Gameplay/UI/AHHUDRootWidget.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Platform/AHMobileControlsWidget.h"
@@ -35,6 +36,51 @@ void AAHCombatPlayerController::BeginPlay()
 	if (UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>())
 	{
 		BindObjectiveEvents(Objectives);
+	}
+}
+
+void AAHCombatPlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdatePresentationState();
+}
+
+void AAHCombatPlayerController::UpdatePresentationState()
+{
+	AAHCombatHUD* HUD = GetCombatHUD();
+	UAHHUDRootWidget* Root = HUD ? HUD->GetRootWidget() : nullptr;
+	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(GetPawn());
+	AAHManticoreVehicle* Vehicle = Cast<AAHManticoreVehicle>(GetPawn());
+	AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHChapterOneDirector::StaticClass()));
+	const bool bOpening = Director && Director->IsOpeningPresentationActive();
+	if (Root && (Root != BoundPresentationRoot || bOpening != bOpeningPresentationState))
+	{
+		BoundPresentationRoot = Root;
+		bOpeningPresentationState = bOpening;
+		Root->SetGameplayPresentationVisible(!bOpening);
+		if (Player)
+		{
+			Player->SetFirstPersonPresentationVisible(!bOpening);
+		}
+		SetIgnoreMoveInput(bOpening);
+		SetIgnoreLookInput(bOpening);
+	}
+	if (!Root || bOpening)
+	{
+		return;
+	}
+	if (Vehicle)
+	{
+		Root->SetCrosshairState(false, 0.0f, false, false, false, true);
+		return;
+	}
+	if (Player)
+	{
+		AAHWeaponBase* Weapon = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetCurrentWeapon() : nullptr;
+		const bool bADS = Player->IsAimingDownSights();
+		const float Spread = Weapon ? (bADS ? Weapon->ADSSpreadDegrees : Weapon->HipSpreadDegrees) : 0.0f;
+		const bool bInteraction = Player->GetInteractionComponent() && Player->GetInteractionComponent()->GetCurrentTarget() != nullptr;
+		Root->SetCrosshairState(bADS, Spread, false, false, bInteraction, false);
 	}
 }
 

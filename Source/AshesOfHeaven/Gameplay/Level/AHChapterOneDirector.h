@@ -49,6 +49,8 @@ public:
 
 	/** Development review toggle; collision and navigation remain unchanged. */
 	void SetGreyboxVisualVisibility(bool bVisible);
+	/** Development review toggle for the authored presentation layer; gameplay collision remains unchanged. */
+	void SetPresentationVisualVisibility(bool bVisible);
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	EAHChapterStage GetCurrentStage() const;
@@ -58,6 +60,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	bool IsOpeningBlack() const;
+
+	UFUNCTION(BlueprintPure, Category="Chapter")
+	bool IsOpeningPresentationActive() const;
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	bool IsTitleReveal() const;

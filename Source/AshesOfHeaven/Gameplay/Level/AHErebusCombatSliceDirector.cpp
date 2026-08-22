@@ -15,8 +15,8 @@
 AAHErebusCombatSliceDirector::AAHErebusCombatSliceDirector()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
+	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
+	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"));
 }
 
 void AAHErebusCombatSliceDirector::BeginPlay()

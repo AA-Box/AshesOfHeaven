@@ -26,8 +26,8 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 
 	StartingWeaponClass = AAHWeaponBase::StaticClass();
 
-	UStaticMesh* GauntletMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	UMaterialInterface* GauntletMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
+	UStaticMesh* GauntletMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
+	UMaterialInterface* GauntletMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"));
 	FirstPersonLeftGauntlet = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FirstPersonLeftGauntlet"));
 	FirstPersonLeftGauntlet->SetupAttachment(GetFirstPersonCameraComponent());
 	FirstPersonLeftGauntlet->SetStaticMesh(GauntletMesh);
@@ -37,6 +37,10 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 	FirstPersonLeftGauntlet->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	FirstPersonLeftGauntlet->SetOnlyOwnerSee(true);
 	FirstPersonLeftGauntlet->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	// These cubes were only an authoring placeholder. They sit directly on the camera and read
+	// as giant black slabs at runtime, so keep the components available for a future real arm mesh
+	// but never expose them in the playable presentation.
+	FirstPersonLeftGauntlet->SetVisibility(false);
 	if (GauntletMaterial)
 	{
 		FirstPersonLeftGauntlet->SetMaterial(0, GauntletMaterial);
@@ -51,6 +55,7 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 	FirstPersonRightGauntlet->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	FirstPersonRightGauntlet->SetOnlyOwnerSee(true);
 	FirstPersonRightGauntlet->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	FirstPersonRightGauntlet->SetVisibility(false);
 	if (GauntletMaterial)
 	{
 		FirstPersonRightGauntlet->SetMaterial(0, GauntletMaterial);
@@ -252,6 +257,27 @@ void AAHCombatPlayerCharacter::PreviousWeapon()
 	if (CombatComponent)
 	{
 		CombatComponent->CycleWeapon(-1);
+	}
+}
+
+void AAHCombatPlayerCharacter::SetFirstPersonPresentationVisible(bool bVisible)
+{
+	// Do not resurrect the cube gauntlets. Only the authored weapon is part of the current
+	// first-person target and it is explicitly hidden during the opening dialogue.
+	if (FirstPersonLeftGauntlet)
+	{
+		FirstPersonLeftGauntlet->SetVisibility(false);
+	}
+	if (FirstPersonRightGauntlet)
+	{
+		FirstPersonRightGauntlet->SetVisibility(false);
+	}
+	if (InventoryComponent)
+	{
+		if (AAHWeaponBase* Weapon = InventoryComponent->GetCurrentWeapon())
+		{
+			Weapon->SetLocalPresentationVisible(bVisible);
+		}
 	}
 }
 

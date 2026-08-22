@@ -537,6 +537,68 @@ Android/device performance are also not claimed by these machine checks.
 
 Do not start Phase 5 or Chapter Two from this record.
 
+## PHASE 4.4.1 — Runtime presentation recovery — 2026-08-22
+
+This focused pass addresses the defects visible in the current packaged first-playable view. It
+keeps the existing cross-platform architecture and uses project-owned Unreal assets/materials;
+it does not begin Phase 5 or Chapter Two.
+
+### Defects fixed
+
+- Removed the camera-attached placeholder gauntlet slabs that were dominating the view. The
+  first-person weapon is now a smaller, lower/right local presentation, and the player weapon is
+  hidden while the opening presentation is active.
+- Added an authored full-screen black opening curtain. Opening dialogue owns the screen until the
+  sequence completes; objective, status, weapon, crosshair, interaction, damage, countdown,
+  vehicle, and chapter-title gameplay presentation are suppressed during that interval. Movement
+  and look input are also locked for the opening sequence.
+- Reworked the HUD asset layout for safe-zone/anchor-based responsive placement: compact objective
+  reveal, compact player status, minimal weapon/ammo readout, restrained crosshair, transient hit/
+  damage indicators, and a smaller dialogue treatment. The permanent weapon-name dossier and
+  `OBJECTIVE 01` metadata are removed from the normal gameplay presentation.
+- Wired runtime crosshair state to ADS, spread, interaction target, and vehicle context. Hit and
+  damage feedback now reveal authored rules/indicators briefly and then clear themselves.
+- Replaced remaining runtime prototype material references in combat character presentation with
+  `/Game/Ashes/Materials/M_VeilObsidian` and `/Game/Ashes/Materials/M_HumanMetal`, while keeping
+  collision/navigation actors intact. The presentation visibility debug toggle remains available
+  for development verification.
+- Removed the last runtime `/Engine/BasicShapes` and `/Game/LevelPrototyping` loads from the
+  playable slice constructors. Runtime block, sphere, cylinder, vehicle, weapon, and Erebus
+  geometry now resolve the checked-in `/Game/Ashes/Presentation/Meshes/SM_AH_*` assets and the
+  authored human-metal material family.
+
+### Machine verification
+
+| Gate | Exact result |
+| --- | --- |
+| Development Editor | **PASS** — Mac arm64 compile/link, exit code 0; `/tmp/phase441-editor-build-final.log` |
+| `AHCombatVerificationCommandlet` | **PASS** — 20/20 checks, 0 failed checks, exit code 0; `/tmp/phase441-commandlet-final.stdout` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 21/21 project tests started and completed with `Result={Success}`, `**** TEST COMPLETE. EXIT CODE: 0 ****`; `/tmp/phase441-automation-final.log` |
+| Mac Development cook/package | **PASS** — `BUILD SUCCESSFUL`; `Builds/macOS-Development/AshesOfHeaven.app`; `/tmp/phase441-development-package-final.log` |
+| Mac Shipping cook/package | **PASS** — `BUILD SUCCESSFUL`; `Builds/macOS/AshesOfHeaven.app`; `/tmp/phase441-shipping-package-final.log` |
+| Deep strict codesign | **PASS** — final Development and Shipping packages verified; `/tmp/phase441-development-codesign-final.log`, `/tmp/phase441-shipping-codesign-final.log` |
+| Normal Metal launch | **PASS** — final Development and Shipping apps remained alive for 12 seconds without `-nullrhi` or `-nosound` and exited cleanly after controlled shutdown; `/tmp/phase441-development-normal-final.log`, `/tmp/phase441-shipping-normal-final.log` |
+
+The automation output includes Unreal's intentional `UnifiedErrorTest` sample error messages and
+the known temporary HUD test-world teardown warnings after successful tests. They are engine/test
+harness noise, not project test failures. The commandlet run was isolated to MCP port 18080 because
+the connected Unreal Editor owns port 8000.
+
+### Human validation still required
+
+No normal-runtime screenshot was captured: macOS display capture returned `could not create image
+from display`. Therefore this record does not claim visual approval. A human must inspect the
+actual packaged app for the opening curtain/dialogue, absence of giant black geometry, first
+playable Erebus composition, M91 framing, crosshair and hit/damage states, HUD readability at the
+target resolutions, and reference-image match. Human playtesting is also still required for
+movement/mouse feel, shooting/ADS/recoil/reload, enemy and friendly AI, objective clarity/pacing,
+pickups/melee/grenades, death/restart inventory restoration, checkpoints, Manticore operation,
+dialogue/countdown/terminal progression, awkward routes, collision/pathfinding, softlocks, crashes,
+and Chapter One completion. This pass does not claim final sound design, final art quality, or
+cross-platform device validation.
+
+Do not start Phase 5 or Chapter Two from this record.
+
 ## PHASE 4.4 — Runtime art integration and Chapter state correctness — 2026-08-22
 
 This pass fixes the normal packaged Chapter One path, not only the ArtTarget launcher. Phase 5 and

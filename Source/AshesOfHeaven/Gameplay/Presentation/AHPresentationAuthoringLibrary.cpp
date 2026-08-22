@@ -256,8 +256,8 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 			UBorder* Rule = BP->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ObjectiveRule"));
 			Rule->SetBrushColor(Amber);
 			Place(Canvas, Rule, FMargin(0.f, 0.f, 3.f, 64.f));
-			AddText(BP->WidgetTree, Canvas, TEXT("ObjectiveIndex"), TEXT("OBJECTIVE"), 13, Muted, FMargin(18.f, 0.f, 520.f, 22.f));
-			AddText(BP->WidgetTree, Canvas, TEXT("ObjectiveText"), TEXT("AWAITING ORDERS"), 22, Bone, FMargin(18.f, 24.f, 620.f, 36.f));
+			AddText(BP->WidgetTree, Canvas, TEXT("ObjectiveIndex"), TEXT("OBJECTIVE UPDATED"), 11, Muted, FMargin(16.f, 0.f, 420.f, 18.f));
+			AddText(BP->WidgetTree, Canvas, TEXT("ObjectiveText"), TEXT("AWAITING ORDERS"), 19, Bone, FMargin(16.f, 20.f, 520.f, 30.f));
 			SaveWidgetBlueprint(BP);
 		}
 		else { bSuccess = false; }
@@ -269,10 +269,10 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 		{
 			UCanvasPanel* Canvas = BP->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Layout"));
 			BP->WidgetTree->RootWidget = Canvas;
-			AddText(BP->WidgetTree, Canvas, TEXT("ArmorValue"), TEXT("ARMOR  100"), 13, Cyan, FMargin(0.f, 0.f, 240.f, 20.f));
-			AddProgress(BP->WidgetTree, Canvas, TEXT("ArmorBar"), Cyan, FMargin(0.f, 22.f, 238.f, 7.f));
-			AddText(BP->WidgetTree, Canvas, TEXT("HealthValue"), TEXT("VITALS  100"), 13, Amber, FMargin(0.f, 34.f, 240.f, 20.f));
-			AddProgress(BP->WidgetTree, Canvas, TEXT("HealthBar"), Amber, FMargin(0.f, 56.f, 238.f, 7.f));
+			AddText(BP->WidgetTree, Canvas, TEXT("ArmorValue"), TEXT("ARMOR  100"), 11, Cyan, FMargin(0.f, 0.f, 172.f, 17.f));
+			AddProgress(BP->WidgetTree, Canvas, TEXT("ArmorBar"), Cyan, FMargin(0.f, 19.f, 172.f, 5.f));
+			AddText(BP->WidgetTree, Canvas, TEXT("HealthValue"), TEXT("VITALS  100"), 11, Amber, FMargin(0.f, 28.f, 172.f, 17.f));
+			AddProgress(BP->WidgetTree, Canvas, TEXT("HealthBar"), Amber, FMargin(0.f, 47.f, 172.f, 5.f));
 			SaveWidgetBlueprint(BP);
 		}
 		else { bSuccess = false; }
@@ -284,9 +284,9 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 		{
 			UCanvasPanel* Canvas = BP->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Layout"));
 			BP->WidgetTree->RootWidget = Canvas;
-			AddText(BP->WidgetTree, Canvas, TEXT("WeaponName"), TEXT("M91 // REVENANT"), 13, Muted, FMargin(0.f, 0.f, 318.f, 20.f), ETextJustify::Right);
-			AddText(BP->WidgetTree, Canvas, TEXT("Ammo"), TEXT("30  /  120"), 30, Bone, FMargin(0.f, 20.f, 318.f, 40.f), ETextJustify::Right);
-			AddText(BP->WidgetTree, Canvas, TEXT("Grenades"), TEXT("FRAG  03"), 13, Amber, FMargin(0.f, 62.f, 318.f, 22.f), ETextJustify::Right);
+			AddText(BP->WidgetTree, Canvas, TEXT("WeaponName"), TEXT(""), 1, FLinearColor::Transparent, FMargin(0.f, 0.f, 1.f, 1.f), ETextJustify::Right);
+			AddText(BP->WidgetTree, Canvas, TEXT("Ammo"), TEXT("36  /  180"), 24, Bone, FMargin(0.f, 12.f, 230.f, 32.f), ETextJustify::Right);
+			AddText(BP->WidgetTree, Canvas, TEXT("Grenades"), TEXT("FRAG  02"), 11, Amber, FMargin(0.f, 46.f, 230.f, 18.f), ETextJustify::Right);
 			SaveWidgetBlueprint(BP);
 		}
 		else { bSuccess = false; }
@@ -318,17 +318,21 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 		{
 			SafeZone->AddChild(Canvas);
 		}
+		UBorder* OpeningCurtain = Root->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("OpeningCurtain"));
+		OpeningCurtain->bIsVariable = true;
+		OpeningCurtain->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 1.f));
+		Place(Canvas, OpeningCurtain, FMargin(0.f), FAnchors(0.f, 0.f, 1.f, 1.f), FVector2D::ZeroVector);
 		const TArray<TTuple<const TCHAR*, const TCHAR*, FMargin, FAnchors, FVector2D>> Children = {
-			MakeTuple(TEXT("ObjectiveWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Objective.WBP_Objective_C"), FMargin(42.f, 34.f, 660.f, 72.f), FAnchors(0.f, 0.f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("CountdownWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Countdown.WBP_Countdown_C"), FMargin(-262.f, 34.f, 220.f, 38.f), FAnchors(1.f, 0.f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("PlayerStatusWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_PlayerStatus.WBP_PlayerStatus_C"), FMargin(42.f, -72.f, 238.f, 64.f), FAnchors(0.f, 1.f), FVector2D(0.f, 1.f)),
-			MakeTuple(TEXT("WeaponStatusWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_WeaponStatus.WBP_WeaponStatus_C"), FMargin(-360.f, -88.f, 318.f, 88.f), FAnchors(1.f, 1.f), FVector2D(0.f, 1.f)),
-			MakeTuple(TEXT("CrosshairWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Crosshair.WBP_Crosshair_C"), FMargin(-24.f, -20.f, 48.f, 40.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("InteractionWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_InteractionPrompt.WBP_InteractionPrompt_C"), FMargin(-260.f, 78.f, 520.f, 32.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("DamageIndicatorWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_DamageIndicator.WBP_DamageIndicator_C"), FMargin(-210.f, 126.f, 420.f, 32.f), FAnchors(0.5f, 0.f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("DialogueWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Dialogue.WBP_Dialogue_C"), FMargin(-400.f, -176.f, 800.f, 80.f), FAnchors(0.5f, 1.f), FVector2D(0.f, 1.f)),
-			MakeTuple(TEXT("ChapterTitleWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_ChapterTitle.WBP_ChapterTitle_C"), FMargin(-360.f, -60.f, 720.f, 120.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
-			MakeTuple(TEXT("ManticoreWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_ManticoreHUD.WBP_ManticoreHUD_C"), FMargin(42.f, -184.f, 360.f, 48.f), FAnchors(0.f, 1.f), FVector2D(0.f, 1.f)),
+			MakeTuple(TEXT("ObjectiveWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Objective.WBP_Objective_C"), FMargin(36.f, 28.f, 540.f, 56.f), FAnchors(0.f, 0.f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("CountdownWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Countdown.WBP_Countdown_C"), FMargin(-220.f, 28.f, 200.f, 32.f), FAnchors(1.f, 0.f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("PlayerStatusWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_PlayerStatus.WBP_PlayerStatus_C"), FMargin(36.f, -58.f, 172.f, 52.f), FAnchors(0.f, 1.f), FVector2D(0.f, 1.f)),
+			MakeTuple(TEXT("WeaponStatusWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_WeaponStatus.WBP_WeaponStatus_C"), FMargin(-250.f, -76.f, 230.f, 76.f), FAnchors(1.f, 1.f), FVector2D(0.f, 1.f)),
+			MakeTuple(TEXT("CrosshairWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Crosshair.WBP_Crosshair_C"), FMargin(-20.f, -16.f, 40.f, 32.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("InteractionWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_InteractionPrompt.WBP_InteractionPrompt_C"), FMargin(-220.f, 64.f, 440.f, 28.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("DamageIndicatorWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_DamageIndicator.WBP_DamageIndicator_C"), FMargin(-190.f, 110.f, 380.f, 28.f), FAnchors(0.5f, 0.f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("DialogueWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Dialogue.WBP_Dialogue_C"), FMargin(-360.f, -128.f, 720.f, 64.f), FAnchors(0.5f, 1.f), FVector2D(0.f, 1.f)),
+			MakeTuple(TEXT("ChapterTitleWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_ChapterTitle.WBP_ChapterTitle_C"), FMargin(-320.f, -56.f, 640.f, 112.f), FAnchors(0.5f, 0.5f), FVector2D::ZeroVector),
+			MakeTuple(TEXT("ManticoreWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_ManticoreHUD.WBP_ManticoreHUD_C"), FMargin(36.f, -154.f, 300.f, 42.f), FAnchors(0.f, 1.f), FVector2D(0.f, 1.f)),
 		};
 		for (const auto& Child : Children)
 		{

@@ -34,7 +34,7 @@ AAHWeaponBase::AAHWeaponBase()
 	}
 	CapacitorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MagneticCapacitor"));
 	CapacitorMesh->SetupAttachment(WeaponMesh);
-	CapacitorMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+	CapacitorMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube")));
 	CapacitorMesh->SetRelativeLocation(FVector(0.0f, -28.0f, -8.0f));
 	CapacitorMesh->SetRelativeScale3D(FVector(0.18f, 0.62f, 0.10f));
 	CapacitorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -112,6 +112,22 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 			CapacitorMesh->SetOnlyOwnerSee(bIsPlayer);
 			CapacitorMesh->FirstPersonPrimitiveType = bIsPlayer ? EFirstPersonPrimitiveType::FirstPerson : EFirstPersonPrimitiveType::WorldSpaceRepresentation;
 		}
+		if (bIsPlayer)
+		{
+			WeaponMesh->SetVisibility(bActive && bLocalPresentationVisible);
+			if (CapacitorMesh)
+			{
+				CapacitorMesh->SetVisibility(bActive && bLocalPresentationVisible);
+			}
+		}
+		else
+		{
+			WeaponMesh->SetVisibility(bActive);
+			if (CapacitorMesh)
+			{
+				CapacitorMesh->SetVisibility(bActive);
+			}
+		}
 		if (!bIsPlayer)
 		{
 			bUsingFirstPersonHold = false;
@@ -147,6 +163,25 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 			WeaponMesh->SetRelativeRotation(bUsingFirstPersonHold ? FirstPersonHoldRotation : ThirdPersonHoldRotation);
 			WeaponMesh->SetRelativeScale3D(bUsingFirstPersonHold ? FirstPersonHoldScale : FVector::OneVector);
 		}
+	}
+}
+
+void AAHWeaponBase::SetLocalPresentationVisible(bool bVisible)
+{
+	bLocalPresentationVisible = bVisible;
+	AAHCombatantCharacter* Combatant = GetCombatantOwner();
+	if (!Combatant || !Combatant->IsPlayerControlled())
+	{
+		return;
+	}
+	const bool bVisibleNow = bWeaponActive && bVisible;
+	if (WeaponMesh)
+	{
+		WeaponMesh->SetVisibility(bVisibleNow);
+	}
+	if (CapacitorMesh)
+	{
+		CapacitorMesh->SetVisibility(bVisibleNow);
 	}
 }
 

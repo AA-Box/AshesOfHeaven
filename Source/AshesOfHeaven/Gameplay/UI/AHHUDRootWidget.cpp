@@ -48,6 +48,7 @@ void UAHHUDRootWidget::NativeConstruct()
 	ApplyVisibility(CrosshairLeft, false);
 	ApplyVisibility(CrosshairRight, false);
 	ApplyVisibility(CrosshairHit, false);
+	ApplyVisibility(OpeningCurtain, false);
 	ApplyVisibility(MissionCompleteText, false);
 	ApplyVisibility(ChapterTitleWidget, false);
 	ApplyVisibility(DamageText, false);
@@ -58,6 +59,7 @@ void UAHHUDRootWidget::NativeConstruct()
 	ApplyVisibility(CountdownText, false);
 	ApplyVisibility(VehicleText, false);
 	ApplyVisibility(VehicleHealthBar, false);
+	ApplyVisibility(WeaponNameText, false);
 	if (UWorld* World = GetWorld())
 	{
 		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
@@ -70,6 +72,9 @@ void UAHHUDRootWidget::NativeConstruct()
 		if (UAHDialogueSubsystem* Dialogue = World->GetSubsystem<UAHDialogueSubsystem>())
 		{
 			Dialogue->OnLineChanged.AddDynamic(this, &UAHHUDRootWidget::HandleDialogueLine);
+			Dialogue->OnSequenceComplete.AddDynamic(this, &UAHHUDRootWidget::HandleDialogueSequenceComplete);
+			const bool bOpeningDialogue = Dialogue->HasActiveDialogue() && Dialogue->GetCurrentSequence() == FName(TEXT("Ch01_Opening"));
+			SetGameplayPresentationVisible(!bOpeningDialogue);
 		}
 	}
 	if (APlayerController* PC = GetOwningPlayer())
@@ -91,9 +96,48 @@ void UAHHUDRootWidget::NativeDestruct()
 		if (UAHDialogueSubsystem* Dialogue = World->GetSubsystem<UAHDialogueSubsystem>())
 		{
 			Dialogue->OnLineChanged.RemoveDynamic(this, &UAHHUDRootWidget::HandleDialogueLine);
+			Dialogue->OnSequenceComplete.RemoveDynamic(this, &UAHHUDRootWidget::HandleDialogueSequenceComplete);
 		}
 	}
 	Super::NativeDestruct();
+}
+
+void UAHHUDRootWidget::SetGameplayPresentationVisible(bool bVisible)
+{
+	bGameplayPresentationVisible = bVisible;
+	ApplyVisibility(OpeningCurtain, !bVisible);
+
+	if (!bVisible)
+	{
+		ApplyVisibility(ObjectiveWidget, false);
+		ApplyVisibility(PlayerStatusWidget, false);
+		ApplyVisibility(WeaponStatusWidget, false);
+		ApplyVisibility(CrosshairWidget, false);
+		ApplyVisibility(InteractionWidget, false);
+		ApplyVisibility(DamageIndicatorWidget, false);
+		ApplyVisibility(CountdownWidget, false);
+		ApplyVisibility(ManticoreWidget, false);
+		ApplyVisibility(ChapterTitleWidget, false);
+		return;
+	}
+
+	ApplyVisibility(CrosshairWidget, true);
+	ApplyVisibility(PlayerStatusWidget, true);
+	ApplyVisibility(WeaponStatusWidget, true);
+	ApplyVisibility(ObjectiveWidget, true);
+	ApplyVisibility(InteractionWidget, InteractionText == nullptr || !InteractionText->GetText().IsEmpty());
+	ApplyVisibility(DialogueWidget, false);
+	if (UWorld* World = GetWorld())
+	{
+		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
+		{
+			if (Chapter->IsChapterComplete())
+			{
+				ApplyVisibility(ObjectiveWidget, false);
+			}
+		}
+	}
+	RefreshPlayerState();
 }
 
 void UAHHUDRootWidget::ResolveAuthoredWidgets()
@@ -214,7 +258,10 @@ void UAHHUDRootWidget::BindWeapon(AAHWeaponBase* Weapon)
 		Weapon->OnAmmoChanged.AddDynamic(this, &UAHHUDRootWidget::HandleAmmoChanged);
 		Weapon->OnReloaded.AddDynamic(this, &UAHHUDRootWidget::HandleWeaponEvent);
 		HandleAmmoChanged(Weapon->GetAmmoState());
-		SetText(WeaponNameText, Weapon->DisplayName);
+		// The weapon model already identifies the weapon. Keeping its name permanently on screen
+		// crowds the lower-right viewmodel and is not part of the gameplay HUD contract.
+		SetText(WeaponNameText, FText::GetEmpty());
+		ApplyVisibility(WeaponNameText, false);
 	}
 }
 
@@ -317,13 +364,24 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 	CurrentObjective = Objective;
 	CurrentObjectiveIndex = Index;
 	CurrentObjectiveCount = Count;
-	ApplyVisibility(ObjectiveWidget, true);
+	ApplyVisibility(ObjectiveWidget, bGameplayPresentationVisible);
 	ApplyVisibility(ChapterTitleWidget, false);
-	SetText(ObjectiveIndexText, FText::FromString(FString::Printf(TEXT("OBJECTIVE %02d"), Index + 1)));
+	SetText(ObjectiveIndexText, bChanged ? NSLOCTEXT("AshesHUD", "ObjectiveUpdated", "OBJECTIVE UPDATED") : FText::GetEmpty());
 	SetText(ObjectiveText, Objective.IsEmpty() ? NSLOCTEXT("AshesHUD", "AwaitingOrders2", "AWAITING ORDERS") : Objective);
 	if (bChanged)
 	{
 		PlayPresentationAnimation(ObjectiveRevealAnimation);
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ObjectiveMetadataTimer);
+			World->GetTimerManager().SetTimer(ObjectiveMetadataTimer, [WeakThis = TWeakObjectPtr<UAHHUDRootWidget>(this)]()
+			{
+				if (UAHHUDRootWidget* Widget = WeakThis.Get())
+				{
+					Widget->SetText(Widget->ObjectiveIndexText, FText::GetEmpty());
+				}
+			}, 2.6f, false);
+		}
 	}
 }
 
@@ -336,6 +394,8 @@ void UAHHUDRootWidget::ShowHitMarker(bool bHeadshot)
 		HitBorder->SetBrushColor(bHeadshot ? Amber : Bone);
 	}
 	ApplyVisibility(DamageText, true);
+	ApplyVisibility(DamageRule, true);
+	ApplyVisibility(DamageIndicatorWidget, true);
 	if (DamageRule)
 	{
 		DamageRule->SetBrushColor(bHeadshot ? Amber : Bone);
@@ -349,6 +409,8 @@ void UAHHUDRootWidget::ShowHitMarker(bool bHeadshot)
 			if (UAHHUDRootWidget* Widget = WeakThis.Get())
 			{
 				Widget->ApplyVisibility(Widget->DamageText, false);
+				Widget->ApplyVisibility(Widget->DamageRule, false);
+				Widget->ApplyVisibility(Widget->DamageIndicatorWidget, false);
 				Widget->ApplyVisibility(Widget->CrosshairHit, false);
 			}
 		}, 0.22f, false);
@@ -362,9 +424,25 @@ void UAHHUDRootWidget::ShowDamageFeedback(bool bArmorBreak, float DirectionAngle
 	ApplyVisibility(DamageText, true);
 	if (DamageRule)
 	{
+		ApplyVisibility(DamageRule, true);
 		DamageRule->SetBrushColor(bArmorBreak ? Cyan : Red);
+		DamageRule->SetRenderTransformAngle(DirectionAngle);
 	}
+	ApplyVisibility(DamageIndicatorWidget, true);
 	PlayPresentationAnimation(DamagePulseAnimation);
+	if (GetWorld())
+	{
+		FTimerHandle Timer;
+		GetWorld()->GetTimerManager().SetTimer(Timer, [WeakThis = TWeakObjectPtr<UAHHUDRootWidget>(this)]()
+		{
+			if (UAHHUDRootWidget* Widget = WeakThis.Get())
+			{
+				Widget->ApplyVisibility(Widget->DamageText, false);
+				Widget->ApplyVisibility(Widget->DamageRule, false);
+				Widget->ApplyVisibility(Widget->DamageIndicatorWidget, false);
+			}
+		}, 0.75f, false);
+	}
 }
 
 void UAHHUDRootWidget::ShowMissionComplete()
@@ -462,6 +540,20 @@ void UAHHUDRootWidget::HandleDialogueLine(FName Speaker, FText Subtitle, float D
 	SetText(DialogueSubtitleText, Subtitle);
 	ApplyVisibility(DialogueSpeakerText, !Speaker.IsNone());
 	ApplyVisibility(DialogueSubtitleText, !Subtitle.IsEmpty());
+	ApplyVisibility(DialogueWidget, !Speaker.IsNone() || !Subtitle.IsEmpty());
+}
+
+void UAHHUDRootWidget::HandleDialogueSequenceComplete(FName SequenceId)
+{
+	SetText(DialogueSpeakerText, FText::GetEmpty());
+	SetText(DialogueSubtitleText, FText::GetEmpty());
+	ApplyVisibility(DialogueSpeakerText, false);
+	ApplyVisibility(DialogueSubtitleText, false);
+	ApplyVisibility(DialogueWidget, false);
+	if (SequenceId == FName(TEXT("Ch01_Opening")))
+	{
+		SetGameplayPresentationVisible(true);
+	}
 }
 
 void UAHHUDRootWidget::HandleCountdownChanged(float SecondsRemaining, bool bActive)
@@ -499,7 +591,7 @@ void UAHHUDRootWidget::HandleChapterStageChanged(EAHChapterStage Stage)
 	else
 	{
 		HideMissionComplete();
-		ApplyVisibility(ObjectiveWidget, true);
+		ApplyVisibility(ObjectiveWidget, bGameplayPresentationVisible);
 	}
 }
 

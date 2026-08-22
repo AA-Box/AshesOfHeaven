@@ -147,7 +147,7 @@ namespace
 AAHChapterOneDirector::AAHChapterOneDirector()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
 	// Gameplay collision still uses the engine cube, but no normal-runtime visual may
 	// resolve to the old checker/grid material.
 	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"));
@@ -252,6 +252,12 @@ EAHChapterStage AAHChapterOneDirector::GetCurrentStage() const
 bool AAHChapterOneDirector::IsOpeningBlack() const
 {
 	return GetCurrentStage() == EAHChapterStage::OpeningBlack && StageElapsed < 4.5f;
+}
+
+bool AAHChapterOneDirector::IsOpeningPresentationActive() const
+{
+	return GetCurrentStage() == EAHChapterStage::OpeningBlack
+		|| (Dialogue && Dialogue->HasActiveDialogue() && Dialogue->GetCurrentSequence() == FName(TEXT("Ch01_Opening")));
 }
 
 bool AAHChapterOneDirector::IsTitleReveal() const
@@ -1338,6 +1344,44 @@ void AAHChapterOneDirector::SetGreyboxVisualVisibility(bool bVisible)
 		}
 	}
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] GreyboxVisualLayer=%s collision_preserved=true"), bVisible ? TEXT("visible") : TEXT("hidden"));
+}
+
+void AAHChapterOneDirector::SetPresentationVisualVisibility(bool bVisible)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor)
+		{
+			continue;
+		}
+		if (Actor->ActorHasTag(FName(TEXT("Phase4Presentation"))))
+		{
+			TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
+			Actor->GetComponents(PrimitiveComponents);
+			for (UPrimitiveComponent* Component : PrimitiveComponents)
+			{
+				if (Component)
+				{
+					Component->SetVisibility(bVisible, true);
+				}
+			}
+		}
+		TInlineComponentArray<USceneComponent*> SceneComponents;
+		Actor->GetComponents(SceneComponents);
+		for (USceneComponent* Component : SceneComponents)
+		{
+			if (Component && Component->ComponentTags.Contains(FName(TEXT("Phase4PresentationFX"))))
+			{
+				Component->SetVisibility(bVisible, true);
+			}
+		}
+	}
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4.1][Presentation] AuthoredVisualLayer=%s collision_preserved=true"), bVisible ? TEXT("visible") : TEXT("hidden"));
 }
 
 void AAHChapterOneDirector::LogPresentationState(EAHChapterStage Stage)

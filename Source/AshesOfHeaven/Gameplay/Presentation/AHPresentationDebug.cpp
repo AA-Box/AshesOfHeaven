@@ -79,5 +79,19 @@ namespace
 				Director->SetGreyboxVisualVisibility(bVisible);
 			}
 		}));
+	FAutoConsoleCommandWithWorldAndArgs DebugPresentation(
+		TEXT("AH.Debug.Presentation"), TEXT("Toggle the authored presentation layer without changing collision or navigation."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+			const bool bVisible = Args.Num() == 0 || Args[0].ToBool();
+			if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(World, AAHChapterOneDirector::StaticClass())))
+			{
+				Director->SetPresentationVisualVisibility(bVisible);
+			}
+		}));
 }
 #endif

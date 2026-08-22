@@ -52,7 +52,7 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 		return;
 	}
 
-	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
 	if (!BlockMesh)
 	{
 		return;
@@ -71,8 +71,8 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 	GreyboxBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GreyboxBodyMesh->SetCanEverAffectNavigation(false);
 	const TCHAR* BodyMaterialPath = Faction == EAHFaction::Veil
-		? TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark")
-		: TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02");
+		? TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian")
+		: TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal");
 	if (UMaterialInterface* BodyMaterial = LoadObject<UMaterialInterface>(nullptr, BodyMaterialPath))
 	{
 		GreyboxBodyMesh->SetMaterial(0, BodyMaterial);
@@ -83,7 +83,7 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 	AddInstanceComponent(GreyboxBodyMesh);
 	GreyboxBodyMesh->RegisterComponent();
 
-	if (UStaticMesh* HeadMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")))
+	if (UStaticMesh* HeadMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Sphere.SM_AH_Sphere")))
 	{
 		GreyboxHeadMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxHead"));
 		if (GreyboxHeadMesh)
@@ -116,7 +116,7 @@ void AAHCombatantCharacter::EnsureGreyboxBody()
 			GreyboxShoulderMesh->SetRelativeScale3D(FVector(0.88f, 0.74f, 0.24f));
 			GreyboxShoulderMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			GreyboxShoulderMesh->SetCanEverAffectNavigation(false);
-			if (UMaterialInterface* ShoulderMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round")))
+			if (UMaterialInterface* ShoulderMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")))
 			{
 				GreyboxShoulderMesh->SetMaterial(0, ShoulderMaterial);
 			}

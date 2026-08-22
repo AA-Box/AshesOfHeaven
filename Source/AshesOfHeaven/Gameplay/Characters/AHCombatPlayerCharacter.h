@@ -69,6 +69,8 @@ public:
 	void Interact();
 	void NextWeapon();
 	void PreviousWeapon();
+	/** Shows the local weapon presentation after the opening curtain without exposing placeholder arms. */
+	void SetFirstPersonPresentationVisible(bool bVisible);
 
 	virtual void OnDeathStarted() override;
 

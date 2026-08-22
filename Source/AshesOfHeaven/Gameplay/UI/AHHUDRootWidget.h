@@ -28,6 +28,8 @@ public:
 	virtual void NativeDestruct() override;
 
 	void SetPossessedPawn(APawn* NewPawn);
+	/** Switches the authored root between the opening cinematic and normal gameplay presentation. */
+	void SetGameplayPresentationVisible(bool bVisible);
 	void SetObjective(const FText& Objective, int32 Index, int32 Count);
 	void ShowHitMarker(bool bHeadshot);
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
@@ -68,6 +70,8 @@ protected:
 	UFUNCTION()
 	void HandleDialogueLine(FName Speaker, FText Subtitle, float Duration);
 	UFUNCTION()
+	void HandleDialogueSequenceComplete(FName SequenceId);
+	UFUNCTION()
 	void HandleCountdownChanged(float SecondsRemaining, bool bActive);
 	UFUNCTION()
 	void HandleChapterStageChanged(enum EAHChapterStage Stage);
@@ -95,6 +99,8 @@ protected:
 	TObjectPtr<UUserWidget> ChapterTitleWidget;
 	UPROPERTY(meta=(BindWidgetOptional))
 	TObjectPtr<UUserWidget> ManticoreWidget;
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UBorder> OpeningCurtain;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ObjectiveText;
@@ -159,5 +165,7 @@ protected:
 	FText CurrentObjective;
 	int32 CurrentObjectiveIndex = 0;
 	int32 CurrentObjectiveCount = 0;
+	FTimerHandle ObjectiveMetadataTimer;
+	bool bGameplayPresentationVisible = true;
 	bool bPresentationReady = false;
 };

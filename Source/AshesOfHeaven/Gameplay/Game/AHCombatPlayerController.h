@@ -8,6 +8,7 @@
 
 class AAHCombatPlayerCharacter;
 class AAHCombatHUD;
+class UAHHUDRootWidget;
 class AAHManticoreVehicle;
 class AAHChapterOneDirector;
 class UAHObjectiveSubsystem;
@@ -23,6 +24,7 @@ public:
 	AAHCombatPlayerController();
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void OnPossess(APawn* InPawn) override;
 
 	UFUNCTION(Exec)
@@ -101,6 +103,7 @@ protected:
 	void HandleWeaponShot(const FHitResult& Hit, bool bHit);
 	void FinishDeathRestart();
 	void BindObjectiveEvents(UAHObjectiveSubsystem* Objectives);
+	void UpdatePresentationState();
 
 	AAHCombatHUD* GetCombatHUD() const;
 
@@ -109,4 +112,6 @@ protected:
 	bool bGodMode = false;
 	bool bInfiniteAmmo = false;
 	FTimerHandle DeathRestartTimer;
+	TWeakObjectPtr<UAHHUDRootWidget> BoundPresentationRoot;
+	bool bOpeningPresentationState = false;
 };
