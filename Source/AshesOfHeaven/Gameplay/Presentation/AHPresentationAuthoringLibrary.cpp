@@ -440,7 +440,13 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 			}
 			else if (Effect.Contains(TEXT("Fire")) || Effect.Contains(TEXT("Ember")) || Effect.Contains(TEXT("Impact")))
 			{
-				EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"));
+				// Combustion effects glow warm. MI_FireGlow_Orange retints the emissive
+				// master; the cyan base is reserved for Veil technology per the art direction.
+				EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_FireGlow_Orange.MI_FireGlow_Orange"));
+				if (!EffectMaterial)
+				{
+					EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"));
+				}
 			}
 			else
 			{

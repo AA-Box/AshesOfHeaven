@@ -128,13 +128,16 @@ public:
 	AAHCombatantCharacter* GetCombatantOwner() const;
 
 protected:
-	/** Where the weapon sits relative to the camera while no hand socket exists (greybox). */
+	/** Where the weapon sits relative to the camera while no hand socket exists (greybox).
+	 * Tuned against References/ArtTargets/01_Erebus_Battlefield.png: lower-right quadrant,
+	 * clearly visible but secondary to the world, not pinned to the screen edge. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonHoldOffset = FVector(45.0f, 24.0f, -28.0f);
+	FVector FirstPersonHoldOffset = FVector(42.0f, 19.0f, -23.0f);
 
-	/** SKM_Rifle is authored with its length along Y, so it needs a quarter turn to aim down X. */
+	/** SKM_Rifle is authored with its length along Y, so it needs a quarter turn to aim down X.
+	 * The slight pitch raises the muzzle line toward the crosshair like the reference framing. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FRotator FirstPersonHoldRotation = FRotator(0.0f, -90.0f, 0.0f);
+	FRotator FirstPersonHoldRotation = FRotator(-6.0f, -90.0f, 0.0f);
 
 	/** Greybox fallback pose used when a third-person hand socket is unavailable. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
@@ -146,7 +149,7 @@ protected:
 
 	/** Keep the prototype rifle readable without occupying the lower-right third of the view. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	FVector FirstPersonHoldScale = FVector(0.52f);
+	FVector FirstPersonHoldScale = FVector(0.56f);
 
 	USceneComponent* GetFirstPersonHoldParent(AAHCombatantCharacter* Combatant, USkeletalMeshComponent* AttachTarget) const;
 

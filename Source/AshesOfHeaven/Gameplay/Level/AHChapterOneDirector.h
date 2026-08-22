@@ -115,6 +115,13 @@ protected:
 	void SpawnManticore();
 	void SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator, UMaterialInterface* MaterialOverride = nullptr);
 	AStaticMeshActor* SpawnVisualShape(const TCHAR* MeshPath, const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator, UMaterialInterface* MaterialOverride = nullptr);
+	/** Runtime material variant of an authored master/instance; parameter names follow the Phase 4.2 masters (BaseTint/Roughness/Wetness/Grime). Negative scalars leave the parent value. */
+	UMaterialInterface* MakeTintedMaterial(UMaterialInterface* Parent, const FLinearColor& BaseTint, float Roughness = -1.0f, float Wetness = -1.0f, float Grime = -1.0f, float Metallic = -1.0f);
+	void BuildErebusSkyline();
+	void SpawnBannerMonolith(const FVector& BaseCenter, const FVector& Scale, float YawDegrees);
+	void SpawnRubblePatch(const FVector& Center, float Radius, int32 Count, uint32 Seed);
+	void SpawnPuddle(const FVector& Center, const FVector2D& Extent, float YawDegrees);
+	void SpawnHangingChain(const FVector& Top, const FVector& Bottom);
 	void SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
 	void SpawnVisualDust(const FVector& Location, float Scale = 1.0f);
 	AActor* SpawnPresentationProp(const TCHAR* BlueprintPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
@@ -177,6 +184,28 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> EmissiveTechnologyMaterial;
+
+	// Runtime-tinted variants created once in BuildVisualArtTargets (MIDs need a live world).
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> MudMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> WallConcreteMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PuddleMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> RuinSilhouetteMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> BannerClothMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> BannerEmblemMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> DarkStructureMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAHCombatEncounter> OpeningEncounter;

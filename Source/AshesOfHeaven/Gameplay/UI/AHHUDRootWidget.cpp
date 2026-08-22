@@ -15,6 +15,7 @@
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "UObject/WeakObjectPtr.h"
 
 namespace
@@ -23,6 +24,13 @@ namespace
 	const FLinearColor Amber(0.94f, 0.62f, 0.22f, 1.0f);
 	const FLinearColor Cyan(0.42f, 0.68f, 0.71f, 1.0f);
 	const FLinearColor Bone(0.84f, 0.85f, 0.81f, 1.0f);
+
+	// Verbose combat text (HIT CONFIRMED / INCOMING FIRE / ...) is a debug aid, not part of
+	// the restrained gameplay HUD contract. Peripheral cues (reticle flash, directional
+	// rule pulse) remain on in all builds.
+	TAutoConsoleVariable<int32> CVarHUDDebugText(
+		TEXT("AH.HUD.DebugText"), 0,
+		TEXT("1 = show verbose HUD combat text (hit/damage labels); 0 = peripheral cues only."));
 
 	template <typename WidgetType>
 	WidgetType* FindChildWidget(UUserWidget* Parent, const TCHAR* Name)
@@ -370,6 +378,12 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 	SetText(ObjectiveText, Objective.IsEmpty() ? NSLOCTEXT("AshesHUD", "AwaitingOrders2", "AWAITING ORDERS") : Objective);
 	if (bChanged)
 	{
+		// Prominent on update, then settle: after a few seconds the banner drops to low
+		// opacity so the world owns the screen while the objective stays referenceable.
+		if (ObjectiveWidget)
+		{
+			ObjectiveWidget->SetRenderOpacity(1.0f);
+		}
 		PlayPresentationAnimation(ObjectiveRevealAnimation);
 		if (UWorld* World = GetWorld())
 		{
@@ -381,26 +395,43 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 					Widget->SetText(Widget->ObjectiveIndexText, FText::GetEmpty());
 				}
 			}, 2.6f, false);
+			World->GetTimerManager().ClearTimer(ObjectiveSettleTimer);
+			World->GetTimerManager().SetTimer(ObjectiveSettleTimer, [WeakThis = TWeakObjectPtr<UAHHUDRootWidget>(this)]()
+			{
+				if (UAHHUDRootWidget* Widget = WeakThis.Get())
+				{
+					if (Widget->ObjectiveWidget)
+					{
+						Widget->ObjectiveWidget->SetRenderOpacity(0.35f);
+					}
+				}
+			}, 6.0f, false);
 		}
 	}
 }
 
 void UAHHUDRootWidget::ShowHitMarker(bool bHeadshot)
 {
-	SetText(DamageText, bHeadshot ? NSLOCTEXT("AshesHUD", "HeadshotLabel", "HEADSHOT CONFIRMED") : NSLOCTEXT("AshesHUD", "HitLabel", "HIT CONFIRMED"));
+	// Normal gameplay keeps hit confirmation subtle: a short reticle flash, slightly
+	// stronger on headshots. The text labels are debug-only.
+	const bool bDebugText = CVarHUDDebugText.GetValueOnGameThread() != 0;
+	SetText(DamageText, bDebugText ? (bHeadshot ? NSLOCTEXT("AshesHUD", "HeadshotLabel", "HEADSHOT CONFIRMED") : NSLOCTEXT("AshesHUD", "HitLabel", "HIT CONFIRMED")) : FText::GetEmpty());
 	ApplyVisibility(CrosshairHit, true);
 	if (UBorder* HitBorder = Cast<UBorder>(CrosshairHit))
 	{
 		HitBorder->SetBrushColor(bHeadshot ? Amber : Bone);
 	}
-	ApplyVisibility(DamageText, true);
-	ApplyVisibility(DamageRule, true);
-	ApplyVisibility(DamageIndicatorWidget, true);
+	ApplyVisibility(DamageText, bDebugText);
+	ApplyVisibility(DamageRule, bDebugText);
+	ApplyVisibility(DamageIndicatorWidget, bDebugText);
 	if (DamageRule)
 	{
 		DamageRule->SetBrushColor(bHeadshot ? Amber : Bone);
 	}
-	PlayPresentationAnimation(DamagePulseAnimation);
+	if (bDebugText)
+	{
+		PlayPresentationAnimation(DamagePulseAnimation);
+	}
 	if (GetWorld())
 	{
 		FTimerHandle Timer;
@@ -419,9 +450,11 @@ void UAHHUDRootWidget::ShowHitMarker(bool bHeadshot)
 
 void UAHHUDRootWidget::ShowDamageFeedback(bool bArmorBreak, float DirectionAngle)
 {
-	const TCHAR* Feedback = bArmorBreak ? TEXT("ARMOR IMPACT") : TEXT("INCOMING FIRE");
-	SetText(DamageText, FText::FromString(Feedback));
-	ApplyVisibility(DamageText, true);
+	// Damage feedback stays peripheral: a short directional rule pulse and color cue.
+	// Center-screen text (INCOMING FIRE / ARMOR IMPACT) is debug-only.
+	const bool bDebugText = CVarHUDDebugText.GetValueOnGameThread() != 0;
+	SetText(DamageText, bDebugText ? FText::FromString(bArmorBreak ? TEXT("ARMOR IMPACT") : TEXT("INCOMING FIRE")) : FText::GetEmpty());
+	ApplyVisibility(DamageText, bDebugText);
 	if (DamageRule)
 	{
 		ApplyVisibility(DamageRule, true);

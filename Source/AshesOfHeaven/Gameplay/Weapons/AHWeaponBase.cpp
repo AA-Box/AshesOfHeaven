@@ -32,6 +32,15 @@ AAHWeaponBase::AAHWeaponBase()
 	{
 		WeaponMesh->SetSkeletalMesh(RifleMesh);
 	}
+	// The template rifle material reads as bright silver under the war sky. The M91 is
+	// matte dark steel per the art targets.
+	if (UMaterialInterface* DarkSteel = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")))
+	{
+		for (int32 SlotIndex = 0; SlotIndex < WeaponMesh->GetNumMaterials(); ++SlotIndex)
+		{
+			WeaponMesh->SetMaterial(SlotIndex, DarkSteel);
+		}
+	}
 	CapacitorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MagneticCapacitor"));
 	CapacitorMesh->SetupAttachment(WeaponMesh);
 	CapacitorMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube")));
