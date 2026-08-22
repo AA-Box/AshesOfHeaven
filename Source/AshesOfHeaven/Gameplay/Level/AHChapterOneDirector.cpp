@@ -486,6 +486,18 @@ void AAHChapterOneDirector::EnsureStageSpatialValidity(EAHChapterStage Stage, co
 		return;
 	}
 	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+	// A recovery teleport is only for a player who is genuinely in void space. Stage
+	// transitions legitimately fire while the player still stands at the previous
+	// stage's exit trigger (outside the new stage's expected envelope), and yanking a
+	// walking player across the map is worse than any telemetry mismatch.
+	ACharacter* Player = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
+	FHitResult Ground;
+	const bool bPlayerGrounded = Player && GetWorld()->LineTraceSingleByChannel(Ground, Player->GetActorLocation() + FVector(0.0f, 0.0f, 300.0f), Player->GetActorLocation() - FVector(0.0f, 0.0f, 1500.0f), ECC_Visibility);
+	if (bPlayerGrounded)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Spatial] stage=%s reason=%s player outside expected envelope but grounded at %s; no recovery needed"), *UEnum::GetValueAsString(Stage), Reason ? Reason : TEXT("unknown"), *Player->GetActorLocation().ToCompactString());
+		return;
+	}
 	UE_LOG(LogAshesOfHeaven, Error, TEXT("[Spatial][ERROR] invalid stage transition stage=%s reason=%s; recovering to safe spawn=%s zone=%s"), *UEnum::GetValueAsString(Stage), Reason ? Reason : TEXT("unknown"), *Definition.SafePlayerLocation.ToCompactString(), *Definition.ZoneId.ToString());
 	TeleportPlayer(Definition.SafePlayerLocation, Definition.SafePlayerRotation);
 	if (!ValidateStageSpatialState(Stage, true))
