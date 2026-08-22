@@ -473,6 +473,14 @@ bool AAHChapterOneDirector::ValidateStageSpatialState(EAHChapterStage Stage, boo
 
 void AAHChapterOneDirector::EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason)
 {
+	// No pawn yet means there is nothing spatial to validate — possession can lag the
+	// first StartStage on a slow boot (and test worlds may run stage logic pawn-less).
+	// The delayed settled-state validation re-runs once the world has settled.
+	if (!UGameplayStatics::GetPlayerCharacter(GetWorld(), 0))
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Spatial] stage=%s validation deferred: no player pawn yet (%s)"), *UEnum::GetValueAsString(Stage), Reason ? Reason : TEXT("unknown"));
+		return;
+	}
 	if (ValidateStageSpatialState(Stage, false))
 	{
 		return;
