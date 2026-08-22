@@ -71,9 +71,54 @@ bool UAHCheckpointSubsystem::RestoreLatestCheckpoint()
 	{
 		return false;
 	}
+	return RestoreFromState(RuntimeState);
+}
+
+bool UAHCheckpointSubsystem::IsCheckpointTransformValid(UWorld* World, const FVector& Location)
+{
+	if (!World || Location.ContainsNaN())
+	{
+		return false;
+	}
+	// The chapter is authored inside a bounded strip; anything outside it is a stale or
+	// corrupt transform, not a place the game can put a player.
+	if (FMath::Abs(Location.X) > 40000.0f || FMath::Abs(Location.Y) > 6000.0f || Location.Z < -400.0f || Location.Z > 6000.0f)
+	{
+		return false;
+	}
+	FHitResult Hit;
+	const FVector Start = Location + FVector(0.0f, 0.0f, 300.0f);
+	const FVector End = Location - FVector(0.0f, 0.0f, 1500.0f);
+	return World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility);
+}
+
+bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& State)
+{
+	RuntimeState = State;
 	if (!RuntimeState.MapName.IsEmpty() && !RuntimeState.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase))
 	{
 		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4][Checkpoint] ignored checkpoint from different map=%s"), *RuntimeState.MapName);
+		return false;
+	}
+
+	RuntimeState.ChapterState = UAHChapterSubsystem::NormalizeState(RuntimeState.ChapterState);
+	RuntimeState.ObjectiveIndex = RuntimeState.ChapterState.ObjectiveIndex;
+
+	// Validity gates run before the player lookup: a stale or void checkpoint must be
+	// rejected regardless of possession timing.
+	//
+	// The chapter-opening capture carries no progress worth restoring; replaying its stored
+	// transform only leaks a previous session's position/look direction (e.g. facing away
+	// from the world) into what the player experiences as a fresh start. Rejecting it makes
+	// the caller re-capture a clean opening checkpoint at the actual spawn.
+	if (RuntimeState.ObjectiveIndex <= 0)
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4.2][Checkpoint] opening checkpoint id=%s has no progress; using fresh spawn transform"), *RuntimeState.CheckpointId.ToString());
+		return false;
+	}
+	if (!IsCheckpointTransformValid(GetWorld(), RuntimeState.PlayerLocation))
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4.2][Checkpoint] rejected stale checkpoint id=%s transform=%s: no valid ground at saved location"), *RuntimeState.CheckpointId.ToString(), *RuntimeState.PlayerLocation.ToCompactString());
 		return false;
 	}
 
@@ -84,8 +129,6 @@ bool UAHCheckpointSubsystem::RestoreLatestCheckpoint()
 	{
 		return false;
 	}
-	RuntimeState.ChapterState = UAHChapterSubsystem::NormalizeState(RuntimeState.ChapterState);
-	RuntimeState.ObjectiveIndex = RuntimeState.ChapterState.ObjectiveIndex;
 
 	Player->SetActorLocationAndRotation(RuntimeState.PlayerLocation, RuntimeState.PlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	if (Player->GetHealthComponent())

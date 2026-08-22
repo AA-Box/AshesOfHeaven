@@ -25,6 +25,9 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "Engine/PostProcessVolume.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Components/TextRenderComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -606,6 +609,9 @@ void AAHChapterOneDirector::BuildGreybox()
 	// X=-1400 through the present day scene at X=30200. At scale 190 it only spanned
 	// X 5000..24000, so the player spawned over open space and fell out of the level.
 	SpawnBlock(FVector(14500.0f, 0.0f, -100.0f), FVector(330.0f, 40.0f, 1.0f));
+	// Rear boundary behind the player spawn (X=-1400): the collision floor ends at X=-2000,
+	// so without this wall the player can simply walk backwards off the world.
+	SpawnBlock(FVector(-2150.0f, 0.0f, 150.0f), FVector(0.6f, 40.0f, 4.0f));
 	for (int32 Index = 0; Index < 14; ++Index)
 	{
 		const float X = -650.0f + Index * 1150.0f;
@@ -642,9 +648,22 @@ void AAHChapterOneDirector::BuildVisualArtTargets()
 	}
 	bVisualArtTargetsBuilt = true;
 
+	// Runtime-tinted variants of the authored masters. One palette, created once; every
+	// zone builder pulls from these so the whole chapter shares one material response.
+	MudMaterial = MakeTintedMaterial(ConcreteMaterial, FLinearColor(0.045f, 0.042f, 0.037f), 0.62f, 0.30f, 0.65f);
+	// Vertical surfaces must stay dry: wet roughness on walls mirrors the pale horizon sky
+	// and reads as glowing teal panels in the war gloom.
+	WallConcreteMaterial = MakeTintedMaterial(ConcreteMaterial, FLinearColor(0.052f, 0.050f, 0.046f), 0.82f, 0.0f, 0.70f);
+	PuddleMaterial = MakeTintedMaterial(LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_Glass.M_Glass")), FLinearColor(0.010f, 0.012f, 0.016f), 0.04f, 1.0f);
+	RuinSilhouetteMaterial = MakeTintedMaterial(VeilObsidianMaterial, FLinearColor(0.014f, 0.015f, 0.017f), 0.85f);
+	BannerClothMaterial = MakeTintedMaterial(VeilObsidianMaterial, FLinearColor(0.030f, 0.030f, 0.032f), 0.95f);
+	BannerEmblemMaterial = MakeTintedMaterial(HumanMetalMaterial, FLinearColor(0.42f, 0.43f, 0.40f), 0.85f, -1.0f, 0.35f, 0.08f);
+	DarkStructureMaterial = MakeTintedMaterial(HumanMetalMaterial, FLinearColor(0.055f, 0.058f, 0.060f), 0.68f, 0.0f, 0.50f);
+
 	// These are non-colliding presentation layers over the proven Phase 3 layout. The
 	// gameplay blocks, triggers, checkpoints and nav data remain authoritative underneath.
 	BuildErebusArtTarget();
+	BuildErebusSkyline();
 	BuildTransitStationArtTarget();
 	BuildCathedralArtTarget();
 	BuildPresentDayArtTarget();
@@ -654,54 +673,133 @@ void AAHChapterOneDirector::BuildErebusArtTarget()
 {
 	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
 	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
-	// Keep the presentation layer project-owned so a cooked game never depends on
-	// editor-only LevelPrototyping content.
-	const TCHAR* ChamferCube = Cube;
 
 	// The authored prop Blueprints are the normal gameplay presentation layer. The
 	// primitive shapes below remain modular framing pieces, not the whole scene.
-	SpawnVisualShape(Cube, FVector(5200.0f, 0.0f, -72.0f), FVector(64.0f, 22.0f, 0.22f), FRotator::ZeroRotator, ConcreteMaterial);
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"), FVector(800.0f, -620.0f, 180.0f), FRotator(0.0f, 8.0f, 0.0f), FVector(1.8f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Barricade.BP_Erebus_Barricade_C"), FVector(1500.0f, 460.0f, 100.0f), FRotator(0.0f, -5.0f, 0.0f), FVector(1.25f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"), FVector(2350.0f, 650.0f, 120.0f), FRotator(0.0f, 18.0f, 0.0f), FVector(1.35f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Wreck.BP_Erebus_Wreck_C"), FVector(3020.0f, -420.0f, 110.0f), FRotator(0.0f, -20.0f, -4.0f), FVector(1.4f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(4100.0f, 540.0f, 120.0f), FRotator::ZeroRotator, FVector(1.0f));
+	//
+	// Phase 4.4.2: the visible ground must cover the same space as the gameplay collision
+	// floor for the whole Objective 01 corridor. The old slab began at X=2000 while the
+	// player spawns at X=-1400, which put the fresh spawn (and the defensive-line trigger
+	// at X=-600) over invisible collision inside a gray void. The slab now spans
+	// X [-2400, 8400] with its top flush against the collision floor top at Z=-50.
+	SpawnVisualShape(Cube, FVector(3000.0f, 0.0f, -61.0f), FVector(108.0f, 26.0f, 0.22f), FRotator::ZeroRotator, MudMaterial);
+
+	// Rear boundary of the trench reads as a wall, not the edge of the universe. Its
+	// collision twin is spawned in BuildGreybox at the identical transform.
+	SpawnVisualShape(Cube, FVector(-2150.0f, 0.0f, 150.0f), FVector(0.6f, 26.0f, 4.0f), FRotator::ZeroRotator, WallConcreteMaterial);
+
+	// Visible twins of the first greybox trench-wall pairs (exact collision transforms from
+	// BuildGreybox), so the spawn strip is enclosed by the same walls the player collides with.
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		const float X = -650.0f + Index * 1150.0f;
+		SpawnVisualShape(Cube, FVector(X, -1050.0f, 220.0f), FVector(4.0f, 0.38f, 2.2f), FRotator::ZeroRotator, Index % 2 == 0 ? WallConcreteMaterial : DarkStructureMaterial);
+		SpawnVisualShape(Cube, FVector(X + 480.0f, 980.0f, 260.0f), FVector(3.0f, 0.35f, 2.7f), FRotator::ZeroRotator, Index % 2 == 0 ? DarkStructureMaterial : WallConcreteMaterial);
+	}
+
+	// --- Ground read: mud ruts, puddles and settled rubble so the floor is a battlefield
+	// surface, not a clean slab. Deterministic scatter keeps runs comparable.
+	SpawnVisualShape(Cube, FVector(600.0f, -95.0f, -49.0f), FVector(24.0f, 0.34f, 0.02f), FRotator(0.0f, 1.5f, 0.0f), RuinSilhouetteMaterial);
+	SpawnVisualShape(Cube, FVector(600.0f, 95.0f, -49.0f), FVector(24.0f, 0.34f, 0.02f), FRotator(0.0f, -1.0f, 0.0f), RuinSilhouetteMaterial);
+	SpawnPuddle(FVector(-760.0f, -330.0f, 0.0f), FVector2D(1.9f, 1.2f), -35.0f);
+	SpawnPuddle(FVector(-320.0f, 220.0f, 0.0f), FVector2D(2.2f, 1.5f), 60.0f);
+	SpawnPuddle(FVector(340.0f, -110.0f, 0.0f), FVector2D(3.1f, 1.8f), 8.0f);
+	SpawnPuddle(FVector(1240.0f, 420.0f, 0.0f), FVector2D(2.4f, 1.4f), -18.0f);
+	SpawnPuddle(FVector(2300.0f, -260.0f, 0.0f), FVector2D(2.8f, 1.6f), 42.0f);
+	SpawnRubblePatch(FVector(-1200.0f, -450.0f, 0.0f), 260.0f, 12, 11);
+	SpawnRubblePatch(FVector(-880.0f, 380.0f, 0.0f), 240.0f, 10, 23);
+	SpawnRubblePatch(FVector(-480.0f, -140.0f, 0.0f), 200.0f, 9, 37);
+	SpawnRubblePatch(FVector(150.0f, 260.0f, 0.0f), 300.0f, 14, 51);
+	SpawnRubblePatch(FVector(1050.0f, -420.0f, 0.0f), 320.0f, 14, 67);
+	SpawnRubblePatch(FVector(2050.0f, 180.0f, 0.0f), 340.0f, 16, 83);
+	SpawnRubblePatch(FVector(3100.0f, -350.0f, 0.0f), 320.0f, 12, 97);
+
+	// --- Foreground framing at the spawn: fallen beam, burning barrel and flank wreckage
+	// give the first frame occupied edges like the reference's trench mouth.
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Wreck.BP_Erebus_Wreck_C"), FVector(-1050.0f, -650.0f, 20.0f), FRotator(0.0f, 25.0f, 0.0f), FVector(1.2f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"), FVector(-900.0f, 700.0f, 49.0f), FRotator(0.0f, -15.0f, 0.0f), FVector(1.1f));
+	SpawnVisualShape(Cylinder, FVector(-1120.0f, -280.0f, -34.0f), FVector(0.15f, 0.15f, 5.6f), FRotator(88.0f, 24.0f, 0.0f), DarkStructureMaterial);
+	SpawnVisualShape(Cylinder, FVector(-990.0f, -240.0f, -20.0f), FVector(0.35f, 0.35f, 0.85f), FRotator(4.0f, 0.0f, 6.0f), RuinSilhouetteMaterial);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(-990.0f, -240.0f, 18.0f), FVector(0.35f));
+	SpawnVisualLight(FVector(-990.0f, -240.0f, 120.0f), FLinearColor(1.0f, 0.42f, 0.12f), 1400.0f, 620.0f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(-1100.0f, 200.0f, 250.0f), FVector(1.0f));
+
+	// The defensive line itself sits at the Objective 01 trigger (X=-600): flanking
+	// barricades and a staggered sandbag row with an open lane, a practical light and a
+	// small fire so the objective target is readable from the spawn.
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Barricade.BP_Erebus_Barricade_C"), FVector(-620.0f, -560.0f, -17.0f), FRotator(0.0f, -6.0f, 0.0f), FVector(1.2f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Barricade.BP_Erebus_Barricade_C"), FVector(-580.0f, 560.0f, -18.0f), FRotator(0.0f, 8.0f, 0.0f), FVector(1.15f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(-520.0f, -140.0f, 10.0f), FRotator::ZeroRotator, FVector(1.0f));
+	SpawnVisualShape(Cube, FVector(-600.0f, -250.0f, -15.0f), FVector(0.5f, 2.2f, 0.7f), FRotator(0.0f, 4.0f, 0.0f), WallConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(-600.0f, 260.0f, -15.0f), FVector(0.5f, 2.2f, 0.7f), FRotator(0.0f, -5.0f, 0.0f), WallConcreteMaterial);
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		const float Y = -430.0f + Index * 60.0f + (Index >= 3 ? 500.0f : 0.0f);
+		SpawnVisualShape(Cube, FVector(-640.0f + (Index % 2) * 26.0f, Y, -39.0f), FVector(0.42f, 0.26f, 0.22f), FRotator(0.0f, Index * 9.0f - 20.0f, 0.0f), MudMaterial);
+		SpawnVisualShape(Cube, FVector(-635.0f + (Index % 2) * 20.0f, Y + 28.0f, -20.0f), FVector(0.38f, 0.24f, 0.20f), FRotator(0.0f, Index * -7.0f + 12.0f, 0.0f), DarkStructureMaterial);
+	}
+	SpawnVisualLight(FVector(-540.0f, -140.0f, 260.0f), FLinearColor(1.0f, 0.45f, 0.15f), 1200.0f, 700.0f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(-660.0f, -420.0f, -46.0f), FVector(0.35f));
+
+	// --- Midground props along the route.
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"), FVector(800.0f, -620.0f, 112.0f), FRotator(0.0f, 8.0f, 0.0f), FVector(1.8f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Barricade.BP_Erebus_Barricade_C"), FVector(1500.0f, 460.0f, -16.0f), FRotator(0.0f, -5.0f, 0.0f), FVector(1.25f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"), FVector(2350.0f, 650.0f, 60.0f), FRotator(0.0f, 18.0f, 0.0f), FVector(1.35f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Wreck.BP_Erebus_Wreck_C"), FVector(3020.0f, -420.0f, 25.0f), FRotator(0.0f, -20.0f, -4.0f), FVector(1.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(4100.0f, 540.0f, 10.0f), FRotator::ZeroRotator, FVector(1.0f));
 
 	// Foreground: recoverable human fortification pieces with visible industrial mass.
 	for (int32 Index = 0; Index < 5; ++Index)
 	{
 		const float X = 250.0f + Index * 520.0f;
-		SpawnVisualShape(ChamferCube, FVector(X, -540.0f, 155.0f), FVector(1.5f, 0.9f, 0.55f), FRotator(0.0f, Index % 2 == 0 ? 4.0f : -4.0f, 0.0f), HumanMetalMaterial);
-		SpawnVisualShape(Cube, FVector(X + 160.0f, -520.0f, 320.0f), FVector(0.12f, 0.12f, 2.2f), FRotator::ZeroRotator, HumanMetalMaterial);
+		SpawnVisualShape(Cube, FVector(X, -540.0f, -20.0f), FVector(1.5f, 0.9f, 0.55f), FRotator(0.0f, Index % 2 == 0 ? 4.0f : -4.0f, 0.0f), DarkStructureMaterial);
+		SpawnVisualShape(Cube, FVector(X + 160.0f, -520.0f, 70.0f), FVector(0.12f, 0.12f, 2.2f), FRotator::ZeroRotator, DarkStructureMaterial);
 	}
 
 	// Midground: a damaged defensive wall, logistics wreck and a readable fire source.
-	SpawnVisualShape(Cube, FVector(1850.0f, 520.0f, 260.0f), FVector(5.5f, 0.28f, 2.6f), FRotator(0.0f, 0.0f, -8.0f), ConcreteMaterial);
-	SpawnVisualShape(Cube, FVector(2120.0f, 520.0f, 430.0f), FVector(1.1f, 0.42f, 0.22f), FRotator(0.0f, 0.0f, 18.0f), HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(1220.0f, 300.0f, 115.0f), FVector(2.2f, 1.0f, 0.3f), FRotator(0.0f, -12.0f, 0.0f), HumanMetalMaterial);
-	SpawnVisualShape(Cylinder, FVector(1220.0f, 300.0f, 215.0f), FVector(0.75f, 0.75f, 1.0f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cylinder, FVector(1550.0f, 700.0f, 74.0f), FVector(0.18f, 0.18f, 7.5f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
-	SpawnVisualShape(Cylinder, FVector(2500.0f, 700.0f, 110.0f), FVector(0.14f, 0.14f, 9.0f), FRotator(0.0f, 90.0f, 0.0f), HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(2440.0f, 680.0f, 185.0f), FVector(1.7f, 0.55f, 0.16f), FRotator(0.0f, 0.0f, -13.0f), HumanMetalMaterial);
-	SpawnVisualLight(FVector(1180.0f, 260.0f, 230.0f), FLinearColor(1.0f, 0.23f, 0.06f), 1800.0f, 850.0f);
-	SpawnVisualLight(FVector(2160.0f, 500.0f, 420.0f), FLinearColor(1.0f, 0.48f, 0.12f), 900.0f, 500.0f);
+	SpawnVisualShape(Cube, FVector(1850.0f, 520.0f, 80.0f), FVector(5.5f, 0.28f, 2.6f), FRotator(0.0f, 0.0f, -8.0f), WallConcreteMaterial);
+	SpawnVisualShape(Cube, FVector(2120.0f, 520.0f, 250.0f), FVector(1.1f, 0.42f, 0.22f), FRotator(0.0f, 0.0f, 18.0f), DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(1220.0f, 300.0f, -20.0f), FVector(2.2f, 1.0f, 0.3f), FRotator(0.0f, -12.0f, 0.0f), DarkStructureMaterial);
+	SpawnVisualShape(Cylinder, FVector(1220.0f, 300.0f, 60.0f), FVector(0.75f, 0.75f, 1.0f), FRotator::ZeroRotator, DarkStructureMaterial);
+	SpawnVisualShape(Cylinder, FVector(1550.0f, 700.0f, -36.0f), FVector(0.18f, 0.18f, 7.5f), FRotator(0.0f, 90.0f, 0.0f), DarkStructureMaterial);
+	SpawnVisualShape(Cylinder, FVector(2500.0f, 700.0f, -36.0f), FVector(0.14f, 0.14f, 9.0f), FRotator(0.0f, 90.0f, 0.0f), DarkStructureMaterial);
+	SpawnVisualShape(Cube, FVector(2440.0f, 680.0f, 40.0f), FVector(1.7f, 0.55f, 0.16f), FRotator(0.0f, 0.0f, -13.0f), DarkStructureMaterial);
+	SpawnVisualLight(FVector(1180.0f, 260.0f, 100.0f), FLinearColor(1.0f, 0.23f, 0.06f), 1800.0f, 850.0f);
+	SpawnVisualLight(FVector(2160.0f, 500.0f, 300.0f), FLinearColor(1.0f, 0.48f, 0.12f), 900.0f, 500.0f);
 	SpawnVisualLight(FVector(4100.0f, 1220.0f, 400.0f), FLinearColor(1.0f, 0.18f, 0.05f), 500.0f, 720.0f);
+
+	// --- Banner monoliths: the reference's dominant midground vocabulary — elevated
+	// near-black bunker masses carrying pale military emblems on hanging cloth.
+	SpawnBannerMonolith(FVector(950.0f, -880.0f, -50.0f), FVector(6.0f, 4.0f, 5.0f), 6.0f);
+	SpawnBannerMonolith(FVector(2150.0f, 820.0f, -50.0f), FVector(5.0f, 3.5f, 6.5f), -8.0f);
+	SpawnBannerMonolith(FVector(3350.0f, -820.0f, -50.0f), FVector(7.0f, 4.0f, 7.0f), 4.0f);
+	SpawnBannerMonolith(FVector(4600.0f, 900.0f, -50.0f), FVector(6.5f, 4.5f, 8.5f), -5.0f);
+
+	// Right-flank gantry tower with hanging chains, echoing the reference's crane rigging.
+	SpawnVisualShape(Cube, FVector(1650.0f, 1080.0f, 500.0f), FVector(3.0f, 3.0f, 11.0f), FRotator(0.0f, 4.0f, 0.0f), RuinSilhouetteMaterial);
+	SpawnVisualShape(Cube, FVector(1650.0f, 880.0f, 1010.0f), FVector(0.4f, 5.0f, 0.4f), FRotator(0.0f, 0.0f, -4.0f), DarkStructureMaterial);
+	SpawnHangingChain(FVector(1650.0f, 660.0f, 990.0f), FVector(1760.0f, 560.0f, 60.0f));
+	SpawnHangingChain(FVector(1650.0f, 760.0f, 1000.0f), FVector(1560.0f, 700.0f, 220.0f));
 
 	// Background: layered ruin forms frame the route and keep the Cathedral silhouette legible.
 	for (int32 Index = 0; Index < 4; ++Index)
 	{
 		const float X = 4300.0f + Index * 900.0f;
-		SpawnVisualShape(Cube, FVector(X, 1500.0f, 650.0f + (Index % 2) * 180.0f), FVector(1.8f, 0.25f, 6.5f + (Index % 2) * 1.5f), FRotator(0.0f, 0.0f, Index % 2 == 0 ? 3.0f : -4.0f), ConcreteMaterial);
+		SpawnVisualShape(Cube, FVector(X, 1500.0f, 650.0f + (Index % 2) * 180.0f), FVector(1.8f, 0.25f, 6.5f + (Index % 2) * 1.5f), FRotator(0.0f, 0.0f, Index % 2 == 0 ? 3.0f : -4.0f), RuinSilhouetteMaterial);
 	}
-	SpawnVisualShape(Cube, FVector(10300.0f, 1550.0f, 850.0f), FVector(1.0f, 0.3f, 8.5f), FRotator(0.0f, 0.0f, -3.0f), VeilObsidianMaterial);
-	SpawnVisualShape(Cube, FVector(12600.0f, 1500.0f, 1250.0f), FVector(0.7f, 0.3f, 12.0f), FRotator(0.0f, 0.0f, 2.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, FVector(10300.0f, 1550.0f, 850.0f), FVector(1.0f, 0.3f, 8.5f), FRotator(0.0f, 0.0f, -3.0f), RuinSilhouetteMaterial);
+	SpawnVisualShape(Cube, FVector(12600.0f, 1500.0f, 1250.0f), FVector(0.7f, 0.3f, 12.0f), FRotator(0.0f, 0.0f, 2.0f), RuinSilhouetteMaterial);
 
 	SpawnVisualDust(FVector(950.0f, 0.0f, 420.0f), 1.7f);
 	SpawnVisualDust(FVector(2550.0f, 760.0f, 520.0f), 1.2f);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(2500.0f, 0.0f, 480.0f), FVector(2.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(2500.0f, 0.0f, 480.0f), FVector(2.5f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(-800.0f, 0.0f, 380.0f), FVector(2.0f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(1250.0f, -260.0f, 210.0f), FVector(1.2f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(1180.0f, 260.0f, 80.0f), FVector(1.0f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(2160.0f, 500.0f, 120.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(1180.0f, 260.0f, -46.0f), FVector(0.35f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(2160.0f, 500.0f, -40.0f), FVector(1.2f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), FVector(950.0f, -820.0f, -46.0f), FVector(0.6f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(950.0f, -840.0f, -40.0f), FVector(1.6f));
+	SpawnVisualLight(FVector(950.0f, -780.0f, 160.0f), FLinearColor(1.0f, 0.34f, 0.09f), 2200.0f, 1100.0f);
 	SpawnLabel(FVector(700.0f, -1180.0f, 430.0f), TEXT("EREBUS / DEFENSIVE LINE"), FColor(180, 194, 202), 105.0f);
 }
 
@@ -837,8 +935,11 @@ AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath,
 	if (Shape && Shape->GetStaticMeshComponent())
 	{
 		UStaticMeshComponent* Component = Shape->GetStaticMeshComponent();
-		Component->SetStaticMesh(Mesh);
+		// Mobility first: UStaticMeshComponent::SetStaticMesh rejects static-mobility
+		// components once the world has begun play, and this helper must work no matter
+		// where in the world's begin-play sequence it is called from.
 		Component->SetMobility(EComponentMobility::Movable);
+		Component->SetStaticMesh(Mesh);
 		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Component->SetCanEverAffectNavigation(false);
 		Shape->Tags.Add(FName(TEXT("Phase4Visual")));
@@ -955,6 +1056,159 @@ void AAHChapterOneDirector::SpawnCathedralGlyph(const FVector& Location, float R
 		const FVector Offset(0.0f, FMath::Sin(Radians) * Radius * SafeScale, FMath::Cos(Radians) * Radius * SafeScale);
 		SpawnVisualShape(Cube, Location + Offset, FVector(0.06f, 0.34f * SafeScale, 0.06f), FRotator(0.0f, 0.0f, Angle), CathedralMaterial);
 	}
+}
+
+UMaterialInterface* AAHChapterOneDirector::MakeTintedMaterial(UMaterialInterface* Parent, const FLinearColor& BaseTint, float Roughness, float Wetness, float Grime, float Metallic)
+{
+	if (!Parent)
+	{
+		return nullptr;
+	}
+	UMaterialInstanceDynamic* Tinted = UMaterialInstanceDynamic::Create(Parent, this);
+	if (!Tinted)
+	{
+		return Parent;
+	}
+	Tinted->SetVectorParameterValue(FName(TEXT("BaseTint")), BaseTint);
+	// The masters add a fresnel edge term that washes out surfaces seen at grazing angles
+	// (floors especially). The battlefield read wants matte, light-absorbing surfaces.
+	Tinted->SetScalarParameterValue(FName(TEXT("EdgeVariation")), 0.0f);
+	if (Roughness >= 0.0f)
+	{
+		Tinted->SetScalarParameterValue(FName(TEXT("Roughness")), Roughness);
+	}
+	if (Wetness >= 0.0f)
+	{
+		Tinted->SetScalarParameterValue(FName(TEXT("Wetness")), Wetness);
+	}
+	if (Grime >= 0.0f)
+	{
+		Tinted->SetScalarParameterValue(FName(TEXT("GrimeAmount")), Grime);
+	}
+	if (Metallic >= 0.0f)
+	{
+		Tinted->SetScalarParameterValue(FName(TEXT("Metallic")), Metallic);
+	}
+	return Tinted;
+}
+
+void AAHChapterOneDirector::SpawnBannerMonolith(const FVector& BaseCenter, const FVector& Scale, float YawDegrees)
+{
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	const FRotator Yaw(0.0f, YawDegrees, 0.0f);
+	const float FootingHeight = 160.0f;
+	const FVector BlockCenter = BaseCenter + FVector(0.0f, 0.0f, FootingHeight + Scale.Z * 50.0f);
+	// Footings lift the mass the way the reference elevates its bunker blocks.
+	for (const float FootY : {-Scale.Y * 32.0f, Scale.Y * 32.0f})
+	{
+		SpawnVisualShape(Cube, BaseCenter + Yaw.RotateVector(FVector(0.0f, FootY, FootingHeight * 0.5f)), FVector(Scale.X * 0.55f, Scale.Y * 0.22f, FootingHeight / 100.0f), Yaw, DarkStructureMaterial);
+	}
+	SpawnVisualShape(Cube, BlockCenter, Scale, Yaw + FRotator(0.0f, 0.0f, 0.6f), DarkStructureMaterial);
+	// Damage read: a scorched side plate and a broken parapet lip.
+	SpawnVisualShape(Cube, BlockCenter + Yaw.RotateVector(FVector(Scale.X * 50.0f + 3.0f, Scale.Y * 18.0f, Scale.Z * 12.0f)), FVector(0.04f, Scale.Y * 0.34f, Scale.Z * 0.30f), Yaw, RuinSilhouetteMaterial);
+	SpawnVisualShape(Cube, BlockCenter + FVector(0.0f, 0.0f, Scale.Z * 50.0f + 8.0f), FVector(Scale.X * 0.72f, Scale.Y * 0.80f, 0.16f), Yaw + FRotator(0.0f, 3.0f, 1.5f), RuinSilhouetteMaterial);
+	// Banner cloth hangs on the face toward the route (-X) with a pale military emblem —
+	// original Ashes mark, deliberately not a copy of the reference's accidental heraldry.
+	const FVector FaceOut = Yaw.RotateVector(FVector(-Scale.X * 50.0f - 6.0f, 0.0f, 0.0f));
+	const FVector BannerCenter = BlockCenter + FaceOut + FVector(0.0f, 0.0f, Scale.Z * 8.0f);
+	const float BannerHeightScale = Scale.Z * 0.62f;
+	const float BannerWidthScale = Scale.Y * 0.30f;
+	SpawnVisualShape(Cube, BannerCenter, FVector(0.03f, BannerWidthScale, BannerHeightScale), Yaw, BannerClothMaterial);
+	// Sword-blade mark: tapered blade, high guard, offset pommel, twin campaign ticks.
+	// Reads military at distance without becoming a plain cross or copied heraldry.
+	const FVector EmblemOut = Yaw.RotateVector(FVector(-4.0f, 0.0f, 0.0f));
+	const float BarHalf = BannerHeightScale * 50.0f * 0.55f;
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut, FVector(0.02f, BannerWidthScale * 0.10f, BannerHeightScale * 0.50f), Yaw, BannerEmblemMaterial);
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut - FVector(0.0f, 0.0f, BarHalf * 1.06f), FVector(0.02f, BannerWidthScale * 0.06f, BannerHeightScale * 0.10f), Yaw + FRotator(0.0f, 0.0f, 45.0f), BannerEmblemMaterial);
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut + FVector(0.0f, 0.0f, BarHalf * 0.72f), FVector(0.02f, BannerWidthScale * 0.44f, BannerHeightScale * 0.055f), Yaw, BannerEmblemMaterial);
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut + FVector(0.0f, 0.0f, BarHalf * 1.05f), FVector(0.02f, BannerWidthScale * 0.14f, BannerHeightScale * 0.045f), Yaw, BannerEmblemMaterial);
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut + Yaw.RotateVector(FVector(0.0f, BannerWidthScale * 30.0f, -BarHalf * 0.35f)), FVector(0.02f, BannerWidthScale * 0.05f, BannerHeightScale * 0.16f), Yaw + FRotator(0.0f, 0.0f, -12.0f), BannerEmblemMaterial);
+	SpawnVisualShape(Cube, BannerCenter + EmblemOut + Yaw.RotateVector(FVector(0.0f, -BannerWidthScale * 30.0f, -BarHalf * 0.35f)), FVector(0.02f, BannerWidthScale * 0.05f, BannerHeightScale * 0.16f), Yaw + FRotator(0.0f, 0.0f, 12.0f), BannerEmblemMaterial);
+}
+
+void AAHChapterOneDirector::SpawnRubblePatch(const FVector& Center, float Radius, int32 Count, uint32 Seed)
+{
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	FRandomStream Stream(static_cast<int32>(Seed));
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
+		const float Distance = Radius * FMath::Sqrt(Stream.FRand());
+		const float Size = Stream.FRandRange(0.10f, 0.55f);
+		// Embed chunks slightly so they read as settled debris, not placed boxes.
+		const FVector Spot(Center.X + FMath::Cos(Angle) * Distance, Center.Y + FMath::Sin(Angle) * Distance, -50.0f + Size * 26.0f);
+		const FRotator Tumble(Stream.FRandRange(-14.0f, 14.0f), Stream.FRandRange(0.0f, 360.0f), Stream.FRandRange(-16.0f, 16.0f));
+		SpawnVisualShape(Cube, Spot, FVector(Size, Size * Stream.FRandRange(0.6f, 1.3f), Size * Stream.FRandRange(0.4f, 0.9f)), Tumble, (Index % 3 == 0) ? RuinSilhouetteMaterial : MudMaterial);
+	}
+}
+
+void AAHChapterOneDirector::SpawnPuddle(const FVector& Center, const FVector2D& Extent, float YawDegrees)
+{
+	const TCHAR* Plane = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Plane.SM_AH_Plane");
+	// A hair above the mud plane so the water sorts on top without z-fighting.
+	SpawnVisualShape(Plane, FVector(Center.X, Center.Y, -49.2f), FVector(Extent.X, Extent.Y, 1.0f), FRotator(0.0f, YawDegrees, 0.0f), PuddleMaterial);
+}
+
+void AAHChapterOneDirector::SpawnHangingChain(const FVector& Top, const FVector& Bottom)
+{
+	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
+	const FVector Span = Bottom - Top;
+	const float Length = Span.Size();
+	if (Length < 1.0f)
+	{
+		return;
+	}
+	const FRotator Orientation = FRotationMatrix::MakeFromZ(Span).Rotator();
+	SpawnVisualShape(Cylinder, (Top + Bottom) * 0.5f, FVector(0.07f, 0.07f, Length / 100.0f), Orientation, DarkStructureMaterial);
+	// Shackle knuckles give the cable a chain read at distance.
+	for (const float Alpha : {0.22f, 0.5f, 0.78f})
+	{
+		SpawnVisualShape(Cylinder, Top + Span * Alpha, FVector(0.13f, 0.13f, 0.22f), Orientation, DarkStructureMaterial);
+	}
+}
+
+void AAHChapterOneDirector::BuildErebusSkyline()
+{
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	const TCHAR* Cone = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cone.SM_AH_Cone");
+	FRandomStream Stream(20260822);
+	// Two depth rows of ruined city mass framing the corridor; silhouettes only, so they
+	// stay outside the play band and never touch gameplay collision.
+	for (int32 Index = 0; Index < 12; ++Index)
+	{
+		const float X = 4800.0f + Index * 720.0f;
+		const float Side = (Index % 2 == 0) ? -1.0f : 1.0f;
+		const float Height = Stream.FRandRange(9.0f, 24.0f);
+		SpawnVisualShape(Cube, FVector(X, Side * Stream.FRandRange(1550.0f, 2100.0f), -50.0f + Height * 50.0f), FVector(Stream.FRandRange(1.6f, 3.4f), Stream.FRandRange(1.2f, 2.2f), Height), FRotator(0.0f, Stream.FRandRange(-8.0f, 8.0f), Stream.FRandRange(-2.5f, 2.5f)), RuinSilhouetteMaterial);
+	}
+	for (int32 Index = 0; Index < 9; ++Index)
+	{
+		const float X = 5400.0f + Index * 980.0f;
+		const float Side = (Index % 2 == 0) ? 1.0f : -1.0f;
+		const float Height = Stream.FRandRange(16.0f, 34.0f);
+		SpawnVisualShape(Cube, FVector(X, Side * Stream.FRandRange(2500.0f, 3400.0f), -50.0f + Height * 50.0f), FVector(Stream.FRandRange(2.4f, 4.6f), Stream.FRandRange(1.8f, 3.2f), Height), FRotator(0.0f, Stream.FRandRange(-10.0f, 10.0f), 0.0f), RuinSilhouetteMaterial);
+	}
+	// Cathedral spire cluster: the destination silhouette, center-right of the route.
+	const FVector SpireBase(12800.0f, 650.0f, -50.0f);
+	const float SpireHeights[5] = {58.0f, 44.0f, 34.0f, 26.0f, 49.0f};
+	const FVector2D SpireOffsets[5] = {FVector2D(0.0f, 0.0f), FVector2D(-450.0f, -380.0f), FVector2D(380.0f, 300.0f), FVector2D(-260.0f, 520.0f), FVector2D(520.0f, -240.0f)};
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		const float Height = SpireHeights[Index];
+		const FVector Base = SpireBase + FVector(SpireOffsets[Index].X, SpireOffsets[Index].Y, 0.0f);
+		const float Width = 1.7f - Index * 0.15f;
+		SpawnVisualShape(Cube, Base + FVector(0.0f, 0.0f, Height * 50.0f), FVector(Width, Width, Height), FRotator(0.0f, Index * 17.0f, 0.0f), RuinSilhouetteMaterial);
+		SpawnVisualShape(Cone, Base + FVector(0.0f, 0.0f, Height * 100.0f + 170.0f), FVector(Width * 0.8f, Width * 0.8f, 3.4f), FRotator::ZeroRotator, RuinSilhouetteMaterial);
+	}
+	// Distant war activity: smoke columns, burning bases, low warm horizon glows.
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(6100.0f, -1900.0f, -40.0f), FVector(4.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(8400.0f, 2300.0f, -40.0f), FVector(5.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(11200.0f, -1500.0f, -40.0f), FVector(4.5f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(12900.0f, 900.0f, -40.0f), FVector(5.5f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), FVector(6100.0f, -1900.0f, -46.0f), FVector(1.6f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireLarge.NS_FireLarge"), FVector(8400.0f, 2300.0f, -46.0f), FVector(1.8f));
+	SpawnVisualLight(FVector(6100.0f, -1900.0f, 250.0f), FLinearColor(1.0f, 0.36f, 0.10f), 2600.0f, 2600.0f);
+	SpawnVisualLight(FVector(8400.0f, 2300.0f, 250.0f), FLinearColor(1.0f, 0.32f, 0.08f), 2600.0f, 2800.0f);
 }
 
 ASkeletalMeshActor* AAHChapterOneDirector::SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId)
@@ -1171,13 +1425,14 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	if (ADirectionalLight* SunLight = GetWorld()->SpawnActor<ADirectionalLight>(
-		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-42.0f, -35.0f, 0.0f), SpawnParams))
+		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-26.0f, -48.0f, 0.0f), SpawnParams))
 	{
 		SunLight->SetMobility(EComponentMobility::Movable);
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
-			SunComponent->SetIntensity(1.45f);
-			SunComponent->SetLightColor(FLinearColor(0.58f, 0.62f, 0.68f));
+			// Low raking sun diffused by the cloud deck: cold, desaturated, weak.
+			SunComponent->SetIntensity(1.05f);
+			SunComponent->SetLightColor(FLinearColor(0.46f, 0.52f, 0.62f));
 			SunComponent->SetAtmosphereSunLight(true);
 		}
 	}
@@ -1187,12 +1442,24 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		if (USkyAtmosphereComponent* Atmosphere = SkyAtmosphere->GetComponent())
 		{
 			Atmosphere->GroundAlbedo = FColor(14, 15, 17);
-			Atmosphere->RayleighScattering = FLinearColor(0.012f, 0.016f, 0.022f);
-			Atmosphere->MieScattering = FLinearColor(0.030f, 0.034f, 0.040f);
-			Atmosphere->MieAbsorption = FLinearColor(0.016f, 0.018f, 0.022f);
-			Atmosphere->MieAnisotropy = 0.62f;
-			Atmosphere->MultiScatteringFactor = 0.32f;
+			Atmosphere->RayleighScattering = FLinearColor(0.010f, 0.013f, 0.019f);
+			// Heavy Mie haze: smoke and ash load the air, so distance falls off fast and stays gray.
+			Atmosphere->MieScattering = FLinearColor(0.044f, 0.047f, 0.052f);
+			Atmosphere->MieAbsorption = FLinearColor(0.038f, 0.040f, 0.044f);
+			Atmosphere->MieAnisotropy = 0.70f;
+			Atmosphere->MultiScatteringFactor = 0.45f;
 			Atmosphere->MarkRenderStateDirty();
+		}
+	}
+
+	// Volumetric cloud deck supplies the dark war-sky mass; the engine default cloud
+	// material is cooked via DefaultGame.ini (DirectoriesToAlwaysCook=/Engine/EngineSky).
+	if (AVolumetricCloud* Clouds = GetWorld()->SpawnActor<AVolumetricCloud>(AVolumetricCloud::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+	{
+		if (UVolumetricCloudComponent* CloudComponent = Clouds->FindComponentByClass<UVolumetricCloudComponent>())
+		{
+			CloudComponent->SetLayerBottomAltitude(1.4f);
+			CloudComponent->SetLayerHeight(6.0f);
 		}
 	}
 
@@ -1205,7 +1472,7 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Real-time capture sources ambient from the atmosphere; a static capture of an
 			// unlit scene would just bake black.
 			SkyComponent->SetRealTimeCapture(true);
-			SkyComponent->SetIntensity(0.22f);
+			SkyComponent->SetIntensity(0.30f);
 		}
 	}
 
@@ -1214,27 +1481,57 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		if (UExponentialHeightFogComponent* FogComponent = Fog->GetComponent())
 		{
 			FogComponent->SetMobility(EComponentMobility::Movable);
-			FogComponent->SetFogDensity(0.020f);
-			FogComponent->SetFogHeightFalloff(0.28f);
-			FogComponent->SetFogInscatteringColor(FLinearColor(0.028f, 0.034f, 0.042f));
-			FogComponent->SetStartDistance(420.0f);
+			FogComponent->SetFogDensity(0.026f);
+			FogComponent->SetFogHeightFalloff(0.22f);
+			FogComponent->SetFogInscatteringColor(FLinearColor(0.024f, 0.028f, 0.036f));
+			FogComponent->SetStartDistance(260.0f);
+			// Volumetric fog carries the fire glow and sun shafts through the smoke.
+			FogComponent->SetVolumetricFog(true);
 		}
 	}
 
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] lighting profile=ErebusWar atmosphere=low-saturation fog=active"));
+	// One unbound post volume unifies grade across the chapter: restrained saturation,
+	// slight contrast, low bloom so emissives stay embers rather than neon.
+	if (APostProcessVolume* Post = GetWorld()->SpawnActor<APostProcessVolume>(APostProcessVolume::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+	{
+		Post->bUnbound = true;
+		Post->BlendWeight = 1.0f;
+		Post->Settings.bOverride_ColorSaturation = true;
+		Post->Settings.ColorSaturation = FVector4(0.88f, 0.90f, 0.96f, 1.0f);
+		Post->Settings.bOverride_ColorContrast = true;
+		Post->Settings.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.0f);
+		Post->Settings.bOverride_BloomIntensity = true;
+		Post->Settings.BloomIntensity = 0.42f;
+		Post->Settings.bOverride_VignetteIntensity = true;
+		Post->Settings.VignetteIntensity = 0.38f;
+	}
+
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] lighting profile=ErebusWar clouds=volumetric fog=volumetric post=graded"));
 }
 
 void AAHChapterOneDirector::SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation, UMaterialInterface* MaterialOverride)
 {
-	if (!GetWorld() || !BlockMesh)
+	if (!GetWorld())
 	{
 		return;
+	}
+	if (!BlockMesh)
+	{
+		// This actor IS the gameplay collision layer; a silent no-op here deletes the floor
+		// under the player. Fall back to the engine cube and log loudly.
+		BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4.2][Greybox] SM_AH_Cube failed to load; collision layer falling back to engine cube (%s)"), BlockMesh ? TEXT("ok") : TEXT("unavailable"));
+		if (!BlockMesh)
+		{
+			return;
+		}
 	}
 	AStaticMeshActor* Block = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(Rotation, Location, Scale));
 	if (Block && Block->GetStaticMeshComponent())
 	{
-		Block->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
+		// Mobility first — see SpawnVisualShape.
 		Block->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+		Block->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
 		// This actor is the gameplay collision layer. Its prototype visual is disabled in
 		// normal play; Phase 4 presentation actors provide the visible ground and cover.
 		Block->GetStaticMeshComponent()->SetVisibility(false);

@@ -17,5 +17,7 @@ public:
 
 private:
 	void RestoreCheckpointAfterSpawn();
+	void LogObjective01SpatialState();
 	FTimerHandle RestoreTimer;
+	int32 RestoreAttempts = 0;
 };

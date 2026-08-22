@@ -18,6 +18,16 @@
 #include "Gameplay/Presentation/AHPresentationData.h"
 #include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
+#include "Gameplay/Chapter/AHChapterTrigger.h"
+#include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
+#include "Gameplay/Game/AHChapterOneGameMode.h"
+#include "Gameplay/Level/AHChapterOneDirector.h"
+#include "Components/BoxComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Engine/Engine.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerStart.h"
+#include "GameFramework/WorldSettings.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Engine/GameInstance.h"
@@ -674,6 +684,351 @@ bool FAHRuntimePresentationReferenceTest::RunTest(const FString& Parameters)
 	UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
 	const TSoftObjectPtr<USoundBase>* PresentDay = Palette ? Palette->Environments.Find(FName(TEXT("Environment.PresentDay"))) : nullptr;
 	TestTrue(TEXT("present-day runtime audio mapping is assigned"), PresentDay && PresentDay->ToSoftObjectPath().IsValid());
+	return true;
+}
+
+namespace AHObjective01TestSupport
+{
+	// The Chapter One fresh-spawn transform authored in AAHChapterOneGameMode::ChoosePlayerStart.
+	const FVector FreshSpawn(-1400.0f, 0.0f, 120.0f);
+
+	// Boots a standalone game world with a game instance and a fully-built Chapter One
+	// director (greybox collision + presentation layers), the same assembly a packaged
+	// L_ChapterOne_Greybox launch performs at BeginPlay.
+	struct FChapterOneWorldFixture
+	{
+		UGameInstance* GameInstance = nullptr;
+		UWorld* World = nullptr;
+		AAHChapterOneDirector* Director = nullptr;
+
+		bool Boot()
+		{
+			GameInstance = NewObject<UGameInstance>(GEngine);
+			GameInstance->InitializeStandalone();
+			World = GameInstance->GetWorld();
+			if (!World)
+			{
+				return false;
+			}
+			World->InitializeActorsForPlay(FURL());
+			// Spawn the director BEFORE begun-play, then dispatch BeginPlay the way the
+			// engine does (AWorldSettings::NotifyBeginPlay flips bBegunPlay only after the
+			// actor loop): UStaticMeshComponent::SetStaticMesh rejects static-mobility
+			// components once the world has begun play, so the packaged assembly order
+			// must be reproduced exactly for the greybox meshes to exist.
+			Director = World->SpawnActor<AAHChapterOneDirector>(AAHChapterOneDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+			if (AWorldSettings* Settings = World->GetWorldSettings())
+			{
+				Settings->NotifyBeginPlay();
+			}
+			World->BeginPlay();
+			return Director != nullptr;
+		}
+
+		void Teardown()
+		{
+			if (World)
+			{
+				GEngine->DestroyWorldContext(World);
+				World->DestroyWorld(false);
+				World = nullptr;
+			}
+		}
+
+		bool TraceGround(const FVector& From, FHitResult& OutHit) const
+		{
+			return World && World->LineTraceSingleByChannel(OutHit, From + FVector(0.0f, 0.0f, 300.0f), From - FVector(0.0f, 0.0f, 1500.0f), ECC_Visibility);
+		}
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHFreshStartHasValidSpawnTest, "AshesOfHeaven.Chapter.FreshStartHasValidSpawn", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHFreshStartHasValidSpawnTest::RunTest(const FString& Parameters)
+{
+	using namespace AHObjective01TestSupport;
+	FChapterOneWorldFixture Fixture;
+	TestTrue(TEXT("Chapter One world fixture boots"), Fixture.Boot());
+	if (!Fixture.World)
+	{
+		return false;
+	}
+
+	// Deferred spawn: exercises the real ChoosePlayerStart path without dispatching the
+	// game mode's BeginPlay (which would build a second director in this fixture world).
+	AAHChapterOneGameMode* GameMode = Fixture.World->SpawnActorDeferred<AAHChapterOneGameMode>(AAHChapterOneGameMode::StaticClass(), FTransform::Identity);
+	TestNotNull(TEXT("Chapter One game mode spawns"), GameMode);
+	if (GameMode)
+	{
+		AActor* Start = GameMode->ChoosePlayerStart(nullptr);
+		TestNotNull(TEXT("fresh start resolves a player start"), Start);
+		if (Start)
+		{
+			TestTrue(TEXT("fresh spawn transform is finite"), !Start->GetActorLocation().ContainsNaN());
+			TestTrue(TEXT("fresh spawn matches the authored Erebus start"), Start->GetActorLocation().Equals(FreshSpawn, 1.0f));
+		}
+	}
+
+	FHitResult Ground;
+	TestTrue(TEXT("fresh spawn has blocking ground beneath it"), Fixture.TraceGround(FreshSpawn, Ground));
+	if (Ground.bBlockingHit)
+	{
+		TestTrue(TEXT("ground is immediately under the spawn, not far below (no void)"), FreshSpawn.Z - Ground.ImpactPoint.Z < 400.0f);
+		TestTrue(TEXT("ground plane is the authored collision floor top"), FMath::Abs(Ground.ImpactPoint.Z - (-50.0f)) < 25.0f);
+	}
+	TestTrue(TEXT("fresh spawn passes the checkpoint transform validity gate"), UAHCheckpointSubsystem::IsCheckpointTransformValid(Fixture.World, FreshSpawn));
+
+	// Behind-the-spawn boundary: walking backwards must hit a wall, not the edge of the floor.
+	FHitResult RearWall;
+	const bool bRearBlocked = Fixture.World->LineTraceSingleByChannel(RearWall, FreshSpawn, FreshSpawn - FVector(1200.0f, 0.0f, 0.0f), ECC_Visibility);
+	TestTrue(TEXT("a rear boundary exists behind the fresh spawn"), bRearBlocked);
+
+	Fixture.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHFreshStartNotUsingStaleCheckpointTest, "AshesOfHeaven.Chapter.FreshStartNotUsingStaleCheckpoint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHFreshStartNotUsingStaleCheckpointTest::RunTest(const FString& Parameters)
+{
+	using namespace AHObjective01TestSupport;
+	FChapterOneWorldFixture Fixture;
+	TestTrue(TEXT("Chapter One world fixture boots"), Fixture.Boot());
+	if (!Fixture.World)
+	{
+		return false;
+	}
+	UAHCheckpointSubsystem* Checkpoints = Fixture.World->GetSubsystem<UAHCheckpointSubsystem>();
+	TestNotNull(TEXT("checkpoint subsystem exists"), Checkpoints);
+	if (!Checkpoints)
+	{
+		Fixture.Teardown();
+		return false;
+	}
+
+	// Transform validity gate.
+	TestFalse(TEXT("void transform below the world is rejected"), UAHCheckpointSubsystem::IsCheckpointTransformValid(Fixture.World, FVector(0.0f, 0.0f, -50000.0f)));
+	TestFalse(TEXT("transform far outside the chapter strip is rejected"), UAHCheckpointSubsystem::IsCheckpointTransformValid(Fixture.World, FVector(500000.0f, 0.0f, 120.0f)));
+	TestTrue(TEXT("transform on the authored floor is accepted"), UAHCheckpointSubsystem::IsCheckpointTransformValid(Fixture.World, FVector(4100.0f, 0.0f, 120.0f)));
+
+	// A stale opening checkpoint (the exact failure observed in the field: opening capture
+	// with a backwards-facing rotation) must never restore its transform into a fresh run.
+	FAHCombatCheckpointState StaleOpening;
+	StaleOpening.bValid = true;
+	StaleOpening.MapName = TEXT("L_ChapterOne_Greybox");
+	StaleOpening.CheckpointId = FName(TEXT("Ch01_Opening"));
+	StaleOpening.ObjectiveIndex = 0;
+	StaleOpening.ChapterState.ObjectiveIndex = 0;
+	StaleOpening.PlayerLocation = FVector(-1400.0f, 0.0f, 48.0f);
+	StaleOpening.PlayerRotation = FRotator(0.0f, 167.0f, 0.0f);
+	TestFalse(TEXT("fresh run rejects the stale opening checkpoint transform"), Checkpoints->RestoreFromState(StaleOpening));
+
+	// A checkpoint with progress but a void transform must also be rejected.
+	FAHCombatCheckpointState StaleVoid;
+	StaleVoid.bValid = true;
+	StaleVoid.MapName = TEXT("L_ChapterOne_Greybox");
+	StaleVoid.CheckpointId = FName(TEXT("Ch01_Checkpoint_03"));
+	StaleVoid.ObjectiveIndex = 3;
+	StaleVoid.ChapterState.Stage = EAHChapterStage::TransitStation;
+	StaleVoid.ChapterState.ObjectiveIndex = 3;
+	StaleVoid.PlayerLocation = FVector(0.0f, 0.0f, -8000.0f);
+	TestFalse(TEXT("checkpoint with a void transform is rejected"), Checkpoints->RestoreFromState(StaleVoid));
+
+	Fixture.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHObjective01PresentationAlignedTest, "AshesOfHeaven.Chapter.Objective01PresentationAligned", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHObjective01PresentationAlignedTest::RunTest(const FString& Parameters)
+{
+	using namespace AHObjective01TestSupport;
+	FChapterOneWorldFixture Fixture;
+	TestTrue(TEXT("Chapter One world fixture boots"), Fixture.Boot());
+	if (!Fixture.World)
+	{
+		return false;
+	}
+
+	// Gather visible presentation actors once.
+	struct FVisibleActor { AActor* Actor; FBox Bounds; };
+	TArray<FVisibleActor> Visible;
+	int32 PresentationInObjective01 = 0;
+	const FBox Objective01Box(FVector(-2400.0f, -1400.0f, -200.0f), FVector(2600.0f, 1400.0f, 1200.0f));
+	for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor->ActorHasTag(FName(TEXT("Phase4Presentation"))))
+		{
+			continue;
+		}
+		bool bAnyVisible = false;
+		TInlineComponentArray<UPrimitiveComponent*> Prims;
+		Actor->GetComponents(Prims);
+		for (UPrimitiveComponent* Prim : Prims)
+		{
+			if (Prim && Prim->IsVisible())
+			{
+				bAnyVisible = true;
+				break;
+			}
+		}
+		if (!bAnyVisible)
+		{
+			continue;
+		}
+		const FBox Bounds = Actor->GetComponentsBoundingBox(true);
+		Visible.Add({Actor, Bounds});
+		if (Bounds.Intersect(Objective01Box))
+		{
+			++PresentationInObjective01;
+		}
+	}
+	TestTrue(TEXT("visible presentation geometry exists near the gameplay start"), PresentationInObjective01 >= 8);
+
+	// At sample points along the Objective 01 corridor, the visible presentation ground and
+	// the gameplay collision ground must occupy the same space (coherent coordinates).
+	// X=900/Y=0 would land on a greybox cover block (top Z=255), so that sample is
+	// offset in Y to probe the walkable floor next to it.
+	const TArray<FVector2D> SamplePoints = {
+		{-1400.0f, 0.0f}, {-1000.0f, 0.0f}, {-600.0f, 0.0f}, {0.0f, 0.0f}, {900.0f, 300.0f}, {2000.0f, 0.0f}
+	};
+	for (const FVector2D& Point : SamplePoints)
+	{
+		FHitResult Ground;
+		const FVector Probe(Point.X, Point.Y, 120.0f);
+		const bool bCollision = Fixture.TraceGround(Probe, Ground);
+		TestTrue(*FString::Printf(TEXT("gameplay collision ground exists at X=%.0f"), Point.X), bCollision);
+		bool bVisibleGround = false;
+		for (const FVisibleActor& Entry : Visible)
+		{
+			if (Point.X >= Entry.Bounds.Min.X && Point.X <= Entry.Bounds.Max.X
+				&& Point.Y >= Entry.Bounds.Min.Y && Point.Y <= Entry.Bounds.Max.Y
+				&& bCollision && FMath::Abs(Entry.Bounds.Max.Z - Ground.ImpactPoint.Z) < 40.0f)
+			{
+				bVisibleGround = true;
+				break;
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("visible presentation ground is aligned with collision at X=%.0f"), Point.X), bVisibleGround);
+	}
+
+	Fixture.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHObjective01ReachableTest, "AshesOfHeaven.Chapter.Objective01Reachable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHObjective01ReachableTest::RunTest(const FString& Parameters)
+{
+	using namespace AHObjective01TestSupport;
+	FChapterOneWorldFixture Fixture;
+	TestTrue(TEXT("Chapter One world fixture boots"), Fixture.Boot());
+	if (!Fixture.World)
+	{
+		return false;
+	}
+
+	// Find the Objective 01 target trigger placed by the director.
+	FVector Target = FVector::ZeroVector;
+	FVector TargetExtent = FVector::ZeroVector;
+	bool bTargetFound = false;
+	for (TActorIterator<AAHChapterTrigger> It(Fixture.World); It; ++It)
+	{
+		if (It->TriggerId == FName(TEXT("ReachDefensiveLine")))
+		{
+			Target = It->GetActorLocation();
+			TargetExtent = It->Trigger ? It->Trigger->GetScaledBoxExtent() : FVector(280.0f, 1000.0f, 160.0f);
+			bTargetFound = true;
+			break;
+		}
+	}
+	TestTrue(TEXT("Objective 01 defensive-line trigger exists"), bTargetFound);
+	if (!bTargetFound)
+	{
+		Fixture.Teardown();
+		return false;
+	}
+
+	// Grid flood-fill from the fresh spawn to the trigger volume: a cell is walkable when
+	// it has gameplay ground at floor height and a standing capsule fits above it.
+	const float Cell = 100.0f;
+	const float MinX = -1600.0f, MaxX = FMath::Max(Target.X + TargetExtent.X, -200.0f);
+	const float MinY = -950.0f, MaxY = 950.0f;
+	const int32 CountX = FMath::FloorToInt((MaxX - MinX) / Cell) + 1;
+	const int32 CountY = FMath::FloorToInt((MaxY - MinY) / Cell) + 1;
+	TArray<int8> Walkable;
+	Walkable.SetNumZeroed(CountX * CountY);
+	const FCollisionShape Capsule = FCollisionShape::MakeCapsule(38.0f, 90.0f);
+	for (int32 IX = 0; IX < CountX; ++IX)
+	{
+		for (int32 IY = 0; IY < CountY; ++IY)
+		{
+			const FVector2D Point(MinX + IX * Cell, MinY + IY * Cell);
+			FHitResult Ground;
+			if (!Fixture.World->LineTraceSingleByChannel(Ground, FVector(Point.X, Point.Y, 400.0f), FVector(Point.X, Point.Y, -1500.0f), ECC_Visibility))
+			{
+				continue;
+			}
+			if (Ground.ImpactPoint.Z < -80.0f || Ground.ImpactPoint.Z > 60.0f)
+			{
+				continue;
+			}
+			const FVector StandPoint(Point.X, Point.Y, Ground.ImpactPoint.Z + 96.0f);
+			if (Fixture.World->OverlapBlockingTestByChannel(StandPoint, FQuat::Identity, ECC_Pawn, Capsule))
+			{
+				continue;
+			}
+			Walkable[IX * CountY + IY] = 1;
+		}
+	}
+
+	auto CellIndex = [&](const FVector2D& Point) -> int32
+	{
+		const int32 IX = FMath::RoundToInt((Point.X - MinX) / Cell);
+		const int32 IY = FMath::RoundToInt((Point.Y - MinY) / Cell);
+		return (IX >= 0 && IX < CountX && IY >= 0 && IY < CountY) ? IX * CountY + IY : INDEX_NONE;
+	};
+	const int32 StartCell = CellIndex(FVector2D(FreshSpawn.X, FreshSpawn.Y));
+	TestTrue(TEXT("fresh spawn cell is walkable"), StartCell != INDEX_NONE && Walkable[StartCell] == 1);
+
+	TArray<int32> Queue;
+	TSet<int32> Seen;
+	bool bReached = false;
+	if (StartCell != INDEX_NONE && Walkable[StartCell])
+	{
+		Queue.Add(StartCell);
+		Seen.Add(StartCell);
+	}
+	while (!Queue.IsEmpty() && !bReached)
+	{
+		const int32 Current = Queue.Pop();
+		const int32 IX = Current / CountY;
+		const int32 IY = Current % CountY;
+		const FVector2D Point(MinX + IX * Cell, MinY + IY * Cell);
+		if (FMath::Abs(Point.X - Target.X) <= TargetExtent.X && FMath::Abs(Point.Y - Target.Y) <= TargetExtent.Y)
+		{
+			bReached = true;
+			break;
+		}
+		const int32 Neighbors[4] = {Current + CountY, Current - CountY, Current + 1, Current - 1};
+		for (const int32 Neighbor : Neighbors)
+		{
+			if (Neighbor >= 0 && Neighbor < Walkable.Num() && Walkable[Neighbor] && !Seen.Contains(Neighbor)
+				&& FMath::Abs((Neighbor % CountY) - IY) + FMath::Abs((Neighbor / CountY) - IX) == 1)
+			{
+				Seen.Add(Neighbor);
+				Queue.Add(Neighbor);
+			}
+		}
+	}
+	TestTrue(TEXT("the defensive-line target is walkably reachable from the fresh spawn"), bReached);
+
+	// The route beyond the line toward the opening battle keeps continuous ground.
+	for (float X = Target.X; X <= 900.0f; X += 200.0f)
+	{
+		FHitResult Ground;
+		TestTrue(*FString::Printf(TEXT("route ground continues at X=%.0f"), X),
+			Fixture.World->LineTraceSingleByChannel(Ground, FVector(X, 0.0f, 400.0f), FVector(X, 0.0f, -1500.0f), ECC_Visibility));
+	}
+
+	Fixture.Teardown();
 	return true;
 }
 

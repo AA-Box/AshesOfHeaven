@@ -17,6 +17,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Checkpoint")
 	bool RestoreLatestCheckpoint();
 
+	/**
+	 * Applies a loaded checkpoint state to the live world. Returns false without touching
+	 * the player when the checkpoint carries no real progress (the chapter-opening capture)
+	 * or when its saved transform is no longer over valid gameplay ground, so a stale or
+	 * corrupt save can never teleport a fresh run into void space.
+	 */
+	bool RestoreFromState(const FAHCombatCheckpointState& State);
+
+	/** True when the location is finite, inside the chapter play band, and has blocking ground beneath it. */
+	static bool IsCheckpointTransformValid(UWorld* World, const FVector& Location);
+
 	UFUNCTION(BlueprintCallable, Category="Checkpoint")
 	void ReloadLatestCheckpoint();
 
