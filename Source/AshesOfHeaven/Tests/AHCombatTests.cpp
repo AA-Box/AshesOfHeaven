@@ -30,6 +30,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionParameter.h"
 #include "NiagaraSystem.h"
+#include "NiagaraEmitter.h"
 #include "MetasoundSource.h"
 #include "Sound/SoundCue.h"
 #include "Sound/SoundAttenuation.h"
@@ -41,6 +42,12 @@
 #include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#if WITH_EDITOR
+#include "Animation/WidgetAnimation.h"
+#include "Components/SafeZone.h"
+#include "WidgetBlueprint.h"
+#endif
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHArtTargetAssetManifestTest, "AshesOfHeaven.Art.TargetAssetManifest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHArtTargetAssetManifestTest::RunTest(const FString& Parameters)
@@ -82,6 +89,24 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 		UClass* WidgetClass = LoadObject<UClass>(nullptr, *Path);
 		TestTrue(TEXT("saved UMG widget class exists"), WidgetClass && WidgetClass->IsChildOf(UUserWidget::StaticClass()));
 	}
+	#if WITH_EDITOR
+	if (UWidgetBlueprint* HUDBlueprint = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/Ashes/UI/HUD/WBP_HUD_Root.WBP_HUD_Root")))
+	{
+		UWidget* SafeZone = HUDBlueprint->WidgetTree ? HUDBlueprint->WidgetTree->FindWidget(TEXT("HUDSafeZone")) : nullptr;
+		TestTrue(TEXT("HUD root is authored through a safe zone"), SafeZone && SafeZone->IsA<USafeZone>());
+		TSet<FName> AnimationNames;
+		for (UWidgetAnimation* Animation : HUDBlueprint->Animations)
+		{
+			if (Animation)
+			{
+				AnimationNames.Add(Animation->GetFName());
+			}
+		}
+		TestTrue(TEXT("objective reveal animation is authored"), AnimationNames.Contains(TEXT("ObjectiveRevealAnimation")));
+		TestTrue(TEXT("damage pulse animation is authored"), AnimationNames.Contains(TEXT("DamagePulseAnimation")));
+		TestTrue(TEXT("countdown urgency animation is authored"), AnimationNames.Contains(TEXT("CountdownUrgencyAnimation")));
+	}
+	#endif
 	UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
 	TestNotNull(TEXT("audio palette data asset exists"), Palette);
 	if (Palette)
@@ -92,18 +117,34 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(*FString::Printf(TEXT("event %s resolves to a project sound"), *Entry.Key.ToString()), Entry.Value.IsValid() || Entry.Value.ToSoftObjectPath().IsValid());
 		}
+		TSet<FSoftObjectPath> CombatAudioAssets;
+		for (const TCHAR* EventName : { TEXT("Combat.Melee"), TEXT("Combat.Hurt"), TEXT("Combat.Armor"), TEXT("Combat.Death"), TEXT("Combat.Grenade") })
+		{
+			const TSoftObjectPtr<USoundBase>* Event = Palette->Events.Find(FName(EventName));
+			TestTrue(*FString::Printf(TEXT("semantic event %s is assigned"), EventName), Event && Event->ToSoftObjectPath().IsValid());
+			if (Event)
+			{
+				CombatAudioAssets.Add(Event->ToSoftObjectPath());
+			}
+		}
+		TestEqual(TEXT("combat semantic events use distinct authored sources"), CombatAudioAssets.Num(), 5);
 	}
 	for (const TCHAR* Path : {
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Fire.MS_M91_Fire"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_M91_Impact.MS_M91_Impact"),
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Erebus_Ambience.MS_Erebus_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Transit_Ambience.MS_Transit_Ambience"),
 		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Cathedral_Ambience.MS_Cathedral_Ambience"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Manticore_Engine.MS_Manticore_Engine"),
-		TEXT("/Game/Ashes/Audio/MetaSounds/MS_UI_Objective.MS_UI_Objective") })
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_UI_Objective.MS_UI_Objective"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Combat_Melee.MS_Combat_Melee"),
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Combat_Hurt.MS_Combat_Hurt"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Combat_Armor.MS_Combat_Armor"),
+		TEXT("/Game/Ashes/Audio/MetaSounds/MS_Combat_Death.MS_Combat_Death"), TEXT("/Game/Ashes/Audio/MetaSounds/MS_Combat_Grenade.MS_Combat_Grenade") })
 	{
 		TestTrue(TEXT("MetaSound presentation asset exists and is a MetaSound source"), LoadObject<UMetaSoundSource>(nullptr, Path) != nullptr);
 	}
 	const TArray<FString> RawAudioPaths = {
 		TEXT("/Game/Ashes/Audio/Raw/SC_M91_Fire.SC_M91_Fire"), TEXT("/Game/Ashes/Audio/Raw/SC_M91_Reload.SC_M91_Reload"),
-		TEXT("/Game/Ashes/Audio/Raw/SC_M91_Impact.SC_M91_Impact"), TEXT("/Game/Ashes/Audio/Raw/SC_Erebus_Ambience.SC_Erebus_Ambience"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_M91_Impact.SC_M91_Impact"), TEXT("/Game/Ashes/Audio/Raw/SC_Combat_Melee.SC_Combat_Melee"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_Combat_Hurt.SC_Combat_Hurt"), TEXT("/Game/Ashes/Audio/Raw/SC_Combat_Armor.SC_Combat_Armor"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_Combat_Death.SC_Combat_Death"), TEXT("/Game/Ashes/Audio/Raw/SC_Combat_Grenade.SC_Combat_Grenade"),
+		TEXT("/Game/Ashes/Audio/Raw/SC_Erebus_Ambience.SC_Erebus_Ambience"),
 		TEXT("/Game/Ashes/Audio/Raw/SC_Transit_Ambience.SC_Transit_Ambience"), TEXT("/Game/Ashes/Audio/Raw/SC_Cathedral_Ambience.SC_Cathedral_Ambience") };
 	TSet<USoundWave*> RawSources;
 	for (const FString& Path : RawAudioPaths)
@@ -119,6 +160,14 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("world attenuation asset exists"), LoadObject<USoundAttenuation>(nullptr, TEXT("/Game/Ashes/Audio/Mix/ATT_World3D.ATT_World3D")));
 	TestNotNull(TEXT("world concurrency asset exists"), LoadObject<USoundConcurrency>(nullptr, TEXT("/Game/Ashes/Audio/Mix/CONC_World.CONC_World")));
 	TestNotNull(TEXT("master submix asset exists"), LoadObject<USoundSubmix>(nullptr, TEXT("/Game/Ashes/Audio/Mix/SM_Master.SM_Master")));
+	for (const TCHAR* SubmixPath : {
+		TEXT("/Game/Ashes/Audio/Submixes/SM_World.SM_World"), TEXT("/Game/Ashes/Audio/Submixes/SM_Weapons.SM_Weapons"),
+		TEXT("/Game/Ashes/Audio/Submixes/SM_Ambience.SM_Ambience"), TEXT("/Game/Ashes/Audio/Submixes/SM_Veil.SM_Veil"),
+		TEXT("/Game/Ashes/Audio/Submixes/SM_Dialogue.SM_Dialogue"), TEXT("/Game/Ashes/Audio/Submixes/SM_Music.SM_Music"),
+		TEXT("/Game/Ashes/Audio/Submixes/SM_Vehicle.SM_Vehicle"), TEXT("/Game/Ashes/Audio/Submixes/SM_UI.SM_UI") })
+	{
+		TestNotNull(TEXT("semantic audio submix exists"), LoadObject<USoundSubmix>(nullptr, SubmixPath));
+	}
 	USoundCue* M91Cue = LoadObject<USoundCue>(nullptr, TEXT("/Game/Ashes/Audio/Cues/SC_M91_Fire.SC_M91_Fire"));
 	TestNotNull(TEXT("M91 SoundCue exists"), M91Cue);
 	if (M91Cue)
@@ -127,11 +176,36 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("M91 SoundCue has concurrency routing"), !M91Cue->bOverrideConcurrency && M91Cue->ConcurrencySet.Num() > 0);
 		TestNotNull(TEXT("M91 SoundCue has submix routing"), M91Cue->SoundSubmixObject.Get());
 	}
+	USoundCue* FootstepCue = LoadObject<USoundCue>(nullptr, TEXT("/Game/Ashes/Audio/Cues/SC_Player_Footstep.SC_Player_Footstep"));
+	TestNotNull(TEXT("footstep SoundCue exists"), FootstepCue);
+	if (FootstepCue)
+	{
+		TestTrue(TEXT("footsteps route through the world submix"), FootstepCue->SoundSubmixObject.Get() == LoadObject<USoundSubmix>(nullptr, TEXT("/Game/Ashes/Audio/Submixes/SM_World.SM_World")));
+	}
 	for (const TCHAR* Path : {
 		TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_HumanArmor.M_HumanArmor"), TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"),
 		TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter"), TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"), TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph") })
 	{
 		TestNotNull(TEXT("authored material exists"), LoadObject<UMaterialInterface>(nullptr, Path));
+	}
+	for (const TCHAR* MeshPath : {
+		TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"), TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder"),
+		TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Sphere.SM_AH_Sphere"), TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cone.SM_AH_Cone"),
+		TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Plane.SM_AH_Plane") })
+	{
+		TestNotNull(TEXT("project-owned presentation mesh exists"), LoadObject<UStaticMesh>(nullptr, MeshPath));
+	}
+	for (const TCHAR* EmitterPath : {
+		TEXT("/Game/Ashes/VFX/Emitters/NE_AshField.NE_AshField"), TEXT("/Game/Ashes/VFX/Emitters/NE_EmberDrift.NE_EmberDrift"),
+		TEXT("/Game/Ashes/VFX/Emitters/NE_ImpactSparks.NE_ImpactSparks"), TEXT("/Game/Ashes/VFX/Emitters/NE_SmokeColumn.NE_SmokeColumn") })
+	{
+		UNiagaraEmitter* Emitter = LoadObject<UNiagaraEmitter>(nullptr, EmitterPath);
+		TestNotNull(TEXT("authored Niagara emitter exists"), Emitter);
+		if (Emitter && Emitter->GetLatestEmitterData())
+		{
+			TestTrue(TEXT("Niagara emitter has deterministic authored configuration"), Emitter->GetLatestEmitterData()->bDeterminism);
+			TestTrue(TEXT("Niagara emitter has fixed presentation bounds"), Emitter->GetLatestEmitterData()->CalculateBoundsMode == ENiagaraEmitterCalculateBoundMode::Fixed);
+		}
 	}
 	for (const TCHAR* Path : {
 		TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), TEXT("/Game/Ashes/VFX/NS_ImpactSparks.NS_ImpactSparks"),
@@ -163,6 +237,15 @@ bool FAHPresentationAssetManifestTest::RunTest(const FString& Parameters)
 			Material->GetAllScalarParameterInfo(ScalarParameters, ScalarParameterIds);
 			Material->GetAllVectorParameterInfo(VectorParameters, VectorParameterIds);
 			TestTrue(TEXT("material master has a non-trivial authored parameter surface"), ScalarParameters.Num() + VectorParameters.Num() >= 6);
+			TSet<FName> ParameterNames;
+			for (const FMaterialParameterInfo& Parameter : ScalarParameters)
+			{
+				ParameterNames.Add(Parameter.Name);
+			}
+			for (const TCHAR* ParameterName : { TEXT("WearAmount"), TEXT("EdgeVariation"), TEXT("DamageMaskStrength"), TEXT("Wetness"), TEXT("MicroDetailStrength") })
+			{
+				TestTrue(*FString::Printf(TEXT("material graph exposes %s"), ParameterName), ParameterNames.Contains(FName(ParameterName)));
+			}
 		}
 	}
 	return true;

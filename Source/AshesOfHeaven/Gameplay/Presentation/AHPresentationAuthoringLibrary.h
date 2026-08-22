@@ -3,7 +3,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "AHPresentationAuthoringLibrary.generated.h"
 
-/** Editor-only content authoring entry points used by the checked-in Phase 4.2 generator. */
+/** Editor-only content authoring entry points used by the checked-in Phase 4.3 generator. */
 UCLASS()
 class ASHESOFHEAVEN_API UAHPresentationAuthoringLibrary : public UBlueprintFunctionLibrary
 {

@@ -32,7 +32,7 @@ public class AshesOfHeaven : ModuleRules
 
 		if (Target.bBuildEditor)
 		{
-			PrivateDependencyModuleNames.AddRange(new string[] { "AssetTools", "EditorScriptingUtilities", "UnrealEd", "UMGEditor", "NiagaraEditor" });
+			PrivateDependencyModuleNames.AddRange(new string[] { "AssetTools", "EditorScriptingUtilities", "UnrealEd", "UMGEditor", "NiagaraEditor", "MovieScene", "MovieSceneTracks" });
 		}
 
 		PublicIncludePaths.AddRange(new string[] {

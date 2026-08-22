@@ -1,4 +1,4 @@
-# Phase 4.2 — UI pipeline
+# Phase 4.3 — UI pipeline
 
 The production HUD is Unreal UMG. Canvas drawing is not a production fallback; it is no longer
 used by `AAHCombatHUD::DrawHUD()`.
@@ -26,10 +26,12 @@ metadata box, and the giant dialogue strip. Objective text is a brief top-left r
 is a compact top-right warning; health/armor and weapon/ammo are peripheral; the reticle is
 restrained and context-aware; dialogue is subtitle-first; completion is a centered chapter title.
 
-The baseline is safe-zone anchored and uses FText for state text. The checked-in Widget Blueprints
-already own the hierarchy, text widgets, rules, progress bars, and composition slots; designers can
-replace those authored elements with localized fonts, materials, input glyphs, CommonUI, or UMG
-animations without altering the state contract.
+The baseline is rooted in an actual `USafeZone` and uses FText for state text. The checked-in Widget
+Blueprints own the hierarchy, text widgets, rules, progress bars, geometry reticle, and composition
+slots. `WBP_HUD_Root` also owns bound `ObjectiveRevealAnimation`, `DamagePulseAnimation`, and
+`CountdownUrgencyAnimation` tracks; runtime state changes trigger those saved UMG animations without
+rebuilding the tree. Designers can replace those authored elements with localized fonts, materials,
+input glyphs, CommonUI, or richer UMG motion without altering the state contract.
 
 ## Required authored assets
 

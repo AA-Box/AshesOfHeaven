@@ -1,6 +1,6 @@
-# Phase 4.2 — Presentation architecture
+# Phase 4.3 — Presentation architecture
 
-Phase 4.2 establishes the Unreal-native presentation boundary. Gameplay code publishes state and
+Phase 4.3 extends the Unreal-native presentation boundary. Gameplay code publishes state and
 semantic events; Unreal content owns the visual and audio response.
 
 ## Runtime boundary
@@ -52,8 +52,9 @@ human approval.
 
 ## Performance and platform rules
 
-The root uses safe-zone-aware anchors and adaptive viewport layout. UI state changes are delegate
-driven, materials are saved assets, and Niagara is authored in project emitter/system assets rather
+The root uses a real `USafeZone` and adaptive viewport layout. UI state changes are delegate
+driven, materials are saved assets, and Niagara is authored in project emitter/system assets with
+effect-specific renderer materials, deterministic seeds, allocation budgets, and fixed bounds rather
 than copied engine templates. Desktop may
 use richer presentation tiers; the baseline must remain readable and scalable on mobile. Final
 device FPS, touch glyphs, and subjective visual approval remain human/device review gates.

@@ -1,6 +1,8 @@
+import os
+
 import unreal
 
-"""Create authored Phase 4.2 Unreal presentation assets.
+"""Create authored Phase 4.3 Unreal presentation assets.
 
 This script orchestrates project content authoring.  The editor-only C++ authoring library owns
 the saved Widget Blueprint and Niagara hierarchies; this script handles audio, materials, props,
@@ -29,7 +31,7 @@ def create_data_asset(name, path, class_path):
     factory.set_editor_property("data_asset_class", unreal.load_class(None, class_path))
     asset = TOOLS.create_asset(name, path, unreal.DataAsset, factory)
     if not asset:
-        unreal.log_error("[Phase4.2] failed data asset " + full)
+        unreal.log_error("[Phase4.3] failed data asset " + full)
     return asset
 
 
@@ -40,7 +42,7 @@ def duplicate(name, source, path):
         return existing
     source_asset = load(source) or unreal.load_asset(source)
     if not source_asset:
-        unreal.log_warning("[Phase4.2] missing duplicate source " + source)
+        unreal.log_warning("[Phase4.3] missing duplicate source " + source)
         return None
     return TOOLS.duplicate_asset(name, path, source_asset)
 
@@ -56,11 +58,27 @@ for stale_asset in ["/Game/Ashes/Audio/Probe/SC_Probe", "/Game/Ashes/Audio/Probe
 authoring = getattr(unreal, "AHPresentationAuthoringLibrary", None)
 if authoring and hasattr(authoring, "author_phase42_widgets"):
     if not authoring.author_phase42_widgets():
-        unreal.log_error("[Phase4.2] C++ authored widget generation reported failure")
+        unreal.log_error("[Phase4.3] C++ authored widget generation reported failure")
     if hasattr(authoring, "author_phase42_niagara") and not authoring.author_phase42_niagara():
-        unreal.log_error("[Phase4.2] C++ authored Niagara generation reported failure")
+        unreal.log_error("[Phase4.3] C++ authored Niagara generation reported failure")
 else:
-    unreal.log_error("[Phase4.2] AHPresentationAuthoringLibrary is unavailable; editor module must be rebuilt")
+    unreal.log_error("[Phase4.3] AHPresentationAuthoringLibrary is unavailable; editor module must be rebuilt")
+
+# Presentation props resolve only project-owned mesh assets at runtime. These are an authored
+# starter kit copied into the project namespace so the environment layer is not coupled to
+# /Engine/BasicShapes and can be replaced one asset at a time by an art pass.
+presentation_meshes = {
+    "SM_AH_Cube": "/Engine/BasicShapes/Cube",
+    "SM_AH_Cylinder": "/Engine/BasicShapes/Cylinder",
+    "SM_AH_Sphere": "/Engine/BasicShapes/Sphere",
+    "SM_AH_Cone": "/Engine/BasicShapes/Cone",
+    "SM_AH_Plane": "/Engine/BasicShapes/Plane",
+}
+for mesh_name, source_path in presentation_meshes.items():
+    if not load("/Game/Ashes/Presentation/Meshes/" + mesh_name):
+        ensure_folder("/Game/Ashes/Presentation/Meshes")
+        if not duplicate(mesh_name, source_path, "/Game/Ashes/Presentation/Meshes"):
+            unreal.log_warning("[Phase4.3] presentation mesh duplication failed " + mesh_name)
 
 prop_assets = [
     "BP_Erebus_BlastWall", "BP_Erebus_PipeCluster", "BP_Erebus_Barricade", "BP_Erebus_Wreck",
@@ -99,26 +117,22 @@ def create_material(name, path, tint, roughness, metallic=0.0, emissive=False, d
         factory = unreal.MaterialFactoryNew()
         material = TOOLS.create_asset(name, path, unreal.Material, factory)
     if not material:
-        unreal.log_error("[Phase4.2] failed material " + full)
+        unreal.log_error("[Phase4.3] failed material " + full)
         return None
     try:
         if decal:
             material.set_editor_property("material_domain", unreal.MaterialDomain.MD_DEFERRED_DECAL)
             material.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ALPHA_COMPOSITE)
 
-        # Do not call DeleteAllMaterialExpressions here: in UE 5.8 commandlets it can
-        # attempt to unroot editor-owned expressions.  Add the authored graph once and
-        # leave it intact on subsequent runs.
-        try:
-            if len(material.get_editor_property("expressions")) >= 12:
-                return material
-        except Exception:
-            pass
+        # Do not delete existing expression objects here. UE 5.8 can mark editor-owned
+        # expressions as garbage while a Python generation pass is still holding them. The
+        # new graph below reconnects every material property and leaves old nodes harmlessly
+        # orphaned, which is safe to serialize and avoids that editor crash.
 
         def expr(class_name, x, y):
             expression_class = getattr(unreal, class_name, None)
             if not expression_class:
-                unreal.log_warning("[Phase4.2] material expression unavailable " + class_name)
+                unreal.log_warning("[Phase4.3] material expression unavailable " + class_name)
                 return None
             return unreal.MaterialEditingLibrary.create_material_expression(material, expression_class, x, y)
 
@@ -144,40 +158,109 @@ def create_material(name, path, tint, roughness, metallic=0.0, emissive=False, d
             unreal.MaterialEditingLibrary.connect_material_expressions(world, "", noise, "Position")
 
         grime = scalar("GrimeAmount", 0.34, -900, 420)
-        scalar("WearAmount", 0.22, -900, 500)
-        scalar("EdgeVariation", 0.18, -900, 580)
-        scalar("DamageMaskStrength", 0.0, -900, 660)
-        scalar("Wetness", 0.0 if roughness > 0.5 else 0.2, -900, 740)
-        scalar("MicroDetailStrength", 0.16, -900, 820)
+        wear = scalar("WearAmount", 0.22, -900, 500)
+        edge = scalar("EdgeVariation", 0.18, -900, 580)
+        damage = scalar("DamageMaskStrength", 0.0, -900, 660)
+        wetness = scalar("Wetness", 0.0 if roughness > 0.5 else 0.2, -900, 740)
+        micro = scalar("MicroDetailStrength", 0.16, -900, 820)
 
         grime_mul = expr("MaterialExpressionMultiply", -460, 260)
         if grime_mul and noise and grime:
             unreal.MaterialEditingLibrary.connect_material_expressions(noise, "", grime_mul, "A")
             unreal.MaterialEditingLibrary.connect_material_expressions(grime, "", grime_mul, "B")
-        tint_mix = expr("MaterialExpressionLinearInterpolate", -220, -80)
-        if tint_mix and base and dark and grime_mul:
+        wear_mul = expr("MaterialExpressionMultiply", -460, 360)
+        if wear_mul and noise and wear:
+            unreal.MaterialEditingLibrary.connect_material_expressions(noise, "", wear_mul, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(wear, "", wear_mul, "B")
+        weather_mask = expr("MaterialExpressionAdd", -260, 220)
+        if weather_mask and grime_mul and wear_mul:
+            unreal.MaterialEditingLibrary.connect_material_expressions(grime_mul, "", weather_mask, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(wear_mul, "", weather_mask, "B")
+        tint_mix = expr("MaterialExpressionLinearInterpolate", -40, -80)
+        if tint_mix and base and dark and weather_mask:
             unreal.MaterialEditingLibrary.connect_material_expressions(base, "RGB", tint_mix, "A")
             unreal.MaterialEditingLibrary.connect_material_expressions(dark, "", tint_mix, "B")
-            unreal.MaterialEditingLibrary.connect_material_expressions(grime_mul, "", tint_mix, "Alpha")
+            unreal.MaterialEditingLibrary.connect_material_expressions(weather_mask, "", tint_mix, "Alpha")
         base_output = tint_mix or base
+
+        damage_mul = expr("MaterialExpressionMultiply", -40, 80)
+        damage_mix = expr("MaterialExpressionLinearInterpolate", 170, -80)
+        if damage_mul and noise and damage:
+            unreal.MaterialEditingLibrary.connect_material_expressions(noise, "", damage_mul, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(damage, "", damage_mul, "B")
+        if damage_mix and base_output and dark and damage_mul:
+            unreal.MaterialEditingLibrary.connect_material_expressions(base_output, "", damage_mix, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(dark, "", damage_mix, "B")
+            unreal.MaterialEditingLibrary.connect_material_expressions(damage_mul, "", damage_mix, "Alpha")
+            base_output = damage_mix
+
+        edge_fresnel = expr("MaterialExpressionFresnel", -40, 170)
+        edge_mul = expr("MaterialExpressionMultiply", 170, 170)
+        edge_add = expr("MaterialExpressionAdd", 390, -80)
+        if edge_mul and edge_fresnel and edge:
+            unreal.MaterialEditingLibrary.connect_material_expressions(edge_fresnel, "", edge_mul, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(edge, "", edge_mul, "B")
+        if edge_add and base_output and edge_mul:
+            unreal.MaterialEditingLibrary.connect_material_expressions(base_output, "", edge_add, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(edge_mul, "", edge_add, "B")
+            base_output = edge_add
         if base_output:
             unreal.MaterialEditingLibrary.connect_material_property(base_output, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
         rough_param = scalar("Roughness", roughness, -420, 420)
-        rough_add = expr("MaterialExpressionAdd", -180, 420)
-        if rough_add and rough_param and noise:
-            unreal.MaterialEditingLibrary.connect_material_expressions(rough_param, "", rough_add, "A")
-            unreal.MaterialEditingLibrary.connect_material_expressions(noise, "", rough_add, "B")
-        if rough_add or rough_param:
-            unreal.MaterialEditingLibrary.connect_material_property(rough_add or rough_param, "", unreal.MaterialProperty.MP_ROUGHNESS)
+        wet_roughness = expr("MaterialExpressionConstant", -180, 540)
+        if wet_roughness:
+            wet_roughness.set_editor_property("r", 0.14)
+        rough_wet = expr("MaterialExpressionLinearInterpolate", 40, 420)
+        rough_micro = expr("MaterialExpressionMultiply", 40, 540)
+        rough_variation = expr("MaterialExpressionConstant", -180, 660)
+        rough_final = expr("MaterialExpressionAdd", 260, 420)
+        if rough_variation:
+            rough_variation.set_editor_property("r", 0.08)
+        if rough_wet and rough_param and wet_roughness and wetness:
+            unreal.MaterialEditingLibrary.connect_material_expressions(rough_param, "", rough_wet, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(wet_roughness, "", rough_wet, "B")
+            unreal.MaterialEditingLibrary.connect_material_expressions(wetness, "", rough_wet, "Alpha")
+        if rough_micro and noise:
+            unreal.MaterialEditingLibrary.connect_material_expressions(noise, "", rough_micro, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(rough_variation, "", rough_micro, "B")
+        if rough_final and (rough_wet or rough_param):
+            unreal.MaterialEditingLibrary.connect_material_expressions(rough_wet or rough_param, "", rough_final, "A")
+            if rough_micro:
+                unreal.MaterialEditingLibrary.connect_material_expressions(rough_micro, "", rough_final, "B")
+        if rough_final or rough_wet or rough_param:
+            unreal.MaterialEditingLibrary.connect_material_property(rough_final or rough_wet or rough_param, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
         metal = scalar("Metallic", metallic, -420, 560)
         if metal:
             unreal.MaterialEditingLibrary.connect_material_property(metal, "", unreal.MaterialProperty.MP_METALLIC)
 
+        micro_noise = expr("MaterialExpressionNoise", -120, 760)
+        if micro_noise:
+            try:
+                micro_noise.set_editor_property("scale", 86.0)
+            except Exception:
+                pass
+        micro_mul = expr("MaterialExpressionMultiply", 120, 760)
+        if micro_mul and micro_noise and micro:
+            unreal.MaterialEditingLibrary.connect_material_expressions(micro_noise, "", micro_mul, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(micro, "", micro_mul, "B")
         normal = expr("MaterialExpressionConstant3Vector", -260, 680)
+        normal_add = expr("MaterialExpressionAdd", 330, 760)
+        normal_scale = expr("MaterialExpressionConstant", 120, 900)
         if normal:
             normal.set_editor_property("constant", unreal.LinearColor(0.5, 0.5, 1.0, 1.0))
+        if normal_scale:
+            normal_scale.set_editor_property("r", 1.0)
+        if normal_add and normal_scale and micro_mul:
+            unreal.MaterialEditingLibrary.connect_material_expressions(normal_scale, "", normal_add, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(micro_mul, "", normal_add, "B")
+        normal_final = expr("MaterialExpressionMultiply", 520, 760)
+        if normal and normal_add and normal_final:
+            unreal.MaterialEditingLibrary.connect_material_expressions(normal, "", normal_final, "A")
+            unreal.MaterialEditingLibrary.connect_material_expressions(normal_add, "", normal_final, "B")
+            unreal.MaterialEditingLibrary.connect_material_property(normal_final, "", unreal.MaterialProperty.MP_NORMAL)
+        elif normal:
             unreal.MaterialEditingLibrary.connect_material_property(normal, "", unreal.MaterialProperty.MP_NORMAL)
 
         if emissive and base_output:
@@ -194,9 +277,26 @@ def create_material(name, path, tint, roughness, metallic=0.0, emissive=False, d
 
         unreal.MaterialEditingLibrary.layout_material_expressions(material)
         unreal.MaterialEditingLibrary.recompile_material(material)
+        if not decal:
+            # Niagara sprite renderers use the same project-owned material masters. Mark the
+            # usage explicitly so cooked builds do not silently substitute the default material.
+            material_usage = getattr(unreal, "MaterialUsage", None)
+            niagara_usage = getattr(material_usage, "MATUSAGE_NIAGARA_SPRITES", None) if material_usage else None
+            if niagara_usage is not None:
+                try:
+                    set_base_usage = getattr(unreal.MaterialEditingLibrary, "set_base_material_usage", None)
+                    if set_base_usage:
+                        set_base_usage(material, niagara_usage, True)
+                    else:
+                        # UE 5.7 compatibility for engines that do not expose the replacement API.
+                        needs_recompile = unreal.MaterialEditingLibrary.set_material_usage(material, niagara_usage)
+                        if needs_recompile:
+                            unreal.MaterialEditingLibrary.recompile_material(material)
+                except Exception as exc:
+                    unreal.log_warning("[Phase4.3] Niagara material usage warning " + name + ": " + str(exc))
         unreal.EditorAssetLibrary.save_asset(full)
     except Exception as exc:
-        unreal.log_warning("[Phase4.2] material graph warning " + name + ": " + str(exc))
+        unreal.log_warning("[Phase4.3] material graph warning " + name + ": " + str(exc))
     return material
 
 
@@ -244,6 +344,11 @@ raw_paths = {
     "SC_M91_Reload": "/Game/Ashes/Audio/Raw/SC_M91_Reload",
     "SC_M91_Empty": "/Game/Ashes/Audio/Raw/SC_M91_Empty",
     "SC_M91_Impact": "/Game/Ashes/Audio/Raw/SC_M91_Impact",
+    "SC_Combat_Melee": "/Game/Ashes/Audio/Raw/SC_Combat_Melee",
+    "SC_Combat_Hurt": "/Game/Ashes/Audio/Raw/SC_Combat_Hurt",
+    "SC_Combat_Armor": "/Game/Ashes/Audio/Raw/SC_Combat_Armor",
+    "SC_Combat_Death": "/Game/Ashes/Audio/Raw/SC_Combat_Death",
+    "SC_Combat_Grenade": "/Game/Ashes/Audio/Raw/SC_Combat_Grenade",
     "SC_UI_Objective": "/Game/Ashes/Audio/Raw/SC_UI_Objective",
     "SC_UI_Dialogue": "/Game/Ashes/Audio/Raw/SC_UI_Dialogue",
     "SC_UI_Pickup": "/Game/Ashes/Audio/Raw/SC_UI_Pickup",
@@ -253,6 +358,43 @@ raw_paths = {
     "SC_Cathedral_Ambience": "/Game/Ashes/Audio/Raw/SC_Cathedral_Ambience",
     "SC_Manticore_Engine": "/Game/Ashes/Audio/Raw/SC_Manticore_Engine",
 }
+
+
+def import_generated_waves(source_paths):
+    """Import checked-in WAV sources before creating dependent audio assets.
+
+    The editor may be launched with an empty DerivedData/asset registry, so a raw WAV that is
+    present on disk is not necessarily loadable yet.  Importing through AssetImportTask makes the
+    generation deterministic for fresh workspaces and keeps the source audio replaceable without
+    changing semantic event names.
+    """
+    raw_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Content", "Ashes", "Audio", "Raw"))
+    tasks = []
+    for source_name, raw_path in source_paths.items():
+        source_file = os.path.join(raw_directory, source_name + ".wav")
+        if not os.path.isfile(source_file):
+            unreal.log_warning("[Phase4.3][Audio] missing WAV on disk for " + source_name)
+            continue
+        if load(raw_path):
+            continue
+        task = unreal.AssetImportTask()
+        task.set_editor_property("filename", source_file)
+        task.set_editor_property("destination_path", "/Game/Ashes/Audio/Raw")
+        task.set_editor_property("destination_name", source_name)
+        task.set_editor_property("replace_existing", False)
+        task.set_editor_property("automated", True)
+        task.set_editor_property("save", True)
+        tasks.append(task)
+    if tasks:
+        TOOLS.import_asset_tasks(tasks)
+        for task in tasks:
+            imported_paths = list(task.get_editor_property("imported_object_paths"))
+            if not imported_paths:
+                unreal.log_warning("[Phase4.3][Audio] WAV import produced no asset for " + task.get_editor_property("destination_name"))
+        unreal.log("[Phase4.3][Audio] imported %d generated WAV source(s)" % len(tasks))
+
+
+import_generated_waves(raw_paths)
 
 def create_mix_asset(name, path, asset_class, factory):
     full = path + "/" + name
@@ -270,6 +412,12 @@ world_concurrency = create_mix_asset("CONC_World", "/Game/Ashes/Audio/Mix", unre
 ui_concurrency = create_mix_asset("CONC_UI", "/Game/Ashes/Audio/Mix", unreal.SoundConcurrency, unreal.SoundConcurrencyFactory())
 master_submix = create_mix_asset("SM_Master", "/Game/Ashes/Audio/Mix", unreal.SoundSubmix, unreal.SoundSubmixFactory())
 world_submix = create_mix_asset("SM_World", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+weapons_submix = create_mix_asset("SM_Weapons", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+ambience_submix = create_mix_asset("SM_Ambience", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+veil_submix = create_mix_asset("SM_Veil", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+dialogue_submix = create_mix_asset("SM_Dialogue", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+music_submix = create_mix_asset("SM_Music", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
+vehicle_submix = create_mix_asset("SM_Vehicle", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
 ui_submix = create_mix_asset("SM_UI", "/Game/Ashes/Audio/Submixes", unreal.SoundSubmix, unreal.SoundSubmixFactory())
 
 if world_concurrency:
@@ -287,6 +435,12 @@ if world_submix and master_submix:
         world_submix.set_editor_property("parent_submix", master_submix)
     except Exception:
         pass
+for child_submix in [weapons_submix, ambience_submix, veil_submix, dialogue_submix, music_submix, vehicle_submix]:
+    if child_submix and master_submix:
+        try:
+            child_submix.set_editor_property("parent_submix", master_submix)
+        except Exception:
+            pass
 if ui_submix and master_submix:
     try:
         ui_submix.set_editor_property("parent_submix", master_submix)
@@ -304,7 +458,7 @@ def create_sound_cue(name, raw_path, attenuation, concurrency, submix):
         existing = TOOLS.create_asset(name, "/Game/Ashes/Audio/Cues", unreal.SoundCue, unreal.SoundCueFactoryNew())
     wave_asset = load(raw_path)
     if not existing or not wave_asset:
-        unreal.log_warning("[Phase4.2][Audio] missing source for cue " + name)
+        unreal.log_warning("[Phase4.3][Audio] missing source for cue " + name)
         return None
     try:
         wave_node = unreal.new_object(unreal.SoundNodeWavePlayer, existing)
@@ -328,14 +482,29 @@ def create_sound_cue(name, raw_path, attenuation, concurrency, submix):
         unreal.EditorAssetLibrary.save_asset(cue_path)
         return existing
     except Exception as exc:
-        unreal.log_warning("[Phase4.2][Audio] SoundCue graph warning " + name + ": " + str(exc))
+        unreal.log_warning("[Phase4.3][Audio] SoundCue graph warning " + name + ": " + str(exc))
         return existing
 
 
 cue_paths = {}
+def audio_route(source_name):
+    if source_name.startswith("SC_UI"):
+        return ui_attenuation, ui_concurrency, ui_submix
+    if source_name.startswith("SC_M91") or source_name.startswith("SC_Combat"):
+        return world_attenuation, world_concurrency, weapons_submix
+    if source_name == "SC_Manticore_Engine":
+        return world_attenuation, world_concurrency, vehicle_submix
+    if source_name in ("SC_Cathedral_Ambience",):
+        return world_attenuation, world_concurrency, veil_submix
+    if source_name.endswith("_Ambience"):
+        return world_attenuation, world_concurrency, ambience_submix
+    if source_name == "SC_Player_Footstep":
+        return world_attenuation, world_concurrency, world_submix
+    return world_attenuation, world_concurrency, world_submix
+
 for source_name, raw_path in raw_paths.items():
-    is_ui = source_name.startswith("SC_UI") or source_name == "SC_Player_Footstep"
-    cue = create_sound_cue(source_name, raw_path, ui_attenuation if is_ui else world_attenuation, ui_concurrency if is_ui else world_concurrency, ui_submix if is_ui else world_submix)
+    attenuation, concurrency, submix = audio_route(source_name)
+    cue = create_sound_cue(source_name, raw_path, attenuation, concurrency, submix)
     if cue:
         cue_paths[source_name] = cue.get_path_name().split(".")[0]
 
@@ -370,14 +539,14 @@ def create_metasound(name, raw_path, submix):
             unreal.EditorAssetLibrary.save_asset(full)
             return asset
     except Exception as exc:
-        unreal.log_warning("[Phase4.2][Audio] MetaSound authoring deferred for " + name + ": " + str(exc))
+        unreal.log_warning("[Phase4.3][Audio] MetaSound authoring deferred for " + name + ": " + str(exc))
     return None
 
 
 meta_paths = {}
 for source_name, raw_path in raw_paths.items():
     meta_name = source_name.replace("SC_", "MS_", 1)
-    asset = create_metasound(meta_name, raw_path, ui_submix if source_name.startswith("SC_UI") else world_submix)
+    asset = create_metasound(meta_name, raw_path, audio_route(source_name)[2])
     if asset:
         meta_paths[source_name] = asset.get_path_name().split(".")[0]
 
@@ -387,8 +556,8 @@ palette = load("/Game/Ashes/Audio/DA_AudioPalette_Default")
 if palette:
     event_assets = {
         "Weapon.M91.Fire": "SC_M91_Fire", "Weapon.M91.Reload": "SC_M91_Reload", "Weapon.M91.Empty": "SC_M91_Empty",
-        "Weapon.M91.Impact": "SC_M91_Impact", "Combat.Melee": "SC_M91_Impact", "Combat.Hurt": "SC_M91_Impact",
-        "Combat.Armor": "SC_M91_Impact", "Combat.Death": "SC_M91_Impact", "Combat.Grenade": "SC_M91_Impact",
+        "Weapon.M91.Impact": "SC_M91_Impact", "Combat.Melee": "SC_Combat_Melee", "Combat.Hurt": "SC_Combat_Hurt",
+        "Combat.Armor": "SC_Combat_Armor", "Combat.Death": "SC_Combat_Death", "Combat.Grenade": "SC_Combat_Grenade",
         "UI.Objective": "SC_UI_Objective", "UI.Dialogue": "SC_UI_Dialogue", "UI.Pickup": "SC_UI_Pickup",
         "Player.Footstep": "SC_Player_Footstep",
     }
@@ -416,4 +585,4 @@ unreal.EditorAssetLibrary.save_directory("/Game/Ashes", only_if_is_dirty=True, r
 for stale_asset in ["/Game/Ashes/Audio/Probe/SC_Probe", "/Game/Ashes/Audio/Probe/MS_Built"]:
     if load(stale_asset):
         unreal.EditorAssetLibrary.delete_asset(stale_asset)
-unreal.log("[Phase4.2] presentation asset inventory generated")
+unreal.log("[Phase4.3] presentation asset inventory generated")

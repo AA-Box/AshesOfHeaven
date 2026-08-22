@@ -5,6 +5,7 @@ Intermediate/
 Saved/
 Builds/
 Build/Mac/FileOpenOrder/
+Scripts/__pycache__/
 
 # IDE and generated project metadata
 .vs/

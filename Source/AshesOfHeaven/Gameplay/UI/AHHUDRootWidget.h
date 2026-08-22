@@ -8,7 +8,9 @@ class AAHCombatPlayerCharacter;
 class AAHManticoreVehicle;
 class AAHWeaponBase;
 class UUserWidget;
+class UWidget;
 class UTextBlock;
+class UBorder;
 class UProgressBar;
 class UWidgetAnimation;
 
@@ -46,6 +48,8 @@ protected:
 	void SetText(UTextBlock* Text, const FText& Value) const;
 	void ApplyVisibility(UWidget* Widget, bool bVisible) const;
 	void SetBar(UProgressBar* Bar, float Percent, const FLinearColor& Color) const;
+	void SetReticleVisibility(bool bVisible, bool bAimingDownSights, bool bVehicle, bool bInteraction) const;
+	void SetReticleColor(const FLinearColor& Color) const;
 	void PlayPresentationAnimation(UWidgetAnimation* Animation);
 
 	UFUNCTION()
@@ -114,6 +118,20 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> CrosshairText;
 	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairCore;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairTop;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairBottom;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairLeft;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairRight;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CrosshairHit;
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> DamageRule;
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> InteractionText;
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DamageText;
@@ -128,11 +146,11 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> VehicleHealthBar;
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, meta=(BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> ObjectiveRevealAnimation;
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, meta=(BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> DamagePulseAnimation;
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, meta=(BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> CountdownUrgencyAnimation;
 
 	TWeakObjectPtr<APawn> PossessedPawn;

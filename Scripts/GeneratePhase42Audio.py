@@ -72,6 +72,45 @@ def impact_sound(t: float, length: float, rng: random.Random) -> float:
     return math.exp(-t * 11.0) * (0.52 * noise(rng) + 0.32 * tone(76.0, t) + 0.18 * tone(232.0, t))
 
 
+def melee_sound(t: float, length: float, rng: random.Random) -> float:
+    """Short, close-range body impact with a transient scrape layer."""
+    transient = math.exp(-t * 82.0) * (0.38 * noise(rng) + 0.24 * tone(1460.0, t))
+    body = math.exp(-t * 15.0) * (0.42 * tone(58.0, t) + 0.18 * tone(116.0, t))
+    scrape = math.exp(-max(0.0, t - 0.035) * 24.0) * 0.12 * noise(rng)
+    return transient + body + scrape
+
+
+def hurt_sound(t: float, length: float, rng: random.Random) -> float:
+    """Radio-filtered pain response; deliberately not interchangeable with impacts."""
+    gate = 0.5 + 0.5 * tone(18.0, t)
+    voice_band = 0.16 * tone(310.0 + 35.0 * tone(2.2, t), t)
+    burst = math.exp(-t * 9.0) * (0.11 * noise(rng) + voice_band)
+    return envelope(t, length, 0.006, 0.09) * gate * burst
+
+
+def armor_sound(t: float, length: float, rng: random.Random) -> float:
+    """Hard ceramic/metal ring for armor absorption."""
+    ring = math.exp(-t * 8.0) * (0.27 * tone(880.0, t) + 0.18 * tone(1760.0, t))
+    strike = math.exp(-t * 75.0) * (0.34 * noise(rng) + 0.16 * tone(2600.0, t))
+    return ring + strike
+
+
+def death_sound(t: float, length: float, rng: random.Random) -> float:
+    """Low descending terminal cue with a clipped radio tail."""
+    sweep = math.sin(math.tau * (420.0 * t - 220.0 * t * t))
+    sub = 0.24 * tone(54.0, t) * math.exp(-t * 5.0)
+    radio = 0.08 * noise(rng) * math.exp(-t * 12.0)
+    return envelope(t, length, 0.02, 0.16) * (0.34 * sweep * math.exp(-t * 4.2) + sub + radio)
+
+
+def grenade_sound(t: float, length: float, rng: random.Random) -> float:
+    """Wide blast/air displacement layer for grenade events."""
+    blast = math.exp(-t * 7.0) * (0.46 * noise(rng) + 0.30 * tone(42.0, t) + 0.16 * tone(86.0, t))
+    crack = math.exp(-t * 48.0) * (0.22 * noise(rng) + 0.14 * tone(1180.0, t))
+    tail = math.exp(-t * 2.5) * 0.07 * noise(rng)
+    return blast + crack + tail
+
+
 def objective_sound(t: float, length: float, rng: random.Random) -> float:
     notes = ((0.02, 420.0), (0.20, 630.0), (0.38, 940.0))
     value = 0.0
@@ -131,6 +170,11 @@ SOURCES = {
     "SC_M91_Reload": (0.95, reload_sound),
     "SC_M91_Empty": (0.20, empty_sound),
     "SC_M91_Impact": (0.45, impact_sound),
+    "SC_Combat_Melee": (0.36, melee_sound),
+    "SC_Combat_Hurt": (0.42, hurt_sound),
+    "SC_Combat_Armor": (0.48, armor_sound),
+    "SC_Combat_Death": (0.72, death_sound),
+    "SC_Combat_Grenade": (0.95, grenade_sound),
     "SC_UI_Objective": (0.72, objective_sound),
     "SC_UI_Dialogue": (0.40, dialogue_sound),
     "SC_UI_Pickup": (0.36, pickup_sound),

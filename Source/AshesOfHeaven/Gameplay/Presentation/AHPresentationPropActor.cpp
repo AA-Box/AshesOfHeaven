@@ -2,12 +2,28 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 
 namespace
 {
-	UStaticMesh* LoadBasicShape(const TCHAR* Shape)
+	UStaticMesh* LoadPresentationShape(const TCHAR* Shape)
 	{
-		return LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Engine/BasicShapes/%s.%s"), Shape, Shape));
+		FString AssetName;
+		if (FCString::Stricmp(Shape, TEXT("Cube")) == 0) AssetName = TEXT("SM_AH_Cube");
+		else if (FCString::Stricmp(Shape, TEXT("Cylinder")) == 0) AssetName = TEXT("SM_AH_Cylinder");
+		else if (FCString::Stricmp(Shape, TEXT("Sphere")) == 0) AssetName = TEXT("SM_AH_Sphere");
+		else if (FCString::Stricmp(Shape, TEXT("Cone")) == 0) AssetName = TEXT("SM_AH_Cone");
+		else if (FCString::Stricmp(Shape, TEXT("Plane")) == 0) AssetName = TEXT("SM_AH_Plane");
+		if (AssetName.IsEmpty())
+		{
+			return nullptr;
+		}
+		return LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Game/Ashes/Presentation/Meshes/%s.%s"), *AssetName, *AssetName));
+	}
+
+	UMaterialInterface* LoadPresentationMaterial(const TCHAR* MaterialName)
+	{
+		return LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/Ashes/Materials/%s.%s"), MaterialName, MaterialName));
 	}
 
 	void AddDetailMesh(
@@ -41,7 +57,7 @@ AAHPresentationPropActor::AAHPresentationPropActor()
 	PrimaryActorTick.bCanEverTick = false;
 	PropMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PropMesh"));
 	RootComponent = PropMesh;
-	PropMesh->SetStaticMesh(LoadBasicShape(TEXT("Cube")));
+	PropMesh->SetStaticMesh(LoadPresentationShape(TEXT("Cube")));
 	PropMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	PropMesh->SetCollisionResponseToAllChannels(ECR_Block);
 }
@@ -61,11 +77,11 @@ void AAHPresentationPropActor::OnConstruction(const FTransform& Transform)
 
 	FString Style = PresentationStyle.IsNone() ? GetClass()->GetName() : PresentationStyle.ToString();
 	Style.RemoveFromStart(TEXT("BP_"));
-	UStaticMesh* Cube = LoadBasicShape(TEXT("Cube"));
-	UStaticMesh* Cylinder = LoadBasicShape(TEXT("Cylinder"));
-	UStaticMesh* Sphere = LoadBasicShape(TEXT("Sphere"));
-	UStaticMesh* Cone = LoadBasicShape(TEXT("Cone"));
-	UStaticMesh* Plane = LoadBasicShape(TEXT("Plane"));
+	UStaticMesh* Cube = LoadPresentationShape(TEXT("Cube"));
+	UStaticMesh* Cylinder = LoadPresentationShape(TEXT("Cylinder"));
+	UStaticMesh* Sphere = LoadPresentationShape(TEXT("Sphere"));
+	UStaticMesh* Cone = LoadPresentationShape(TEXT("Cone"));
+	UStaticMesh* Plane = LoadPresentationShape(TEXT("Plane"));
 
 	if (Style.Contains(TEXT("PipeCluster")))
 	{
@@ -141,5 +157,22 @@ void AAHPresentationPropActor::OnConstruction(const FTransform& Transform)
 		PropMesh->SetStaticMesh(Cube);
 		PropMesh->SetRelativeScale3D(FVector(1.f));
 		AddDetailMesh(this, DetailMeshes, TEXT("DetailSphere"), Sphere, FVector(0.f, 0.f, 125.f), FRotator::ZeroRotator, FVector(0.35f));
+	}
+
+	const bool bCathedral = Style.Contains(TEXT("Cathedral")) || Style.Contains(TEXT("Glyph"));
+	const bool bTransit = Style.Contains(TEXT("Transit"));
+	UMaterialInterface* PropMaterial = LoadPresentationMaterial(
+		bCathedral ? TEXT("M_CathedralMatter") : bTransit ? TEXT("M_HumanPaintedMetal") : TEXT("M_HumanMetal"));
+	if (PropMaterial)
+	{
+		PropMesh->SetMaterial(0, PropMaterial);
+	}
+	for (UStaticMeshComponent* Detail : DetailMeshes)
+	{
+		if (Detail)
+		{
+			const bool bGlyphDetail = Style.Contains(TEXT("Glyph")) && Detail->GetFName() == TEXT("GlyphInset");
+			Detail->SetMaterial(0, bGlyphDetail ? LoadPresentationMaterial(TEXT("M_EmissiveGlyph")) : PropMaterial);
+		}
 	}
 }

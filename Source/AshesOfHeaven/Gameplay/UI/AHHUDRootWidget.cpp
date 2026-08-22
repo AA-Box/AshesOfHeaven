@@ -1,6 +1,7 @@
 #include "Gameplay/UI/AHHUDRootWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
@@ -21,6 +22,7 @@ namespace
 	const FLinearColor Red(0.82f, 0.14f, 0.10f, 1.0f);
 	const FLinearColor Amber(0.94f, 0.62f, 0.22f, 1.0f);
 	const FLinearColor Cyan(0.42f, 0.68f, 0.71f, 1.0f);
+	const FLinearColor Bone(0.84f, 0.85f, 0.81f, 1.0f);
 
 	template <typename WidgetType>
 	WidgetType* FindChildWidget(UUserWidget* Parent, const TCHAR* Name)
@@ -37,6 +39,7 @@ void UAHHUDRootWidget::NativeConstruct()
 		&& HealthBar && ArmorBar && WeaponNameText && AmmoText && GrenadeText && CrosshairText
 		&& InteractionText && DamageText && DialogueSpeakerText && DialogueSubtitleText
 		&& MissionCompleteText && VehicleText && VehicleHealthBar;
+	ApplyVisibility(CrosshairText, false);
 	if (UWorld* World = GetWorld())
 	{
 		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
@@ -88,8 +91,15 @@ void UAHHUDRootWidget::ResolveAuthoredWidgets()
 	AmmoText = FindChildWidget<UTextBlock>(WeaponStatusWidget, TEXT("Ammo"));
 	GrenadeText = FindChildWidget<UTextBlock>(WeaponStatusWidget, TEXT("Grenades"));
 	CrosshairText = FindChildWidget<UTextBlock>(CrosshairWidget, TEXT("Crosshair"));
+	CrosshairCore = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairCore"));
+	CrosshairTop = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairTop"));
+	CrosshairBottom = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairBottom"));
+	CrosshairLeft = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairLeft"));
+	CrosshairRight = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairRight"));
+	CrosshairHit = FindChildWidget<UWidget>(CrosshairWidget, TEXT("CrosshairHit"));
 	InteractionText = FindChildWidget<UTextBlock>(InteractionWidget, TEXT("InteractionPrompt"));
 	DamageText = FindChildWidget<UTextBlock>(DamageIndicatorWidget, TEXT("DamageIndicator"));
+	DamageRule = FindChildWidget<UBorder>(DamageIndicatorWidget, TEXT("DamageRule"));
 	DialogueSpeakerText = FindChildWidget<UTextBlock>(DialogueWidget, TEXT("DialogueSpeaker"));
 	DialogueSubtitleText = FindChildWidget<UTextBlock>(DialogueWidget, TEXT("DialogueSubtitle"));
 	MissionCompleteText = FindChildWidget<UTextBlock>(ChapterTitleWidget, TEXT("MissionComplete"));
@@ -241,6 +251,29 @@ void UAHHUDRootWidget::SetBar(UProgressBar* Bar, float Percent, const FLinearCol
 	}
 }
 
+void UAHHUDRootWidget::SetReticleVisibility(bool bVisible, bool bAimingDownSights, bool bVehicle, bool bInteraction) const
+{
+	const bool bShowCore = bVisible && (bAimingDownSights || bVehicle || bInteraction);
+	const bool bShowArms = bVisible && !bAimingDownSights && !bVehicle && !bInteraction;
+	ApplyVisibility(CrosshairCore, bShowCore);
+	ApplyVisibility(CrosshairTop, bShowArms);
+	ApplyVisibility(CrosshairBottom, bShowArms);
+	ApplyVisibility(CrosshairLeft, bShowArms);
+	ApplyVisibility(CrosshairRight, bShowArms);
+	ApplyVisibility(CrosshairHit, false);
+}
+
+void UAHHUDRootWidget::SetReticleColor(const FLinearColor& Color) const
+{
+	for (UWidget* Widget : { CrosshairCore.Get(), CrosshairTop.Get(), CrosshairBottom.Get(), CrosshairLeft.Get(), CrosshairRight.Get(), CrosshairHit.Get() })
+	{
+		if (UBorder* Border = Cast<UBorder>(Widget))
+		{
+			Border->SetBrushColor(Color);
+		}
+	}
+}
+
 void UAHHUDRootWidget::PlayPresentationAnimation(UWidgetAnimation* Animation)
 {
 	if (Animation)
@@ -265,25 +298,41 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 
 void UAHHUDRootWidget::ShowHitMarker(bool bHeadshot)
 {
-	SetText(CrosshairText, bHeadshot ? NSLOCTEXT("AshesHUD", "Headshot", "◆") : NSLOCTEXT("AshesHUD", "Hit", "+") );
-	SetText(DamageText, bHeadshot ? NSLOCTEXT("AshesHUD", "HeadshotLabel", "HEADSHOT") : NSLOCTEXT("AshesHUD", "HitLabel", "HIT"));
-		ApplyVisibility(DamageText, true);
+	SetText(DamageText, bHeadshot ? NSLOCTEXT("AshesHUD", "HeadshotLabel", "HEADSHOT CONFIRMED") : NSLOCTEXT("AshesHUD", "HitLabel", "HIT CONFIRMED"));
+	ApplyVisibility(CrosshairHit, true);
+	if (UBorder* HitBorder = Cast<UBorder>(CrosshairHit))
+	{
+		HitBorder->SetBrushColor(bHeadshot ? Amber : Bone);
+	}
+	ApplyVisibility(DamageText, true);
+	if (DamageRule)
+	{
+		DamageRule->SetBrushColor(bHeadshot ? Amber : Bone);
+	}
 	PlayPresentationAnimation(DamagePulseAnimation);
 	if (GetWorld())
 	{
 		FTimerHandle Timer;
 		GetWorld()->GetTimerManager().SetTimer(Timer, [WeakThis = TWeakObjectPtr<UAHHUDRootWidget>(this)]()
 		{
-			if (UAHHUDRootWidget* Widget = WeakThis.Get()) Widget->ApplyVisibility(Widget->DamageText, false);
+			if (UAHHUDRootWidget* Widget = WeakThis.Get())
+			{
+				Widget->ApplyVisibility(Widget->DamageText, false);
+				Widget->ApplyVisibility(Widget->CrosshairHit, false);
+			}
 		}, 0.22f, false);
 	}
 }
 
 void UAHHUDRootWidget::ShowDamageFeedback(bool bArmorBreak, float DirectionAngle)
 {
-	const FString Direction = DirectionAngle < -35.0f ? TEXT("◀  ") : DirectionAngle > 35.0f ? TEXT("  ▶") : TEXT("  ▲");
-	SetText(DamageText, FText::FromString(Direction + (bArmorBreak ? TEXT("ARMOR BREACH") : TEXT("DAMAGE"))));
+	const TCHAR* Feedback = bArmorBreak ? TEXT("ARMOR IMPACT") : TEXT("INCOMING FIRE");
+	SetText(DamageText, FText::FromString(Feedback));
 	ApplyVisibility(DamageText, true);
+	if (DamageRule)
+	{
+		DamageRule->SetBrushColor(bArmorBreak ? Cyan : Red);
+	}
 	PlayPresentationAnimation(DamagePulseAnimation);
 }
 
@@ -295,23 +344,15 @@ void UAHHUDRootWidget::ShowMissionComplete()
 
 void UAHHUDRootWidget::SetCrosshairState(bool bAimingDownSights, float Spread, bool bHit, bool bHeadshot, bool bInteraction, bool bVehicle)
 {
-	if (bVehicle)
+	SetReticleVisibility(!bHit, bAimingDownSights, bVehicle, bInteraction);
+	SetReticleColor(bVehicle ? Cyan : bInteraction ? Amber : Bone);
+	const float ReticleScale = bAimingDownSights ? 0.72f : FMath::Clamp(0.88f + Spread * 0.02f, 0.88f, 1.18f);
+	for (UWidget* Widget : { CrosshairCore.Get(), CrosshairTop.Get(), CrosshairBottom.Get(), CrosshairLeft.Get(), CrosshairRight.Get() })
 	{
-		SetText(CrosshairText, NSLOCTEXT("AshesHUD", "VehicleReticle", "◇"));
-	}
-	else if (bInteraction)
-	{
-		SetText(CrosshairText, NSLOCTEXT("AshesHUD", "InteractionReticle", "·"));
-	}
-	else if (!bHit)
-	{
-		SetText(CrosshairText, bAimingDownSights ? NSLOCTEXT("AshesHUD", "ADSReticle", "·") : NSLOCTEXT("AshesHUD", "HipReticle", "+"));
-	}
-	if (CrosshairText)
-	{
-		FSlateFontInfo Font = CrosshairText->GetFont();
-		Font.Size = bAimingDownSights ? 14 : FMath::Clamp(16 + FMath::RoundToInt(Spread * 2.0f), 16, 28);
-		CrosshairText->SetFont(Font);
+		if (Widget)
+		{
+			Widget->SetRenderScale(FVector2D(ReticleScale, ReticleScale));
+		}
 	}
 }
 

@@ -8,6 +8,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
+#include "Components/SafeZone.h"
 #include "Components/TextBlock.h"
 #include "EditorAssetLibrary.h"
 #include "Engine/Font.h"
@@ -18,10 +19,18 @@
 #include "Styling/SlateColor.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/UserWidget.h"
+#include "UObject/UnrealType.h"
+#include "Animation/WidgetAnimation.h"
+#include "Channels/MovieSceneFloatChannel.h"
+#include "MovieScene.h"
+#include "Sections/MovieSceneFloatSection.h"
+#include "Tracks/MovieSceneFloatTrack.h"
 #include "NiagaraEmitter.h"
+#include "NiagaraSpriteRendererProperties.h"
 #include "NiagaraSystem.h"
 #include "NiagaraEmitterFactoryNew.h"
 #include "NiagaraSystemFactoryNew.h"
+#include "Materials/MaterialInterface.h"
 
 namespace
 {
@@ -51,16 +60,9 @@ namespace
 			return;
 		}
 		// The factory creates a default root and seeds its variable GUID map. We replace
-		// that root with an authored hierarchy, so rebuild the map from the final tree
-		// before compiling instead of leaving stale GUIDs behind.
+		// that root with an authored hierarchy. Leave the map empty so the UMG compiler's
+		// own fix-up path creates deterministic GUID entries for both widgets and animations.
 		Blueprint->WidgetVariableNameToGuidMap.Reset();
-		Blueprint->ForEachSourceWidget([Blueprint](UWidget* Widget)
-		{
-			if (Widget)
-			{
-				Blueprint->WidgetVariableNameToGuidMap.Emplace(Widget->GetFName(), FGuid::NewDeterministicGuid(Widget->GetPathName()));
-			}
-		});
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 		UEditorAssetLibrary::SaveAsset(Blueprint->GetPathName(), false);
 	}
@@ -109,7 +111,85 @@ namespace
 		return Bar;
 	}
 
-	UWidgetBlueprint* MakeSimpleWidget(const FString& Name, const FString& Path, const TArray<TTuple<FString, FString, int32, FLinearColor, FMargin, ETextJustify::Type>>& Texts)
+	UBorder* AddRule(UWidgetTree* Tree, UCanvasPanel* Canvas, const TCHAR* Name, const FLinearColor& Color, const FMargin& Offsets)
+	{
+		UBorder* Rule = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), FName(Name));
+		Rule->SetBrushColor(Color);
+		Place(Canvas, Rule, Offsets);
+		return Rule;
+	}
+
+	UWidgetAnimation* AddOpacityAnimation(UWidgetBlueprint* Blueprint, const TCHAR* Name, const TCHAR* TargetWidget, float Duration, float StartValue, float PeakValue, float EndValue)
+	{
+		if (!Blueprint || !Blueprint->WidgetTree || !TargetWidget)
+		{
+			return nullptr;
+		}
+		UWidgetAnimation* Animation = NewObject<UWidgetAnimation>(Blueprint, FName(Name), RF_Transactional);
+		if (!Animation)
+		{
+			return nullptr;
+		}
+		Animation->Rename(Name);
+		Animation->SetDisplayLabel(Name);
+		Animation->MovieScene = NewObject<UMovieScene>(Animation, FName(Name), RF_Transactional);
+		Animation->MovieScene->SetDisplayRate(FFrameRate(60, 1));
+		const int32 EndFrame = FMath::Max(1, FMath::RoundToInt(Duration * 60.0f));
+		Animation->MovieScene->SetPlaybackRange(TRange<FFrameNumber>(FFrameNumber(0), FFrameNumber(EndFrame + 1)));
+		Animation->MovieScene->GetEditorData().WorkStart = 0.0;
+		Animation->MovieScene->GetEditorData().WorkEnd = Duration;
+
+		const FGuid BindingGuid = Animation->MovieScene->AddPossessable(TargetWidget, UUserWidget::StaticClass());
+		FWidgetAnimationBinding Binding;
+		Binding.WidgetName = FName(TargetWidget);
+		Binding.AnimationGuid = BindingGuid;
+		Animation->AnimationBindings.Add(Binding);
+		UMovieSceneFloatTrack* Track = Animation->MovieScene->AddTrack<UMovieSceneFloatTrack>(BindingGuid);
+		if (!Track)
+		{
+			return Animation;
+		}
+		Track->SetPropertyNameAndPath(TEXT("RenderOpacity"), TEXT("RenderOpacity"));
+		UMovieSceneFloatSection* Section = Cast<UMovieSceneFloatSection>(Track->CreateNewSection());
+		if (Section)
+		{
+			Section->SetRange(TRange<FFrameNumber>(FFrameNumber(0), FFrameNumber(EndFrame + 1)));
+			Track->AddSection(*Section);
+			FMovieSceneFloatChannel* Channel = Section->GetChannelProxy().GetChannel<FMovieSceneFloatChannel>(0);
+			if (Channel)
+			{
+				Channel->GetData().AddKey(FFrameNumber(0), FMovieSceneFloatValue(StartValue));
+				Channel->GetData().AddKey(FFrameNumber(FMath::Max(1, EndFrame / 2)), FMovieSceneFloatValue(PeakValue));
+				Channel->GetData().AddKey(FFrameNumber(EndFrame), FMovieSceneFloatValue(EndValue));
+			}
+		}
+		Blueprint->Animations.Add(Animation);
+		return Animation;
+	}
+
+	void AuthorReticle(UWidgetBlueprint* Blueprint, const FLinearColor& Bone)
+	{
+		if (!Blueprint || !Blueprint->WidgetTree)
+		{
+			return;
+		}
+		UCanvasPanel* Canvas = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+		if (!Canvas)
+		{
+			return;
+		}
+		const FLinearColor Transparent = FLinearColor(Bone.R, Bone.G, Bone.B, 0.96f);
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairCore"), Transparent, FMargin(-2.f, -2.f, 4.f, 4.f));
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairTop"), Transparent, FMargin(-1.f, -17.f, 2.f, 10.f));
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairBottom"), Transparent, FMargin(-1.f, 7.f, 2.f, 10.f));
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairLeft"), Transparent, FMargin(-17.f, -1.f, 10.f, 2.f));
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairRight"), Transparent, FMargin(7.f, -1.f, 10.f, 2.f));
+		AddRule(Blueprint->WidgetTree, Canvas, TEXT("CrosshairHit"), FLinearColor(0.94f, 0.62f, 0.22f, 1.f), FMargin(-5.f, -5.f, 10.f, 10.f));
+		UTextBlock* LegacyGlyph = AddText(Blueprint->WidgetTree, Canvas, TEXT("Crosshair"), TEXT(""), 1, FLinearColor::Transparent, FMargin(0.f, 0.f, 1.f, 1.f));
+		LegacyGlyph->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	UWidgetBlueprint* MakeSimpleWidget(const FString& Name, const FString& Path, const TArray<TTuple<FString, FString, int32, FLinearColor, FMargin, ETextJustify::Type>>& Texts, const FLinearColor& Accent)
 	{
 		UWidgetBlueprint* Blueprint = CreateWidgetBlueprint(Name, Path, UUserWidget::StaticClass());
 		if (!Blueprint || !Blueprint->WidgetTree)
@@ -118,9 +198,22 @@ namespace
 		}
 		UCanvasPanel* Canvas = Blueprint->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Layout"));
 		Blueprint->WidgetTree->RootWidget = Canvas;
-		for (const TTuple<FString, FString, int32, FLinearColor, FMargin, ETextJustify::Type>& Spec : Texts)
+		if (Name == TEXT("WBP_Crosshair"))
 		{
-			AddText(Blueprint->WidgetTree, Canvas, *Spec.Get<0>(), *Spec.Get<1>(), Spec.Get<2>(), Spec.Get<3>(), Spec.Get<4>(), Spec.Get<5>());
+			AuthorReticle(Blueprint, Accent);
+		}
+		else
+		{
+			if (Name == TEXT("WBP_DamageIndicator"))
+			{
+				AddRule(Blueprint->WidgetTree, Canvas, TEXT("DamageRule"), FLinearColor(0.82f, 0.14f, 0.10f, 1.f), FMargin(0.f, 4.f, 3.f, 24.f));
+			}
+			for (const TTuple<FString, FString, int32, FLinearColor, FMargin, ETextJustify::Type>& Spec : Texts)
+			{
+				const FMargin TextOffsets = Name == TEXT("WBP_DamageIndicator")
+					? FMargin(18.f, 0.f, 420.f, 32.f) : Spec.Get<4>();
+				AddText(Blueprint->WidgetTree, Canvas, *Spec.Get<0>(), *Spec.Get<1>(), Spec.Get<2>(), Spec.Get<3>(), TextOffsets, Spec.Get<5>());
+			}
 		}
 		if (Name == TEXT("WBP_ManticoreHUD"))
 		{
@@ -201,7 +294,7 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 
 	struct FSimpleSpec { const TCHAR* Name; TArray<TTuple<FString, FString, int32, FLinearColor, FMargin, ETextJustify::Type>> Texts; };
 	const TArray<FSimpleSpec> SimpleSpecs = {
-		{ TEXT("WBP_Crosshair"), { MakeTuple(FString(TEXT("Crosshair")), FString(TEXT("+")), 18, Bone, FMargin(-18.f, -18.f, 48.f, 36.f), ETextJustify::Center) } },
+		{ TEXT("WBP_Crosshair"), { MakeTuple(FString(TEXT("Crosshair")), FString(), 1, FLinearColor::Transparent, FMargin(0.f, 0.f, 1.f, 1.f), ETextJustify::Center) } },
 		{ TEXT("WBP_InteractionPrompt"), { MakeTuple(FString(TEXT("InteractionPrompt")), FString(), 16, Amber, FMargin(0.f, 0.f, 520.f, 32.f), ETextJustify::Center) } },
 		{ TEXT("WBP_DamageIndicator"), { MakeTuple(FString(TEXT("DamageIndicator")), FString(), 16, Red, FMargin(0.f, 0.f, 420.f, 32.f), ETextJustify::Center) } },
 		{ TEXT("WBP_Countdown"), { MakeTuple(FString(TEXT("Countdown")), FString(), 24, Amber, FMargin(0.f, 0.f, 220.f, 38.f), ETextJustify::Right) } },
@@ -212,14 +305,19 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 	};
 	for (const FSimpleSpec& Spec : SimpleSpecs)
 	{
-		bSuccess &= MakeSimpleWidget(Spec.Name, HUDPath, Spec.Texts) != nullptr;
+		bSuccess &= MakeSimpleWidget(Spec.Name, HUDPath, Spec.Texts, Bone) != nullptr;
 	}
 
 	UWidgetBlueprint* Root = CreateWidgetBlueprint(TEXT("WBP_HUD_Root"), HUDPath, LoadClass<UUserWidget>(nullptr, TEXT("/Script/AshesOfHeaven.AHHUDRootWidget")));
 	if (Root && Root->WidgetTree)
 	{
+		USafeZone* SafeZone = Root->WidgetTree->ConstructWidget<USafeZone>(USafeZone::StaticClass(), TEXT("HUDSafeZone"));
 		UCanvasPanel* Canvas = Root->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDLayout"));
-		Root->WidgetTree->RootWidget = Canvas;
+		Root->WidgetTree->RootWidget = SafeZone;
+		if (SafeZone)
+		{
+			SafeZone->AddChild(Canvas);
+		}
 		const TArray<TTuple<const TCHAR*, const TCHAR*, FMargin, FAnchors, FVector2D>> Children = {
 			MakeTuple(TEXT("ObjectiveWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Objective.WBP_Objective_C"), FMargin(42.f, 34.f, 660.f, 72.f), FAnchors(0.f, 0.f), FVector2D::ZeroVector),
 			MakeTuple(TEXT("CountdownWidget"), TEXT("/Game/Ashes/UI/HUD/WBP_Countdown.WBP_Countdown_C"), FMargin(-262.f, 34.f, 220.f, 38.f), FAnchors(1.f, 0.f), FVector2D::ZeroVector),
@@ -239,10 +337,13 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 			UClass* ChildClass = UEditorAssetLibrary::LoadBlueprintClass(BlueprintPath);
 			if (!ChildClass)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[Phase4.2][UI] Could not load authored child class %s"), *BlueprintPath);
+				UE_LOG(LogTemp, Warning, TEXT("[Phase4.3][UI] Could not load authored child class %s"), *BlueprintPath);
 			}
 			AddRootChild(Root, Canvas, Child.Get<0>(), ChildClass, Child.Get<2>(), Child.Get<3>(), Child.Get<4>());
 		}
+		AddOpacityAnimation(Root, TEXT("ObjectiveRevealAnimation"), TEXT("ObjectiveWidget"), 0.42f, 0.0f, 1.0f, 1.0f);
+		AddOpacityAnimation(Root, TEXT("DamagePulseAnimation"), TEXT("DamageIndicatorWidget"), 0.22f, 0.0f, 1.0f, 0.0f);
+		AddOpacityAnimation(Root, TEXT("CountdownUrgencyAnimation"), TEXT("CountdownWidget"), 0.34f, 0.62f, 1.0f, 0.62f);
 		SaveWidgetBlueprint(Root);
 	}
 	else { bSuccess = false; }
@@ -305,13 +406,53 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 			TEXT("NE_") + Effect, EmitterPath, UNiagaraEmitter::StaticClass(), EmitterFactory));
 		if (!Emitter)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Phase4.2][VFX] failed to author emitter %s"), *Effect);
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.3][VFX] failed to author emitter %s"), *Effect);
 			bSuccess = false;
 			continue;
 		}
 		Emitter->SetUniqueEmitterName(TEXT("AH_") + Effect);
-		Emitter->Category = FText::FromString(TEXT("Ashes of Heaven / Phase 4.2"));
+		Emitter->Category = FText::FromString(TEXT("Ashes of Heaven / Phase 4.3"));
 		Emitter->TemplateAssetDescription = FText::FromString(TEXT("Authored presentation emitter; no engine template dependency."));
+		if (FVersionedNiagaraEmitterData* EmitterData = Emitter->GetLatestEmitterData())
+		{
+			EmitterData->bLocalSpace = Effect == TEXT("EmberDrift") || Effect == TEXT("ImpactSparks") || Effect == TEXT("FireSmall") || Effect == TEXT("FireLarge");
+			EmitterData->bDeterminism = true;
+			EmitterData->RandomSeed = 417 + Effects.IndexOfByKey(Effect);
+			EmitterData->bRequiresPersistentIDs = Effect.Contains(TEXT("Smoke")) || Effect.Contains(TEXT("Ash"));
+			EmitterData->Importance = Effect.Contains(TEXT("Impact")) || Effect.Contains(TEXT("Fire"))
+				? ENiagaraEmitterImportance::Critical : ENiagaraEmitterImportance::Normal;
+			EmitterData->CalculateBoundsMode = ENiagaraEmitterCalculateBoundMode::Fixed;
+			const float Bound = Effect.Contains(TEXT("Cathedral")) ? 900.0f : Effect.Contains(TEXT("Smoke")) ? 650.0f : 360.0f;
+			EmitterData->FixedBounds = FBox(FVector(-Bound, -Bound, -Bound), FVector(Bound, Bound, Bound));
+			EmitterData->AllocationMode = EParticleAllocationMode::ManualEstimate;
+			EmitterData->PreAllocationCount = Effect.Contains(TEXT("Smoke")) || Effect.Contains(TEXT("Ash")) ? 256 : 64;
+
+			// Keep the starter emitter editable, but give each effect a deliberate renderer identity
+			// instead of leaving every factory-created emitter on the same default presentation.
+			UMaterialInterface* EffectMaterial = nullptr;
+			if (Effect.Contains(TEXT("Cathedral")))
+			{
+				EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"));
+			}
+			else if (Effect.Contains(TEXT("Fire")) || Effect.Contains(TEXT("Ember")) || Effect.Contains(TEXT("Impact")))
+			{
+				EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"));
+			}
+			else
+			{
+				EffectMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_Grime.M_Grime"));
+			}
+			for (UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
+			{
+				if (UNiagaraSpriteRendererProperties* Sprite = Cast<UNiagaraSpriteRendererProperties>(Renderer))
+				{
+					Sprite->Material = EffectMaterial;
+					Sprite->FacingMode = ENiagaraSpriteFacingMode::FaceCamera;
+					Sprite->Alignment = Effect.Contains(TEXT("Impact")) ? ENiagaraSpriteAlignment::VelocityAligned : ENiagaraSpriteAlignment::Unaligned;
+					Sprite->SortMode = Effect.Contains(TEXT("Smoke")) || Effect.Contains(TEXT("Ash")) ? ENiagaraSortMode::ViewDepth : ENiagaraSortMode::None;
+				}
+			}
+		}
 		UEditorAssetLibrary::SaveAsset(EmitterAssetPath, false);
 
 		UNiagaraSystemFactoryNew* SystemFactory = NewObject<UNiagaraSystemFactoryNew>();
@@ -320,10 +461,28 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 			TEXT("NS_") + Effect, VFXPath, UNiagaraSystem::StaticClass(), SystemFactory));
 		if (!System)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Phase4.2][VFX] failed to author system %s"), *Effect);
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.3][VFX] failed to author system %s"), *Effect);
 			bSuccess = false;
 			continue;
 		}
+		System->Category = FText::FromString(TEXT("Ashes of Heaven / Phase 4.3"));
+		if (FBoolProperty* Determinism = FindFProperty<FBoolProperty>(System->GetClass(), TEXT("bDeterminism")))
+		{
+			Determinism->SetPropertyValue_InContainer(System, true);
+		}
+		if (FIntProperty* RandomSeed = FindFProperty<FIntProperty>(System->GetClass(), TEXT("RandomSeed")))
+		{
+			RandomSeed->SetPropertyValue_InContainer(System, 417 + Effects.IndexOfByKey(Effect));
+		}
+		if (FBoolProperty* FixedTick = FindFProperty<FBoolProperty>(System->GetClass(), TEXT("bFixedTickDelta")))
+		{
+			FixedTick->SetPropertyValue_InContainer(System, true);
+		}
+		if (FFloatProperty* FixedTickDelta = FindFProperty<FFloatProperty>(System->GetClass(), TEXT("FixedTickDeltaTime")))
+		{
+			FixedTickDelta->SetPropertyValue_InContainer(System, 1.0f / 60.0f);
+		}
+		System->SetFixedBounds(FBox(FVector(-900.0f), FVector(900.0f)));
 		UEditorAssetLibrary::SaveAsset(SystemAssetPath, false);
 	}
 

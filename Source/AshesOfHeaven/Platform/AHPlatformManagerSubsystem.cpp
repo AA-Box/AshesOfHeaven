@@ -391,7 +391,14 @@ void UAHPlatformManagerSubsystem::ApplyCurrentQualitySettings()
 	SetQualityCVar(TEXT("r.Shadow.Virtual.Enable"), GraphicsProfile.bUseVirtualShadowMaps ? 1 : 0);
 	SetQualityCVar(TEXT("r.DynamicGlobalIlluminationMethod"), GraphicsProfile.bUseLumen ? 1 : 0);
 	SetQualityCVar(TEXT("r.ReflectionMethod"), GraphicsProfile.bUseLumen ? 1 : 0);
-	SetQualityCVar(TEXT("r.RayTracing"), GraphicsProfile.bUseLumen && !Capabilities.bIsMobile ? 1 : 0);
+	// Apple Metal can expose Lumen without accepting every hardware ray-tracing
+	// vertex descriptor emitted by the cooked Shipping pipeline. Keep the
+	// high-end lighting path on Mac, but use the stable software fallback for
+	// ray-traced effects. Windows retains the full desktop profile.
+	const bool bUseHardwareRayTracing = GraphicsProfile.bUseLumen
+		&& !Capabilities.bIsMobile
+		&& Capabilities.PlatformFamily != EAHPlatformFamily::Mac;
+	SetQualityCVar(TEXT("r.RayTracing"), bUseHardwareRayTracing ? 1 : 0);
 }
 
 void UAHPlatformManagerSubsystem::ApplyQualityPreset(EAHQualityPreset Preset)

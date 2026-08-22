@@ -467,3 +467,72 @@ No human approval is being faked. The following remain open:
 
 The next authorized step is human review of the fresh packages. Do not start Phase 5 or Chapter
 Two from this record.
+
+## PHASE 4.3 — Presentation quality recertification — 2026-08-22
+
+This pass addresses the concrete gaps identified after the Phase 4.2 Unreal-native pipeline:
+stale glyph reticles, no-op UMG animation declarations, missing safe-zone root, collapsed combat
+audio routing, footsteps on the wrong route, disconnected material controls, identical Niagara
+scaffolds, and runtime dependence on `/Engine/BasicShapes`. Gameplay, Chapter One progression,
+checkpoint logic, navigation, and cross-platform boundaries were preserved. Phase 5/Chapter Two
+was not started.
+
+The first fresh post-change Shipping smoke exposed a real Apple Metal startup failure: the process
+returned 139 while `MTLCompilerService` aborted in `validateSerializedVertexDescriptor`. The Mac
+profile now keeps the Lumen path but disables hardware ray tracing, with the guard applied in both
+`Config/DefaultDeviceProfiles.ini` and the runtime quality manager. Windows and mobile profiles are
+unchanged. The fresh rebuild and recertification below are after that fix.
+
+### Implemented
+
+- `WBP_Crosshair` now uses authored `UBorder` geometry for the core, four spread arms, and hit
+  state. The old `+` TextBlock remains only as a collapsed compatibility binding and contains no
+  visible glyph. Hit and damage feedback use restrained authored rules and state text rather than
+  symbol characters.
+- `WBP_HUD_Root` is rooted in a real `USafeZone`. `ObjectiveRevealAnimation`,
+  `DamagePulseAnimation`, and `CountdownUrgencyAnimation` are serialized `UWidgetAnimation` assets
+  with `RenderOpacity` tracks bound to their root child widgets; runtime calls now resolve real
+  animations instead of silently doing nothing.
+- Audio now imports every checked-in WAV before dependent assets are created. `Combat.Melee`,
+  `Combat.Hurt`, `Combat.Armor`, `Combat.Death`, and `Combat.Grenade` each resolve a distinct
+  project source. Footsteps use world attenuation/concurrency and `SM_World`. The mix owns
+  `SM_Master`, `SM_World`, `SM_Weapons`, `SM_Ambience`, `SM_Veil`, `SM_Dialogue`, `SM_Music`,
+  `SM_Vehicle`, and `SM_UI`. No runtime PCM synthesizer or engine grenade-launcher template is used.
+- Material masters connect Wear, Edge, Damage, Wetness, and MicroDetail controls into their
+  base-color, roughness, and normal graphs. Project material masters are also explicitly marked
+  for Niagara sprites.
+- Niagara emitters and systems remain project-owned and now receive effect-specific renderer
+  material, facing/alignment/sort, deterministic seed, fixed-bound, allocation, persistent-ID,
+  and importance configuration.
+- Presentation props load project-owned mesh assets and project-owned material masters at runtime.
+  The copied meshes are an explicit starter kit boundary, not a claim that final environment art
+  has been authored.
+
+### Machine verification — fresh Unreal processes
+
+| Gate | Exact result |
+| --- | --- |
+| `Scripts/GeneratePhase42Assets.py` | **PASS** — no Python warnings/errors, missing WAV sources, animation GUID ensures, or listener errors; only known UE 5.8 non-rendering-editor MetaSound save notices. Log: `/tmp/ashes-phase43-assets-final3.log` |
+| Development Editor | **PASS** — UE 5.8 Mac arm64 compile/link, exit code 0. Log: `/tmp/ashes-phase43-editor-build-final4.stdout` |
+| `AHCombatVerificationCommandlet` | **PASS** — 15/15 checks, 0 failed checks, exit code 0. Log: `/tmp/ashes-phase43-commandlet-final4.log` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 16/16 project tests `Result={Success}`, `**** TEST COMPLETE. EXIT CODE: 0 ****`. Log: `/tmp/ashes-phase43-automation-final4.log` |
+| Mac Development cook/package | **PASS** — `BUILD SUCCESSFUL`, 60.53 s; `Builds/macOS-Development/AshesOfHeaven.app`. Log: `/tmp/ashes-phase43-development-package-final5.log` |
+| Mac Shipping cook/package | **PASS** — `BUILD SUCCESSFUL`, 49.30 s; `Builds/macOS/AshesOfHeaven.app`. Log: `/tmp/ashes-phase43-shipping-package-final5.log` |
+| Deep strict codesign | **PASS** — both fresh packages valid on disk and satisfy their designated requirements. Logs: `/tmp/ashes-phase43-development-codesign-final2.log`, `/tmp/ashes-phase43-shipping-codesign-final2.log` |
+| Normal Metal launch | **PASS** — both fresh packages ran 15 s without `-nullrhi`/`-nosound`, produced no crash/assertion/fatal lines, and exited status 0. Logs: `/tmp/ashes-phase43-development-normal-final5.log`, `/tmp/ashes-phase43-shipping-normal-final6.log` |
+
+Automation emitted two expected categories of engine noise: Unreal's built-in `UnifiedErrorTest`
+logs sample error messages by design, and the objective-HUD test leaves the known temporary-world
+teardown warning after its passing result. There were no project test failures.
+
+### Human validation still required
+
+Codex cannot honestly replace the requested interactive playthrough. A human must still run the
+fresh `Builds/macOS/AshesOfHeaven.app` and judge controls, gun feel, ADS/recoil/reload, enemy and
+friendly AI, objective clarity, pacing, Manticore operation, countdown, checkpoint transitions,
+dialogue timing, collision/pathfinding, softlocks, crashes, pickups, melee, grenades, death/restart,
+inventory restoration, and Chapter One completion. The final sound-design listen, visual reference
+match, authored environment/character/animation quality, localization, and real Windows/iOS/
+Android/device performance are also not claimed by these machine checks.
+
+Do not start Phase 5 or Chapter Two from this record.

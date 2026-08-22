@@ -15,13 +15,13 @@ The table below remains evidence-gated. The current Phase 4/4.1 machine evidence
 - Full automation: **PASS** — 16/16 project tests completed with `Result={Success}`, exit code 0; no project test failed.
 - Development package: **PASS** — `Builds/macOS-Development/AshesOfHeaven.app`; deep strict codesign passed.
 - Shipping package: **PASS** — `Builds/macOS/AshesOfHeaven.app`; deep strict codesign passed.
-- Normal Metal launch: **PASS** for process-level 15-second smoke on both fresh packages, without `-nullrhi` or `-nosound`; both exited with controlled status 0 after the smoke window.
+- Normal Metal launch: **PASS** for process-level 15-second smoke on both fresh packages, without `-nullrhi` or `-nosound`; both exited with controlled status 0 after the smoke window (2026-08-22).
 - Audio initialization: **PASS** — Development packaged normal-renderer smoke without `-nosound` created the CoreAudio 48 kHz mixer, initialized the 14-cue runtime palette, and started the ambient bed; final authored soundscape remains open.
 - Gameplay, interactive combat/death/restart/pickup/Manticore/checkpoint progression, screenshots, subjective art match, and target-device performance: **UNTESTED**.
 
 | Feature | Windows | macOS | Android | iOS |
 | --- | --- | --- | --- | --- |
-| Launch | UNTESTED | PASS — fresh Development and Shipping packages stayed alive for 15-second normal Metal process smokes (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Launch | UNTESTED | PASS — fresh Development and Shipping packages stayed alive for 15-second normal Metal process smokes (2026-08-22) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Main menu | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | New game | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Save/load | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
@@ -79,3 +79,59 @@ Interactive combat and full end-to-end checkpoint progression still require a hu
 - Human review: **UNTESTED** — interactive UI readability, actual sound-design quality, objective
   clarity without HUD reliance, combat/death/restart/pickups/checkpoints/Manticore, final target
   visual match, localization, and mobile/Windows/iOS device behavior.
+
+## Phase 4.3 presentation-quality recertification — 2026-08-22
+
+The first fresh post-change Shipping smoke exposed a real Apple Metal startup failure: the process
+returned 139 while `MTLCompilerService` aborted in `validateSerializedVertexDescriptor`. The Mac
+platform profile now keeps the Lumen path but disables hardware ray tracing, with the guard applied
+both in `DefaultDeviceProfiles.ini` and the runtime quality manager. Windows and mobile profiles are
+unchanged. A fresh rebuild and recertification after that guard passed all gates below.
+
+- Asset generation: **PASS** — `Scripts/GeneratePhase42Assets.py` completed in a fresh Unreal
+  process with no Python warnings/errors, no missing WAV sources, no animation GUID ensures, and
+  no MCP listener error. The only remaining generator notices are UE 5.8 MetaSound save notices
+  stating that editor audio rendering is unavailable during unattended asset serialization.
+  Log: `/tmp/ashes-phase43-assets-final3.log`.
+- UI: **PASS foundation** — the generated reticle is authored UMG geometry (no `+`/symbol glyph
+  path), damage feedback uses a rule plus text, the root is an actual `USafeZone`, and all three
+  named animations contain serialized tracks and are bound to root child widgets.
+- Audio routing: **PASS foundation** — combat events use five distinct project SoundWave/Cue/
+  MetaSound sources; footsteps route through `SM_World`; Weapons, Ambience, Veil, Dialogue, Music,
+  Vehicle, World, UI, and Master submix assets are present. The checked-in WAVs are offline-generated
+  integration sources, not a claim of final recorded sound design or voice/music production.
+- Materials: **PASS foundation** — Wear, Edge, Damage, Wetness, and MicroDetail parameters are
+  connected into base-color, roughness, and normal branches; Niagara sprite usage is marked on the
+  project material masters.
+- Niagara: **PASS foundation** — project-owned emitters/systems have effect-specific sprite
+  materials, facing/alignment/sort choices, deterministic seeds, fixed bounds, allocation budgets,
+  persistent IDs where needed, and critical/normal importance settings.
+- Environment props: **PASS ownership boundary** — runtime props load project-owned mesh assets and
+  project-owned material masters. Those meshes are still replaceable starter geometry duplicated
+  into the project namespace; final authored environment meshes remain an art-production task.
+- Development Editor: **PASS** — UE 5.8 Mac arm64 compile/link succeeded. Log:
+  `/tmp/ashes-phase43-editor-build-final4.stdout`.
+- Commandlet: **PASS** — 15/15 checks, 0 failed checks, exit code 0. Log:
+  `/tmp/ashes-phase43-commandlet-final4.log`.
+- Automation: **PASS** — 16/16 AshesOfHeaven project tests completed with `Result={Success}`;
+  `**** TEST COMPLETE. EXIT CODE: 0 ****`. Unreal's built-in `UnifiedErrorTest` emits expected
+  error-log samples, and the HUD test leaves the previously known teardown warning; neither is a
+  project test failure. Log: `/tmp/ashes-phase43-automation-final4.log`.
+- Mac Development package: **PASS** — `BUILD SUCCESSFUL`, cook/stage/pak/archive completed in
+  60.53 seconds; `Builds/macOS-Development/AshesOfHeaven.app`. Log:
+  `/tmp/ashes-phase43-development-package-final5.log`.
+- Mac Shipping package: **PASS** — `BUILD SUCCESSFUL`, cook/stage/pak/archive completed in 49.30
+  seconds; `Builds/macOS/AshesOfHeaven.app`. Log:
+  `/tmp/ashes-phase43-shipping-package-final5.log`.
+- Deep strict codesign: **PASS** for both fresh packages; logs
+  `/tmp/ashes-phase43-development-codesign-final2.log` and
+  `/tmp/ashes-phase43-shipping-codesign-final2.log`.
+- Normal renderer launch: **PASS** — both fresh packages ran for a 15-second process smoke without
+  `-nullrhi` or `-nosound`, produced no crash/assertion/fatal lines, and exited with controlled
+  status 0. Logs: `/tmp/ashes-phase43-development-normal-final5.log` and
+  `/tmp/ashes-phase43-shipping-normal-final6.log`.
+- Human validation: **UNTESTED** — no interactive playthrough is being claimed. Human review still
+  specifically covers HUD readability and reference match, listening quality, objective clarity,
+  combat/AI/movement/ADS/recoil, pickup/grenade/melee behavior, death/restart/checkpoint inventory
+  restoration, Manticore enter/drive/fire/exit, dialogue timing, countdown, terminal progression,
+  completion, final art quality, and real Windows/iOS/Android devices.
