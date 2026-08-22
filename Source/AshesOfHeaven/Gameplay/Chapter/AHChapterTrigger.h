@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "AHChapterTrigger.generated.h"
 
 class UBoxComponent;
@@ -24,6 +25,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Chapter")
 	bool bOneShot = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Chapter|Spatial")
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Chapter|Spatial")
+	FName ZoneId = NAME_None;
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterTriggerDelegate OnTriggered;

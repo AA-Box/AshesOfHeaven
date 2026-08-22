@@ -25,6 +25,7 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/VolumetricCloudComponent.h"
 #include "Engine/PostProcessVolume.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -145,6 +146,22 @@ namespace
 	{
 		return {Line(TEXT("OTHER LUCIAN"), TEXT("No more time."), 2.6f)};
 	}
+
+	FAutoConsoleCommandWithWorldAndArgs AHSpatialAuditCommand(
+		TEXT("AH.Debug.SpatialAudit"),
+		TEXT("Audit the current Chapter One stage and every canonical stage spatial definition."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+			TActorIterator<AAHChapterOneDirector> It(World);
+			if (It)
+			{
+				It->DebugSpatialAudit();
+			}
+		}));
 }
 
 AAHChapterOneDirector::AAHChapterOneDirector()
@@ -178,6 +195,7 @@ void AAHChapterOneDirector::BeginPlay()
 	Dialogue = GetWorld()->GetSubsystem<UAHDialogueSubsystem>();
 	Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>();
 	BuildMissionGraph();
+	BuildStageAnchors();
 	BuildGreybox();
 	BuildVisualArtTargets();
 	BuildMissionActors();
@@ -225,6 +243,15 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 
 	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
 	const FVector PlayerLocation = Player ? Player->GetActorLocation() : FVector::ZeroVector;
+	if (Player && GetWorld()->GetTimeSeconds() - LastSpatialRecoveryTime > 1.0f)
+	{
+		const FAHStageSpatialDefinition& CurrentDefinition = AHChapterSpatial::GetStageDefinition(GetCurrentStage());
+		if (PlayerLocation.ContainsNaN() || PlayerLocation.Z < CurrentDefinition.ExpectedBoundsMin.Z - 300.0f)
+		{
+			LastSpatialRecoveryTime = GetWorld()->GetTimeSeconds();
+			EnsureStageSpatialValidity(GetCurrentStage(), TEXT("FallRecovery"));
+		}
+	}
 	if (GetCurrentStage() == EAHChapterStage::CathedralApproach && (PlayerLocation.X > 13700.0f || (Manticore && Manticore->GetActorLocation().X > 13700.0f)))
 	{
 		CompleteCurrentObjective();
@@ -325,6 +352,182 @@ void AAHChapterOneDirector::ConfigureObjectives()
 	Chapter->SetObjectiveIndex(Objectives->GetCurrentObjectiveIndex());
 }
 
+bool AAHChapterOneDirector::ValidateStageSpatialDefinition(const FAHStageSpatialDefinition& Definition, bool bLogDetails) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	const bool bFinite = !Definition.SafePlayerLocation.ContainsNaN()
+		&& !Definition.StageAnchor.ContainsNaN()
+		&& !Definition.ObjectiveTargetLocation.ContainsNaN()
+		&& !Definition.SafePlayerRotation.ContainsNaN()
+		&& Definition.ExpectedBoundsMin.X <= Definition.ExpectedBoundsMax.X
+		&& Definition.ExpectedBoundsMin.Y <= Definition.ExpectedBoundsMax.Y
+		&& Definition.ExpectedBoundsMin.Z <= Definition.ExpectedBoundsMax.Z;
+	const bool bInBounds = Definition.SafePlayerLocation.X >= Definition.ExpectedBoundsMin.X
+		&& Definition.SafePlayerLocation.X <= Definition.ExpectedBoundsMax.X
+		&& Definition.SafePlayerLocation.Y >= Definition.ExpectedBoundsMin.Y
+		&& Definition.SafePlayerLocation.Y <= Definition.ExpectedBoundsMax.Y
+		&& Definition.SafePlayerLocation.Z >= Definition.ExpectedBoundsMin.Z
+		&& Definition.SafePlayerLocation.Z <= Definition.ExpectedBoundsMax.Z;
+	const bool bNearAnchor = FVector::Dist2D(Definition.SafePlayerLocation, Definition.StageAnchor) <= Definition.MaxDistanceFromAnchor;
+	const bool bTargetInBounds = Definition.ObjectiveTargetId == NAME_None
+		|| (Definition.ObjectiveTargetLocation.X >= Definition.ExpectedBoundsMin.X
+			&& Definition.ObjectiveTargetLocation.X <= Definition.ExpectedBoundsMax.X
+			&& Definition.ObjectiveTargetLocation.Y >= Definition.ExpectedBoundsMin.Y
+			&& Definition.ObjectiveTargetLocation.Y <= Definition.ExpectedBoundsMax.Y
+			&& Definition.ObjectiveTargetLocation.Z >= Definition.ExpectedBoundsMin.Z
+			&& Definition.ObjectiveTargetLocation.Z <= Definition.ExpectedBoundsMax.Z);
+	bool bAnchorActorValid = false;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (It->ActorHasTag(FName(TEXT("AH.StageAnchor")))
+			&& It->ActorHasTag(FName(*FString::Printf(TEXT("AH.Stage.%s"), *UEnum::GetValueAsString(Definition.Stage))))
+			&& FVector::Dist2D(It->GetActorLocation(), Definition.StageAnchor) <= 10.0f)
+		{
+			bAnchorActorValid = true;
+			break;
+		}
+	}
+	FHitResult Ground;
+	const bool bGroundHit = !Definition.bRequiresGround || World->LineTraceSingleByChannel(
+		Ground,
+		Definition.SafePlayerLocation + FVector(0.0f, 0.0f, 300.0f),
+		Definition.SafePlayerLocation - FVector(0.0f, 0.0f, 1500.0f),
+		ECC_Visibility);
+	const bool bGroundAtExpectedHeight = !Definition.bRequiresGround || (bGroundHit && FMath::Abs(Ground.ImpactPoint.Z - Definition.GameplayFloorZ) <= 180.0f);
+	AAHCombatPlayerCharacter* ExistingPlayer = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(World, 0));
+	FCollisionQueryParams DefinitionParams(SCENE_QUERY_STAT(AHStageSpatialDefinition), false, ExistingPlayer);
+	const bool bNoCapsulePenetration = !World->OverlapBlockingTestByChannel(
+		Definition.SafePlayerLocation,
+		FQuat::Identity,
+		ECC_Pawn,
+		FCollisionShape::MakeCapsule(34.0f, 88.0f),
+		DefinitionParams);
+	int32 NearbyPresentation = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (It->ActorHasTag(FName(TEXT("Phase4Presentation")))
+			&& FVector::Dist2D(It->GetActorLocation(), Definition.SafePlayerLocation) <= 2400.0f)
+		{
+			++NearbyPresentation;
+		}
+	}
+	const bool bPresentationNearby = NearbyPresentation >= 3;
+	const bool bPass = bFinite && bInBounds && bNearAnchor && bTargetInBounds && bAnchorActorValid && bGroundHit && bGroundAtExpectedHeight && bNoCapsulePenetration && bPresentationNearby;
+	if (bLogDetails)
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[SpatialAudit] %s %s zone=%s safe=%s anchor=%s anchorActor=%s targetBounds=%s ground=%s groundZ=%.1f expectedZ=%.1f capsule=%s presentation=%d"),
+			*UEnum::GetValueAsString(Definition.Stage),
+			bPass ? TEXT("PASS") : TEXT("FAIL"),
+			*Definition.ZoneId.ToString(),
+			*Definition.SafePlayerLocation.ToCompactString(),
+			*Definition.StageAnchor.ToCompactString(),
+			bAnchorActorValid ? TEXT("true") : TEXT("false"),
+			bTargetInBounds ? TEXT("true") : TEXT("false"),
+			bGroundHit ? TEXT("true") : TEXT("false"),
+			bGroundHit ? Ground.ImpactPoint.Z : -9999.0f,
+			Definition.GameplayFloorZ,
+			bNoCapsulePenetration ? TEXT("clear") : TEXT("blocked"),
+			NearbyPresentation);
+	}
+	return bPass;
+}
+
+bool AAHChapterOneDirector::ValidateStageSpatialState(EAHChapterStage Stage, bool bLogDetails) const
+{
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
+	if (!Player)
+	{
+		return false;
+	}
+	const FVector Location = Player->GetActorLocation();
+	const bool bInBounds = Location.X >= Definition.ExpectedBoundsMin.X && Location.X <= Definition.ExpectedBoundsMax.X
+		&& Location.Y >= Definition.ExpectedBoundsMin.Y && Location.Y <= Definition.ExpectedBoundsMax.Y
+		&& Location.Z >= Definition.ExpectedBoundsMin.Z && Location.Z <= Definition.ExpectedBoundsMax.Z;
+	const bool bNearAnchor = FVector::Dist2D(Location, Definition.StageAnchor) <= Definition.MaxDistanceFromAnchor;
+	FHitResult Ground;
+	const bool bGroundHit = GetWorld()->LineTraceSingleByChannel(Ground, Location + FVector(0.0f, 0.0f, 300.0f), Location - FVector(0.0f, 0.0f, 1500.0f), ECC_Visibility);
+	const bool bGroundAtExpectedHeight = bGroundHit && FMath::Abs(Ground.ImpactPoint.Z - Definition.GameplayFloorZ) <= 180.0f;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AHStageSpatialState), false, Player);
+	const bool bNoCapsulePenetration = !GetWorld()->OverlapBlockingTestByChannel(Location, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(34.0f, 88.0f), Params);
+	int32 NearbyPresentation = 0;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->ActorHasTag(FName(TEXT("Phase4Presentation"))) && FVector::Dist2D(It->GetActorLocation(), Location) <= 2400.0f)
+		{
+			++NearbyPresentation;
+		}
+	}
+	const bool bPass = bInBounds && bNearAnchor && bGroundHit && bGroundAtExpectedHeight && bNoCapsulePenetration && NearbyPresentation >= 3;
+	if (bLogDetails)
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[SpatialAudit] current stage=%s %s player=%s anchor=%s distance=%.1f ground=%s groundZ=%.1f presentation=%d"),
+			*UEnum::GetValueAsString(Stage), bPass ? TEXT("PASS") : TEXT("FAIL"), *Location.ToCompactString(), *Definition.StageAnchor.ToCompactString(), FVector::Dist2D(Location, Definition.StageAnchor), bGroundHit ? TEXT("true") : TEXT("false"), bGroundHit ? Ground.ImpactPoint.Z : -9999.0f, NearbyPresentation);
+	}
+	return bPass;
+}
+
+void AAHChapterOneDirector::EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason)
+{
+	if (ValidateStageSpatialState(Stage, false))
+	{
+		return;
+	}
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+	UE_LOG(LogAshesOfHeaven, Error, TEXT("[Spatial][ERROR] invalid stage transition stage=%s reason=%s; recovering to safe spawn=%s zone=%s"), *UEnum::GetValueAsString(Stage), Reason ? Reason : TEXT("unknown"), *Definition.SafePlayerLocation.ToCompactString(), *Definition.ZoneId.ToString());
+	TeleportPlayer(Definition.SafePlayerLocation, Definition.SafePlayerRotation);
+	if (!ValidateStageSpatialState(Stage, true))
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Spatial][ERROR] recovery failed stage=%s"), *UEnum::GetValueAsString(Stage));
+	}
+}
+
+void AAHChapterOneDirector::RunDelayedStageSpatialValidation(EAHChapterStage Stage)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	GetWorldTimerManager().SetTimer(StageSpatialValidationTimer, FTimerDelegate::CreateWeakLambda(this, [this, Stage]()
+	{
+		if (!Chapter || Chapter->GetStage() != Stage)
+		{
+			return;
+		}
+		if (!ValidateStageSpatialState(Stage, false))
+		{
+			EnsureStageSpatialValidity(Stage, TEXT("WorldSettled"));
+		}
+		ValidateStageObjectiveConsistency(Stage);
+	}), 0.25f, false);
+}
+
+void AAHChapterOneDirector::ValidateStageObjectiveConsistency(EAHChapterStage Stage) const
+{
+	if (!Chapter)
+	{
+		return;
+	}
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+	const int32 ExpectedIndex = UAHChapterSubsystem::ObjectiveIndexForStage(Stage);
+	const bool bIndexMatches = ExpectedIndex == INDEX_NONE || Chapter->GetState().ObjectiveIndex == ExpectedIndex;
+	// OnObjectiveCompleted broadcasts before UAHObjectiveSubsystem advances its cursor. The
+	// Chapter state already contains the next canonical index at that point, so accept only
+	// that one-step delegate window and let the delayed settled-state check verify the cursor.
+	const bool bObjectiveMatches = Definition.ObjectiveId == NAME_None
+		|| !Objectives
+		|| Objectives->IsCurrentObjective(Definition.ObjectiveId)
+		|| (bIndexMatches && ExpectedIndex > 0 && Objectives->GetCurrentObjectiveIndex() == ExpectedIndex - 1);
+	if (!bIndexMatches || !bObjectiveMatches)
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Spatial][ERROR] stage/objective mismatch stage=%s expectedObjective=%s expectedIndex=%d actualIndex=%d"), *UEnum::GetValueAsString(Stage), *Definition.ObjectiveId.ToString(), ExpectedIndex, Chapter->GetState().ObjectiveIndex);
+	}
+}
+
 void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 {
 	if (!Chapter)
@@ -338,6 +541,8 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d player=%s"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE, LoggedPlayer ? *LoggedPlayer->GetActorLocation().ToCompactString() : TEXT("none"));
 	#endif
 	Chapter->SetStage(Stage);
+	EnsureStageSpatialValidity(Stage, TEXT("StageTransition"));
+	ValidateStageObjectiveConsistency(Stage);
 	LogPresentationState(GetCurrentStage());
 
 	switch (Stage)
@@ -389,14 +594,9 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		break;
 	case EAHChapterStage::Escape:
 		SpawnEscapeEncounter();
-		if (!bOtherLucianShown)
-		{
-			bOtherLucianShown = true;
-			StartStage(EAHChapterStage::OtherLucian);
-		}
 		break;
 	case EAHChapterStage::OtherLucian:
-		SpawnFriendly(FVector(21900.0f, 500.0f, 160.0f), FName(TEXT("OtherLucian")));
+		SpawnFriendly(AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation + FVector(0.0f, -260.0f, 0.0f), FName(TEXT("OtherLucian")));
 		if (!bOtherLucianSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_OtherLucian"))))
 		{
 			bOtherLucianSequenceStarted = true;
@@ -433,6 +633,7 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	default:
 		break;
 	}
+	RunDelayedStageSpatialValidation(Stage);
 }
 
 void AAHChapterOneDirector::StartDialogueSequence(FName SequenceId, const TArray<FAHDialogueLine>& Lines)
@@ -462,6 +663,11 @@ void AAHChapterOneDirector::HandleTrigger(FName TriggerId)
 	if (TriggerId == FName(TEXT("ReachDefensiveLine")) || TriggerId == FName(TEXT("ReachTransitStation")) || TriggerId == FName(TEXT("CrossBattlefield")) || TriggerId == FName(TEXT("EnterCathedral")) || TriggerId == FName(TEXT("ReachTerminal")) || TriggerId == FName(TEXT("EscapeCathedral")))
 	{
 		CompleteCurrentObjective();
+	}
+	else if (TriggerId == FName(TEXT("OtherLucian")) && GetCurrentStage() == EAHChapterStage::Escape && !bOtherLucianShown)
+	{
+		bOtherLucianShown = true;
+		StartStage(EAHChapterStage::OtherLucian);
 	}
 }
 
@@ -529,6 +735,10 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	else if (SequenceId == FName(TEXT("Ch01_Nysa")))
 	{
 		CompleteCurrentObjective();
+	}
+	else if (SequenceId == FName(TEXT("Ch01_OtherLucian")))
+	{
+		StartStage(EAHChapterStage::Escape);
 	}
 }
 
@@ -632,12 +842,69 @@ void AAHChapterOneDirector::BuildGreybox()
 	SpawnBlock(FVector(18000.0f, 0.0f, 1800.0f), FVector(0.7f, 17.0f, 16.0f), FRotator::ZeroRotator, CathedralMaterial);
 	SpawnBlock(FVector(21500.0f, 0.0f, 600.0f), FVector(0.8f, 13.0f, 6.0f), FRotator::ZeroRotator, CathedralMaterial);
 	SpawnBlock(FVector(26000.0f, 0.0f, 300.0f), FVector(0.5f, 14.0f, 3.0f));
+	BuildCathedralSpatialRoute();
 	SpawnLabel(FVector(300.0f, -1180.0f, 300.0f), TEXT("EREBUS\nTEN YEARS EARLIER"), FColor(220, 220, 220));
 	SpawnLabel(FVector(3600.0f, -1180.0f, 300.0f), TEXT("TRANSIT STATION"), FColor(120, 180, 220));
 	SpawnLabel(FVector(7000.0f, -1180.0f, 300.0f), TEXT("OPEN BATTLEFIELD"), FColor(220, 140, 80));
 	SpawnLabel(FVector(13000.0f, -1600.0f, 2600.0f), TEXT("CATHEDRAL"), FColor(160, 120, 255));
 	SpawnLabel(FVector(30000.0f, -1000.0f, 400.0f), TEXT("TEN YEARS LATER"), FColor(120, 220, 190));
 	SpawnBattlefieldSimulation();
+}
+
+void AAHChapterOneDirector::BuildStageAnchors()
+{
+	if (!GetWorld() || !StageAnchors.IsEmpty())
+	{
+		return;
+	}
+	for (const FAHStageSpatialDefinition& Definition : AHChapterSpatial::GetStageDefinitions())
+	{
+		if (StageAnchors.ContainsByPredicate([&Definition](const TObjectPtr<AActor>& Existing)
+		{
+			return Existing && Existing->ActorHasTag(FName(*FString::Printf(TEXT("AH.Stage.%s"), *UEnum::GetValueAsString(Definition.Stage))));
+		}))
+		{
+			continue;
+		}
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (AActor* Anchor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params))
+		{
+			// A plain AActor has no root component, so the transform passed to SpawnActor
+			// is discarded. Give the runtime anchor a real scene root before placing it.
+			USceneComponent* AnchorRoot = NewObject<USceneComponent>(Anchor, TEXT("StageAnchorRoot"));
+			AnchorRoot->SetMobility(EComponentMobility::Movable);
+			Anchor->SetRootComponent(AnchorRoot);
+			AnchorRoot->RegisterComponent();
+			Anchor->SetActorLocation(Definition.StageAnchor);
+			#if WITH_EDITOR
+			Anchor->SetActorLabel(FString::Printf(TEXT("AHStageAnchor_%s"), *Definition.ZoneId.ToString()));
+			#endif
+			Anchor->Tags.Add(FName(TEXT("AH.StageAnchor")));
+			Anchor->Tags.Add(FName(*FString::Printf(TEXT("AH.Stage.%s"), *UEnum::GetValueAsString(Definition.Stage))));
+			Anchor->Tags.Add(FName(*FString::Printf(TEXT("AH.Zone.%s"), *Definition.ZoneId.ToString())));
+			StageAnchors.Add(Anchor);
+		}
+	}
+}
+
+void AAHChapterOneDirector::BuildCathedralSpatialRoute()
+{
+	// A raised, continuous route connects the Manticore approach to the terminal and
+	// escape. Every surface has one deliberate top at Z=790; the lower approach is a
+	// set of real steps instead of a vertical teleport between unrelated bands.
+	const FVector CathedralOrigin = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach).StageAnchor;
+	for (int32 Index = 0; Index < 16; ++Index)
+	{
+		const float X = CathedralOrigin.X - 500.0f + Index * 700.0f;
+		SpawnBlock(FVector(X, CathedralOrigin.Y, CathedralOrigin.Z - 50.0f), FVector(7.0f, 3.0f, 1.0f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
+	for (int32 Index = 0; Index < 10; ++Index)
+	{
+		const float X = CathedralOrigin.X - 2900.0f + Index * 240.0f;
+		const float TopZ = CathedralOrigin.Z - 756.0f + Index * 84.0f;
+		SpawnBlock(FVector(X, CathedralOrigin.Y, TopZ - 25.0f), FVector(1.2f, 3.0f, 0.50f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
 }
 
 void AAHChapterOneDirector::BuildVisualArtTargets()
@@ -858,43 +1125,63 @@ void AAHChapterOneDirector::BuildCathedralArtTarget()
 {
 	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
 	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
+	const FVector CathedralOrigin = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach).StageAnchor;
+	const auto Local = [&CathedralOrigin](const FVector& Offset)
+	{
+		return CathedralOrigin + Offset;
+	};
 
-	SpawnVisualShape(Cube, FVector(16400.0f, 0.0f, -50.0f), FVector(20.0f, 5.0f, 0.18f), FRotator::ZeroRotator, CathedralMaterial);
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), FVector(15100.0f, -700.0f, 880.0f), FRotator(0.0f, 0.0f, -3.0f), FVector(2.8f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), FVector(16800.0f, 700.0f, 1000.0f), FRotator(0.0f, 180.0f, 4.0f), FVector(2.4f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_GlyphPanel.BP_Cathedral_GlyphPanel_C"), FVector(17600.0f, -250.0f, 1250.0f), FRotator(0.0f, 0.0f, 0.0f), FVector(1.4f));
-	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(16000.0f, -360.0f, 790.0f), FRotator::ZeroRotator, FVector(0.85f));
+	// The Cathedral route is authored at the same raised elevation as its collision
+	// twin. The old base slab at Z=-50 left the player walking on an invisible floor
+	// while the human walkway and triggers floated around Z=790-850.
+	for (int32 Index = 0; Index < 16; ++Index)
+	{
+		const float X = CathedralOrigin.X - 500.0f + Index * 700.0f;
+		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 0.0f, -5.0f)), FVector(7.0f, 3.0f, 0.10f), FRotator::ZeroRotator, HumanMetalMaterial);
+		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, -285.0f, 145.0f)), FVector(7.0f, 0.06f, 1.5f), FRotator::ZeroRotator, HumanMetalMaterial);
+		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 285.0f, 145.0f)), FVector(7.0f, 0.06f, 1.5f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
+	for (int32 Index = 0; Index < 10; ++Index)
+	{
+		const float X = CathedralOrigin.X - 2900.0f + Index * 240.0f;
+		const float TopZ = CathedralOrigin.Z - 756.0f + Index * 84.0f;
+		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 0.0f, TopZ - 25.0f - CathedralOrigin.Z)), FVector(1.2f, 3.0f, 0.50f), FRotator::ZeroRotator, HumanMetalMaterial);
+	}
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), Local(FVector(600.0f, -700.0f, 90.0f)), FRotator(0.0f, 0.0f, -3.0f), FVector(2.8f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), Local(FVector(2300.0f, 700.0f, 210.0f)), FRotator(0.0f, 180.0f, 4.0f), FVector(2.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_GlyphPanel.BP_Cathedral_GlyphPanel_C"), Local(FVector(3100.0f, -250.0f, 460.0f)), FRotator(0.0f, 0.0f, 0.0f), FVector(1.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), Local(FVector(1500.0f, -360.0f, 0.0f)), FRotator::ZeroRotator, FVector(0.85f));
 
 	// A controlled vocabulary of fins, frames and voids establishes the Cathedral language.
-	for (const float X : {14200.0f, 15100.0f, 16000.0f, 17200.0f})
+	for (const float XOffset : {-300.0f, 600.0f, 1500.0f, 2700.0f})
 	{
-		SpawnVisualShape(Cube, FVector(X, -1050.0f, 1300.0f), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, 2.0f), VeilObsidianMaterial);
-		SpawnVisualShape(Cube, FVector(X, 1050.0f, 1300.0f), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, -2.0f), VeilObsidianMaterial);
+		SpawnVisualShape(Cube, Local(FVector(XOffset, -1050.0f, 510.0f)), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, 2.0f), VeilObsidianMaterial);
+		SpawnVisualShape(Cube, Local(FVector(XOffset, 1050.0f, 510.0f)), FVector(0.30f, 0.25f, 13.0f), FRotator(0.0f, 0.0f, -2.0f), VeilObsidianMaterial);
 	}
-	SpawnVisualShape(Cube, FVector(15000.0f, 0.0f, 2300.0f), FVector(0.28f, 14.0f, 0.28f), FRotator::ZeroRotator, VeilObsidianMaterial);
-	SpawnVisualShape(Cube, FVector(16400.0f, 0.0f, 1700.0f), FVector(0.18f, 9.0f, 0.18f), FRotator(0.0f, 0.0f, 8.0f), CathedralMaterial);
-	SpawnVisualShape(Cube, FVector(17800.0f, 0.0f, 2100.0f), FVector(0.22f, 11.0f, 0.22f), FRotator(0.0f, 0.0f, -5.0f), VeilObsidianMaterial);
-	SpawnVisualShape(Cube, FVector(16800.0f, -700.0f, 2050.0f), FVector(1.4f, 3.8f, 0.38f), FRotator(0.0f, 0.0f, 7.0f), VeilObsidianMaterial);
-	SpawnVisualShape(Cube, FVector(17400.0f, 650.0f, 2550.0f), FVector(1.0f, 2.8f, 0.32f), FRotator(0.0f, 0.0f, -6.0f), VeilObsidianMaterial);
-	SpawnVisualShape(Cube, FVector(18100.0f, 0.0f, 1500.0f), FVector(0.20f, 7.0f, 0.20f), FRotator::ZeroRotator, VeilObsidianMaterial);
+	SpawnVisualShape(Cube, Local(FVector(500.0f, 0.0f, 1510.0f)), FVector(0.28f, 14.0f, 0.28f), FRotator::ZeroRotator, VeilObsidianMaterial);
+	SpawnVisualShape(Cube, Local(FVector(1900.0f, 0.0f, 910.0f)), FVector(0.18f, 9.0f, 0.18f), FRotator(0.0f, 0.0f, 8.0f), CathedralMaterial);
+	SpawnVisualShape(Cube, Local(FVector(3300.0f, 0.0f, 1310.0f)), FVector(0.22f, 11.0f, 0.22f), FRotator(0.0f, 0.0f, -5.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, Local(FVector(2300.0f, -700.0f, 1260.0f)), FVector(1.4f, 3.8f, 0.38f), FRotator(0.0f, 0.0f, 7.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, Local(FVector(2900.0f, 650.0f, 1760.0f)), FVector(1.0f, 2.8f, 0.32f), FRotator(0.0f, 0.0f, -6.0f), VeilObsidianMaterial);
+	SpawnVisualShape(Cube, Local(FVector(3600.0f, 0.0f, 710.0f)), FVector(0.20f, 7.0f, 0.20f), FRotator::ZeroRotator, VeilObsidianMaterial);
 
 	// Familiar human walkway and expedition equipment provide scale against the void.
-	SpawnVisualShape(Cube, FVector(16000.0f, 0.0f, 790.0f), FVector(16.0f, 2.4f, 0.08f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(16000.0f, -245.0f, 900.0f), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(16000.0f, 245.0f, 900.0f), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(17400.0f, -280.0f, 900.0f), FVector(1.5f, 0.85f, 0.65f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cylinder, FVector(17400.0f, -280.0f, 1060.0f), FVector(0.5f, 0.5f, 1.2f), FRotator::ZeroRotator, HumanMetalMaterial);
-	SpawnVisualShape(Cube, FVector(17650.0f, -280.0f, 920.0f), FVector(0.12f, 0.12f, 1.0f), FRotator(0.0f, 0.0f, 25.0f), EmissiveTechnologyMaterial);
-	SpawnCathedralGlyph(FVector(16000.0f, -255.0f, 1420.0f), 150.0f, 1.0f);
-	SpawnCathedralGlyph(FVector(17600.0f, -255.0f, 1710.0f), 95.0f, 0.72f);
-	SpawnCathedralGlyph(FVector(18100.0f, -250.0f, 1490.0f), 210.0f, 1.35f);
+	SpawnVisualShape(Cube, Local(FVector(1500.0f, 0.0f, 0.0f)), FVector(16.0f, 2.4f, 0.08f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, Local(FVector(1500.0f, -245.0f, 110.0f)), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, Local(FVector(1500.0f, 245.0f, 110.0f)), FVector(16.0f, 0.05f, 0.55f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, Local(FVector(2900.0f, -280.0f, 110.0f)), FVector(1.5f, 0.85f, 0.65f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cylinder, Local(FVector(2900.0f, -280.0f, 270.0f)), FVector(0.5f, 0.5f, 1.2f), FRotator::ZeroRotator, HumanMetalMaterial);
+	SpawnVisualShape(Cube, Local(FVector(3150.0f, -280.0f, 130.0f)), FVector(0.12f, 0.12f, 1.0f), FRotator(0.0f, 0.0f, 25.0f), EmissiveTechnologyMaterial);
+	SpawnCathedralGlyph(Local(FVector(1500.0f, -255.0f, 630.0f)), 150.0f, 1.0f);
+	SpawnCathedralGlyph(Local(FVector(3100.0f, -255.0f, 920.0f)), 95.0f, 0.72f);
+	SpawnCathedralGlyph(Local(FVector(3600.0f, -250.0f, 700.0f)), 210.0f, 1.35f);
 
-	SpawnVisualLight(FVector(15800.0f, 0.0f, 1350.0f), FLinearColor(0.42f, 0.56f, 1.0f), 700.0f, 1000.0f);
-	SpawnVisualLight(FVector(17900.0f, 0.0f, 1000.0f), FLinearColor(0.72f, 0.82f, 1.0f), 420.0f, 650.0f);
-	SpawnVisualDust(FVector(15800.0f, 0.0f, 1600.0f), 1.4f);
-	SpawnVisualDust(FVector(17700.0f, 260.0f, 1250.0f), 0.9f);
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes"), FVector(16800.0f, 0.0f, 1500.0f), FVector(1.5f));
-	SpawnLabel(FVector(15700.0f, -1320.0f, 2700.0f), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
+	SpawnVisualLight(Local(FVector(1300.0f, 0.0f, 560.0f)), FLinearColor(0.42f, 0.56f, 1.0f), 700.0f, 1000.0f);
+	SpawnVisualLight(Local(FVector(3400.0f, 0.0f, 210.0f)), FLinearColor(0.72f, 0.82f, 1.0f), 420.0f, 650.0f);
+	SpawnVisualDust(Local(FVector(1300.0f, 0.0f, 810.0f)), 1.4f);
+	SpawnVisualDust(Local(FVector(3200.0f, 260.0f, 460.0f)), 0.9f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes"), Local(FVector(2300.0f, 0.0f, 710.0f)), FVector(1.5f));
+	SpawnLabel(Local(FVector(1200.0f, -1320.0f, 1910.0f)), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
 }
 
 void AAHChapterOneDirector::BuildPresentDayArtTarget()
@@ -926,6 +1213,8 @@ AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath,
 	UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath);
 	if (!Mesh)
 	{
+		++FailedMeshLoads;
+		++MissingPresentationAssets;
 		#if !UE_BUILD_SHIPPING
 		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] mesh failed to load path=%s"), MeshPath);
 		#endif
@@ -944,6 +1233,11 @@ AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath,
 		Component->SetCanEverAffectNavigation(false);
 		Shape->Tags.Add(FName(TEXT("Phase4Visual")));
 		Shape->Tags.Add(FName(TEXT("Phase4Presentation")));
+		const FName ZoneId = ResolvePresentationZone(Location);
+		if (ZoneId != NAME_None)
+		{
+			Shape->Tags.Add(FName(*FString::Printf(TEXT("AH.Zone.%s"), *ZoneId.ToString())));
+		}
 		++PresentationActorCount;
 		if (MaterialOverride || BlockMaterial)
 		{
@@ -962,6 +1256,8 @@ AActor* AAHChapterOneDirector::SpawnPresentationProp(const TCHAR* BlueprintPath,
 	UClass* PropClass = LoadClass<AActor>(nullptr, BlueprintPath);
 	if (!PropClass)
 	{
+		++FailedBlueprintSpawns;
+		++MissingPresentationAssets;
 		#if !UE_BUILD_SHIPPING
 		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] prop failed to load path=%s"), BlueprintPath);
 		#endif
@@ -974,6 +1270,11 @@ AActor* AAHChapterOneDirector::SpawnPresentationProp(const TCHAR* BlueprintPath,
 	{
 		Prop->Tags.Add(FName(TEXT("Phase4Presentation")));
 		Prop->Tags.Add(FName(TEXT("Phase4RuntimeProp")));
+		const FName ZoneId = ResolvePresentationZone(Location);
+		if (ZoneId != NAME_None)
+		{
+			Prop->Tags.Add(FName(*FString::Printf(TEXT("AH.Zone.%s"), *ZoneId.ToString())));
+		}
 		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
 		Prop->GetComponents(PrimitiveComponents);
 		for (UPrimitiveComponent* Component : PrimitiveComponents)
@@ -989,6 +1290,38 @@ AActor* AAHChapterOneDirector::SpawnPresentationProp(const TCHAR* BlueprintPath,
 	return Prop;
 }
 
+FName AAHChapterOneDirector::ResolvePresentationZone(const FVector& Location) const
+{
+	FName BestZone = NAME_None;
+	float BestDistanceSquared = TNumericLimits<float>::Max();
+	for (const FAHStageSpatialDefinition& Definition : AHChapterSpatial::GetStageDefinitions())
+	{
+		const bool bInsideBounds = Location.X >= Definition.ExpectedBoundsMin.X
+			&& Location.X <= Definition.ExpectedBoundsMax.X
+			&& Location.Y >= Definition.ExpectedBoundsMin.Y
+			&& Location.Y <= Definition.ExpectedBoundsMax.Y;
+		const float DistanceSquared = FVector::DistSquared2D(Location, Definition.StageAnchor);
+		if (bInsideBounds && DistanceSquared < BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			BestZone = Definition.ZoneId;
+		}
+	}
+	if (BestZone == NAME_None)
+	{
+		for (const FAHStageSpatialDefinition& Definition : AHChapterSpatial::GetStageDefinitions())
+		{
+			const float DistanceSquared = FVector::DistSquared2D(Location, Definition.StageAnchor);
+			if (DistanceSquared < BestDistanceSquared)
+			{
+				BestDistanceSquared = DistanceSquared;
+				BestZone = Definition.ZoneId;
+			}
+		}
+	}
+	return BestZone;
+}
+
 void AAHChapterOneDirector::SpawnVisualEffect(const TCHAR* SystemPath, const FVector& Location, const FVector& Scale)
 {
 	if (!GetWorld() || !SystemPath)
@@ -998,6 +1331,8 @@ void AAHChapterOneDirector::SpawnVisualEffect(const TCHAR* SystemPath, const FVe
 	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, SystemPath);
 	if (!System)
 	{
+		++FailedVFXLoads;
+		++MissingPresentationAssets;
 		#if !UE_BUILD_SHIPPING
 		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] VFX failed to load path=%s"), SystemPath);
 		#endif
@@ -1006,6 +1341,11 @@ void AAHChapterOneDirector::SpawnVisualEffect(const TCHAR* SystemPath, const FVe
 	if (UNiagaraComponent* Component = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), System, Location, FRotator::ZeroRotator, Scale, true, true, ENCPoolMethod::AutoRelease))
 	{
 		Component->ComponentTags.Add(FName(TEXT("Phase4PresentationFX")));
+		const FName ZoneId = ResolvePresentationZone(Location);
+		if (ZoneId != NAME_None)
+		{
+			Component->ComponentTags.Add(FName(*FString::Printf(TEXT("AH.Zone.%s"), *ZoneId.ToString())));
+		}
 		++PresentationVFXCount;
 	}
 }
@@ -1251,17 +1591,26 @@ void AAHChapterOneDirector::BuildMissionActors()
 		return;
 	}
 	bMissionActorsBuilt = true;
-	AAHChapterTrigger* Trigger = SpawnTrigger(FVector(-600.0f, 0.0f, 120.0f), FVector(280.0f, 1000.0f, 160.0f), FName(TEXT("ReachDefensiveLine")));
+	const FAHStageSpatialDefinition& ErebusOpening = AHChapterSpatial::GetStageDefinition(EAHChapterStage::ErebusOpening);
+	AAHChapterTrigger* Trigger = SpawnTrigger(ErebusOpening.ObjectiveTargetLocation, FVector(280.0f, 1000.0f, 160.0f), FName(TEXT("ReachDefensiveLine")), EAHChapterStage::ErebusOpening);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	Trigger = SpawnTrigger(FVector(3500.0f, 0.0f, 120.0f), FVector(280.0f, 900.0f, 180.0f), FName(TEXT("ReachTransitStation")));
+	const FAHStageSpatialDefinition& Transit = AHChapterSpatial::GetStageDefinition(EAHChapterStage::TransitStation);
+	Trigger = SpawnTrigger(Transit.ObjectiveTargetLocation, FVector(280.0f, 900.0f, 180.0f), FName(TEXT("ReachTransitStation")), EAHChapterStage::TransitStation);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	Trigger = SpawnTrigger(FVector(7200.0f, 0.0f, 120.0f), FVector(300.0f, 1100.0f, 180.0f), FName(TEXT("CrossBattlefield")));
+	const FAHStageSpatialDefinition& Battlefield = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpenBattlefield);
+	Trigger = SpawnTrigger(Battlefield.ObjectiveTargetLocation, FVector(300.0f, 1100.0f, 180.0f), FName(TEXT("CrossBattlefield")), EAHChapterStage::OpenBattlefield);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	Trigger = SpawnTrigger(FVector(14700.0f, 0.0f, 700.0f), FVector(400.0f, 1700.0f, 800.0f), FName(TEXT("EnterCathedral")));
+	const FAHStageSpatialDefinition& CathedralApproach = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach);
+	Trigger = SpawnTrigger(CathedralApproach.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::CathedralApproach);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	Trigger = SpawnTrigger(FVector(17800.0f, 0.0f, 800.0f), FVector(300.0f, 1100.0f, 500.0f), FName(TEXT("ReachTerminal")));
+	const FAHStageSpatialDefinition& CathedralInterior = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior);
+	Trigger = SpawnTrigger(CathedralInterior.ObjectiveTargetLocation, FVector(300.0f, 650.0f, 220.0f), FName(TEXT("ReachTerminal")), EAHChapterStage::CathedralInterior);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	Trigger = SpawnTrigger(FVector(24400.0f, 0.0f, 250.0f), FVector(450.0f, 1500.0f, 400.0f), FName(TEXT("EscapeCathedral")));
+	const FAHStageSpatialDefinition& Escape = AHChapterSpatial::GetStageDefinition(EAHChapterStage::Escape);
+	Trigger = SpawnTrigger(Escape.ObjectiveTargetLocation, FVector(450.0f, 650.0f, 220.0f), FName(TEXT("EscapeCathedral")), EAHChapterStage::Escape);
+	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
+	const FAHStageSpatialDefinition& OtherLucian = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian);
+	Trigger = SpawnTrigger(OtherLucian.ObjectiveTargetLocation, FVector(250.0f, 650.0f, 220.0f), FName(TEXT("OtherLucian")), EAHChapterStage::Escape);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
 
 	OpeningEncounter = SpawnEncounter(FName(TEXT("Ch01_OpeningBattle")), FVector(900.0f, 0.0f, 120.0f), 5, OpeningBattleObjective,
@@ -1269,13 +1618,14 @@ void AAHChapterOneDirector::BuildMissionActors()
 	BattlefieldEncounter = SpawnEncounter(FName(TEXT("Ch01_Battlefield")), FVector(7600.0f, 0.0f, 120.0f), 7, NAME_None,
 		{FVector(7800.0f, -900.0f, 120.0f), FVector(8200.0f, 900.0f, 120.0f), FVector(8600.0f, -750.0f, 120.0f), FVector(9000.0f, 750.0f, 120.0f), FVector(9400.0f, -500.0f, 120.0f), FVector(9700.0f, 500.0f, 120.0f), FVector(10100.0f, 0.0f, 120.0f)});
 	BattlefieldEncounter->AdditionalEnemyClasses.Add(AAHVeilWardenCharacter::StaticClass());
-	EscapeEncounter = SpawnEncounter(FName(TEXT("Ch01_Escape")), FVector(20500.0f, 0.0f, 850.0f), 5, NAME_None,
-		{FVector(20700.0f, -1000.0f, 850.0f), FVector(20900.0f, 1000.0f, 850.0f), FVector(21400.0f, -850.0f, 850.0f), FVector(21800.0f, 800.0f, 850.0f), FVector(22400.0f, 0.0f, 850.0f)});
+	const FVector EscapeOrigin = Escape.StageAnchor;
+	EscapeEncounter = SpawnEncounter(FName(TEXT("Ch01_Escape")), EscapeOrigin + FVector(-500.0f, 0.0f, 100.0f), 5, NAME_None,
+		{EscapeOrigin + FVector(-300.0f, -260.0f, 100.0f), EscapeOrigin + FVector(-100.0f, 260.0f, 100.0f), EscapeOrigin + FVector(400.0f, -240.0f, 100.0f), EscapeOrigin + FVector(800.0f, 240.0f, 100.0f), EscapeOrigin + FVector(1400.0f, 0.0f, 100.0f)});
 	EscapeEncounter->AdditionalEnemyClasses.Add(AAHVeilWardenCharacter::StaticClass());
 
-	for (int32 Index = 0; Index < 11; ++Index)
+	for (const FAHCheckpointSpatialDefinition& Checkpoint : AHChapterSpatial::GetCheckpointDefinitions())
 	{
-		SpawnCheckpoint(FVector(-900.0f + Index * 2500.0f, 0.0f, 120.0f), FName(*FString::Printf(TEXT("Ch01_Checkpoint_%02d"), Index + 1)));
+		SpawnCheckpoint(Checkpoint.Location, Checkpoint.CheckpointId);
 	}
 	SpawnFriendly(FVector(4800.0f, -240.0f, 120.0f), FName(TEXT("Kell")));
 	SpawnFriendly(FVector(5600.0f, 320.0f, 120.0f));
@@ -1311,11 +1661,13 @@ void AAHChapterOneDirector::SpawnEscapeEncounter()
 
 void AAHChapterOneDirector::SpawnPresentDayScene()
 {
-	TeleportPlayer(FVector(29200.0f, 0.0f, 150.0f), FRotator::ZeroRotator);
-	SpawnBlock(FVector(30000.0f, 0.0f, -80.0f), FVector(18.0f, 10.0f, 0.8f));
-	SpawnBlock(FVector(30200.0f, -850.0f, 250.0f), FVector(5.0f, 0.25f, 2.5f));
-	SpawnBlock(FVector(30200.0f, 850.0f, 250.0f), FVector(5.0f, 0.25f, 2.5f));
-	SpawnLabel(FVector(30000.0f, -1000.0f, 500.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220), 105.0f);
+	const FAHStageSpatialDefinition& PresentDay = AHChapterSpatial::GetStageDefinition(EAHChapterStage::TenYearsLater);
+	const FVector Origin = PresentDay.StageAnchor;
+	TeleportPlayer(PresentDay.SafePlayerLocation, PresentDay.SafePlayerRotation);
+	SpawnBlock(Origin + FVector(0.0f, 0.0f, -40.0f), FVector(18.0f, 10.0f, 0.8f));
+	SpawnBlock(Origin + FVector(200.0f, -850.0f, 290.0f), FVector(5.0f, 0.25f, 2.5f));
+	SpawnBlock(Origin + FVector(200.0f, 850.0f, 290.0f), FVector(5.0f, 0.25f, 2.5f));
+	SpawnLabel(Origin + FVector(0.0f, -1000.0f, 540.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220), 105.0f);
 }
 
 void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
@@ -1361,7 +1713,7 @@ void AAHChapterOneDirector::SpawnCathedralTerminal()
 	{
 		return;
 	}
-	FailsafeTerminal = GetWorld()->SpawnActor<AAHChapterTerminal>(AAHChapterTerminal::StaticClass(), FVector(18100.0f, 0.0f, 900.0f), FRotator::ZeroRotator);
+	FailsafeTerminal = GetWorld()->SpawnActor<AAHChapterTerminal>(AAHChapterTerminal::StaticClass(), AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeTerminal).ObjectiveTargetLocation, FRotator::ZeroRotator);
 	if (FailsafeTerminal)
 	{
 		FailsafeTerminal->TerminalMesh->SetStaticMesh(BlockMesh);
@@ -1377,7 +1729,7 @@ void AAHChapterOneDirector::SpawnManticore()
 	{
 		return;
 	}
-	Manticore = GetWorld()->SpawnActor<AAHManticoreVehicle>(AAHManticoreVehicle::StaticClass(), FVector(8300.0f, -280.0f, 180.0f), FRotator::ZeroRotator);
+	Manticore = GetWorld()->SpawnActor<AAHManticoreVehicle>(AAHManticoreVehicle::StaticClass(), AHChapterSpatial::GetStageDefinition(EAHChapterStage::ManticoreSection).ObjectiveTargetLocation, FRotator::ZeroRotator);
 	if (Manticore)
 	{
 		Manticore->VehicleMesh->SetStaticMesh(BlockMesh);
@@ -1550,16 +1902,26 @@ void AAHChapterOneDirector::SpawnCheckpoint(const FVector& Location, FName Id)
 	if (Checkpoint)
 	{
 		Checkpoint->CheckpointId = Id;
+		if (const FAHCheckpointSpatialDefinition* Definition = AHChapterSpatial::FindCheckpointDefinition(Id))
+		{
+			Checkpoint->Stage = Definition->Stage;
+			Checkpoint->ZoneId = Definition->ZoneId;
+			Checkpoint->SetActorRotation(Definition->Rotation);
+		}
+		Checkpoint->Tags.Add(FName(TEXT("AH.SpatialCheckpoint")));
 	}
 }
 
-AAHChapterTrigger* AAHChapterOneDirector::SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id)
+AAHChapterTrigger* AAHChapterOneDirector::SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id, EAHChapterStage Stage)
 {
 	AAHChapterTrigger* Trigger = GetWorld()->SpawnActor<AAHChapterTrigger>(AAHChapterTrigger::StaticClass(), Location, FRotator::ZeroRotator);
 	if (Trigger)
 	{
 		Trigger->TriggerId = Id;
+		Trigger->Stage = Stage;
+		Trigger->ZoneId = AHChapterSpatial::GetStageDefinition(Stage).ZoneId;
 		Trigger->Trigger->SetBoxExtent(Extent);
+		Trigger->Tags.Add(FName(TEXT("AH.SpatialTrigger")));
 		Triggers.Add(Trigger);
 	}
 	return Trigger;
@@ -1714,14 +2076,19 @@ void AAHChapterOneDirector::LogPresentationState(EAHChapterStage Stage)
 		: Stage >= EAHChapterStage::CathedralApproach && Stage <= EAHChapterStage::Escape
 		? FName(TEXT("Environment.Cathedral"))
 		: FName(TEXT("Environment.Erebus"));
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] Stage=%s Profile=%s MaterialFamily=%s Atmosphere=%s Audio=%s PlacedActors=%d VFX=%d"),
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] Stage=%s Profile=%s MaterialFamily=%s Atmosphere=%s Audio=%s PlacedActors=%d VFX=%d LoadedPresentationAssets=%d MissingPresentationAssets=%d FailedBlueprintSpawns=%d FailedMeshLoads=%d FailedVFXLoads=%d"),
 		*UEnum::GetValueAsString(Stage),
 		*Profile,
 		EnvironmentStyle ? TEXT("authored") : TEXT("missing"),
 		EnvironmentStyle ? TEXT("fog+sky+lighting") : TEXT("missing"),
 		*EnvironmentAudio.ToString(),
 		PresentationActorCount,
-		PresentationVFXCount);
+		PresentationVFXCount,
+		PresentationActorCount + PresentationVFXCount,
+		MissingPresentationAssets,
+		FailedBlueprintSpawns,
+		FailedMeshLoads,
+		FailedVFXLoads);
 	#if !UE_BUILD_SHIPPING
 	if (!EnvironmentStyle)
 	{
@@ -1742,6 +2109,14 @@ void AAHChapterOneDirector::DebugSkipToStage(EAHChapterStage Stage)
 {
 	if (Chapter)
 	{
+		const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+		const int32 ObjectiveIndex = UAHChapterSubsystem::ObjectiveIndexForStage(Stage);
+		if (Objectives && ObjectiveIndex != INDEX_NONE)
+		{
+			Objectives->RestoreState(ObjectiveIndex);
+			Chapter->SetObjectiveIndex(ObjectiveIndex);
+		}
+		TeleportPlayer(Definition.SafePlayerLocation, Definition.SafePlayerRotation);
 		StartStage(Stage);
 	}
 }
@@ -1790,10 +2165,34 @@ void AAHChapterOneDirector::DebugSpawnManticore()
 
 void AAHChapterOneDirector::DebugTeleportToCathedral()
 {
-	TeleportPlayer(FVector(15000.0f, 0.0f, 850.0f));
+	TeleportPlayer(AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior).SafePlayerLocation, AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior).SafePlayerRotation);
 }
 
 void AAHChapterOneDirector::DebugTeleportToPresentDay()
 {
 	StartStage(EAHChapterStage::TenYearsLater);
+}
+
+void AAHChapterOneDirector::DebugSpatialAudit()
+{
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[SpatialAudit] BEGIN current=%s"), *UEnum::GetValueAsString(GetCurrentStage()));
+	for (const FAHStageSpatialDefinition& Definition : AHChapterSpatial::GetStageDefinitions())
+	{
+		const bool bPass = ValidateStageSpatialDefinition(Definition, true);
+		const bool bTargetBounds = Definition.ObjectiveTargetLocation.X >= Definition.ExpectedBoundsMin.X
+			&& Definition.ObjectiveTargetLocation.X <= Definition.ExpectedBoundsMax.X
+			&& Definition.ObjectiveTargetLocation.Y >= Definition.ExpectedBoundsMin.Y
+			&& Definition.ObjectiveTargetLocation.Y <= Definition.ExpectedBoundsMax.Y;
+		if (!bTargetBounds)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[SpatialAudit] %s FAIL objective target outside bounds target=%s"), *UEnum::GetValueAsString(Definition.Stage), *Definition.ObjectiveTargetLocation.ToCompactString());
+		}
+		if (!bPass)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[SpatialAudit] %s FAIL canonical definition"), *UEnum::GetValueAsString(Definition.Stage));
+		}
+	}
+	ValidateStageSpatialState(GetCurrentStage(), true);
+	ValidateStageObjectiveConsistency(GetCurrentStage());
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[SpatialAudit] END"));
 }

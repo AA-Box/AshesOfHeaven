@@ -7,7 +7,8 @@ class USoundBase;
 
 namespace AHChapterStateConstants
 {
-	constexpr int32 CurrentSaveVersion = 2;
+	constexpr int32 CurrentSaveVersion = 4;
+	constexpr int32 CurrentSpatialSchemaVersion = 2;
 	constexpr int32 ObjectiveCount = 17;
 }
 
@@ -36,6 +37,86 @@ enum class EAHChapterStage : uint8
 	StarsDisappearing,
 	ChapterComplete
 };
+
+USTRUCT(BlueprintType)
+struct ASHESOFHEAVEN_API FAHStageSpatialDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName ZoneId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector SafePlayerLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FRotator SafePlayerRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector StageAnchor = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector ExpectedBoundsMin = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector ExpectedBoundsMax = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	float MaxDistanceFromAnchor = 4000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	float GameplayFloorZ = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	bool bRequiresGround = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName EnvironmentProfile = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName ObjectiveId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName ObjectiveTargetId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector ObjectiveTargetLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName CheckpointId = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct ASHESOFHEAVEN_API FAHCheckpointSpatialDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName CheckpointId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FName ZoneId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial")
+	FRotator Rotation = FRotator::ZeroRotator;
+};
+
+namespace AHChapterSpatial
+{
+	ASHESOFHEAVEN_API const FAHStageSpatialDefinition& GetStageDefinition(EAHChapterStage Stage);
+	ASHESOFHEAVEN_API const TArray<FAHStageSpatialDefinition>& GetStageDefinitions();
+	ASHESOFHEAVEN_API const TArray<FAHCheckpointSpatialDefinition>& GetCheckpointDefinitions();
+	ASHESOFHEAVEN_API const FAHCheckpointSpatialDefinition* FindCheckpointDefinition(FName CheckpointId);
+}
 
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHDialogueLine

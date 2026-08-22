@@ -25,8 +25,12 @@ public:
 	 */
 	bool RestoreFromState(const FAHCombatCheckpointState& State);
 
+	/** Recover to the canonical safe spawn for the restored chapter stage without using stale coordinates. */
+	bool RecoverToCanonicalStage();
+
 	/** True when the location is finite, inside the chapter play band, and has blocking ground beneath it. */
 	static bool IsCheckpointTransformValid(UWorld* World, const FVector& Location);
+	static bool IsCheckpointTransformValid(UWorld* World, EAHChapterStage Stage, const FVector& Location);
 
 	UFUNCTION(BlueprintCallable, Category="Checkpoint")
 	void ReloadLatestCheckpoint();

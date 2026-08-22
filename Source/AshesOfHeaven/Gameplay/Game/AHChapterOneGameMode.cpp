@@ -9,6 +9,7 @@
 #include "GameFramework/Character.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/Level/AHChapterOneDirector.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/UI/AHCombatHUD.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Engine/World.h"
@@ -71,13 +72,15 @@ void AAHChapterOneGameMode::BeginPlay()
 
 AActor* AAHChapterOneGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
+	const FAHStageSpatialDefinition& Opening = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpeningBlack);
 	TArray<AActor*> Starts;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APlayerStart::StaticClass(), Starts);
 	if (!Starts.IsEmpty())
 	{
+		Starts[0]->SetActorLocationAndRotation(Opening.SafePlayerLocation, Opening.SafePlayerRotation);
 		return Starts[0];
 	}
-	return GetWorld()->SpawnActor<APlayerStart>(APlayerStart::StaticClass(), FVector(-1400.0f, 0.0f, 120.0f), FRotator::ZeroRotator);
+	return GetWorld()->SpawnActor<APlayerStart>(APlayerStart::StaticClass(), Opening.SafePlayerLocation, Opening.SafePlayerRotation);
 }
 
 void AAHChapterOneGameMode::RestoreCheckpointAfterSpawn()
@@ -93,7 +96,14 @@ void AAHChapterOneGameMode::RestoreCheckpointAfterSpawn()
 	{
 		if (!Checkpoints->RestoreLatestCheckpoint())
 		{
-			Checkpoints->CaptureCheckpoint(FName(TEXT("Ch01_Opening")));
+			Checkpoints->RecoverToCanonicalStage();
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UAHChapterSubsystem* Chapter = GameInstance->GetSubsystem<UAHChapterSubsystem>())
+				{
+					Checkpoints->CaptureCheckpoint(AHChapterSpatial::GetStageDefinition(Chapter->GetStage()).CheckpointId);
+				}
+			}
 		}
 	}
 	LogObjective01SpatialState();

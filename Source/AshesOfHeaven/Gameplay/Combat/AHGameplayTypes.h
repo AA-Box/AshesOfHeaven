@@ -52,6 +52,15 @@ struct ASHESOFHEAVEN_API FAHCombatCheckpointState
 	FName CheckpointId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	FName ZoneId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	int32 SpatialSchemaVersion = AHChapterStateConstants::CurrentSpatialSchemaVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
 	FString MapName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")

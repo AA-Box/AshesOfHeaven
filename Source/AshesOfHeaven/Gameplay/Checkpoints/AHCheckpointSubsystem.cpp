@@ -5,6 +5,7 @@
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
@@ -22,6 +23,22 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	{
 		return false;
 	}
+	const FAHCheckpointSpatialDefinition* CheckpointDefinition = AHChapterSpatial::FindCheckpointDefinition(CheckpointId);
+	if (!CheckpointDefinition)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Spatial][Checkpoint] rejected unknown checkpoint id=%s"), *CheckpointId.ToString());
+		return false;
+	}
+	const EAHChapterStage CurrentStage = Chapter->GetStage();
+	const FAHStageSpatialDefinition& CurrentDefinition = AHChapterSpatial::GetStageDefinition(CurrentStage);
+	const bool bStageCompatible = CheckpointDefinition->Stage == CurrentStage
+		|| (UAHChapterSubsystem::ObjectiveIndexForStage(CheckpointDefinition->Stage) == UAHChapterSubsystem::ObjectiveIndexForStage(CurrentStage)
+			&& CheckpointDefinition->ZoneId == CurrentDefinition.ZoneId);
+	if (!bStageCompatible)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Spatial][Checkpoint] rejected incompatible capture id=%s stage=%s currentStage=%s zone=%s currentZone=%s"), *CheckpointId.ToString(), *UEnum::GetValueAsString(CheckpointDefinition->Stage), *UEnum::GetValueAsString(CurrentStage), *CheckpointDefinition->ZoneId.ToString(), *CurrentDefinition.ZoneId.ToString());
+		return false;
+	}
 
 	TArray<FName> CompletedEncounters = RuntimeState.CompletedEncounters;
 	LoadState();
@@ -33,6 +50,9 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	RuntimeState.CompletedEncounters = CompletedEncounters;
 	RuntimeState.bValid = true;
 	RuntimeState.CheckpointId = CheckpointId;
+	RuntimeState.Stage = CheckpointDefinition->Stage;
+	RuntimeState.ZoneId = CheckpointDefinition->ZoneId;
+	RuntimeState.SpatialSchemaVersion = AHChapterStateConstants::CurrentSpatialSchemaVersion;
 	RuntimeState.MapName = GetWorld()->GetName();
 	RuntimeState.PlayerLocation = Player->GetActorLocation();
 	RuntimeState.PlayerRotation = Player->GetActorRotation();
@@ -42,6 +62,7 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	RuntimeState.Grenades = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetGrenades() : 0;
 	RuntimeState.ObjectiveIndex = Objectives->GetCurrentObjectiveIndex();
 	RuntimeState.ChapterState = Chapter->GetState();
+	RuntimeState.ChapterState.Stage = CheckpointDefinition->Stage;
 	if (AAHManticoreVehicle* Manticore = Cast<AAHManticoreVehicle>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHManticoreVehicle::StaticClass())))
 	{
 		RuntimeState.ChapterState.Vehicle = Manticore->GetVehicleState();
@@ -89,7 +110,34 @@ bool UAHCheckpointSubsystem::IsCheckpointTransformValid(UWorld* World, const FVe
 	FHitResult Hit;
 	const FVector Start = Location + FVector(0.0f, 0.0f, 300.0f);
 	const FVector End = Location - FVector(0.0f, 0.0f, 1500.0f);
-	return World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility);
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility))
+	{
+		return false;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AHCheckpointTransform), false);
+	return !World->OverlapBlockingTestByChannel(Location, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(34.0f, 88.0f), Params);
+}
+
+bool UAHCheckpointSubsystem::IsCheckpointTransformValid(UWorld* World, EAHChapterStage Stage, const FVector& Location)
+{
+	if (!IsCheckpointTransformValid(World, Location))
+	{
+		return false;
+	}
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+	const bool bInBounds = Location.X >= Definition.ExpectedBoundsMin.X && Location.X <= Definition.ExpectedBoundsMax.X
+		&& Location.Y >= Definition.ExpectedBoundsMin.Y && Location.Y <= Definition.ExpectedBoundsMax.Y
+		&& Location.Z >= Definition.ExpectedBoundsMin.Z && Location.Z <= Definition.ExpectedBoundsMax.Z;
+	if (!bInBounds || FVector::Dist2D(Location, Definition.StageAnchor) > Definition.MaxDistanceFromAnchor)
+	{
+		return false;
+	}
+	FHitResult Ground;
+	if (!World->LineTraceSingleByChannel(Ground, Location + FVector(0.0f, 0.0f, 300.0f), Location - FVector(0.0f, 0.0f, 1500.0f), ECC_Visibility))
+	{
+		return false;
+	}
+	return FMath::Abs(Ground.ImpactPoint.Z - Definition.GameplayFloorZ) <= 180.0f;
 }
 
 bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& State)
@@ -103,6 +151,18 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 
 	RuntimeState.ChapterState = UAHChapterSubsystem::NormalizeState(RuntimeState.ChapterState);
 	RuntimeState.ObjectiveIndex = RuntimeState.ChapterState.ObjectiveIndex;
+	RuntimeState.Stage = RuntimeState.Stage == EAHChapterStage::OpeningBlack && RuntimeState.ChapterState.Stage != EAHChapterStage::OpeningBlack
+		? RuntimeState.ChapterState.Stage
+		: RuntimeState.Stage;
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(RuntimeState.ChapterState.Stage);
+	if (State.SpatialSchemaVersion != AHChapterStateConstants::CurrentSpatialSchemaVersion
+		|| State.Stage != RuntimeState.ChapterState.Stage
+		|| State.ZoneId != Definition.ZoneId
+		|| !AHChapterSpatial::FindCheckpointDefinition(State.CheckpointId))
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.5][Checkpoint] rejected incompatible spatial schema=%d stage=%s savedStage=%s zone=%s expectedZone=%s id=%s"), State.SpatialSchemaVersion, *UEnum::GetValueAsString(RuntimeState.ChapterState.Stage), *UEnum::GetValueAsString(State.Stage), *State.ZoneId.ToString(), *Definition.ZoneId.ToString(), *State.CheckpointId.ToString());
+		return false;
+	}
 
 	// Validity gates run before the player lookup: a stale or void checkpoint must be
 	// rejected regardless of possession timing.
@@ -116,7 +176,7 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4.2][Checkpoint] opening checkpoint id=%s has no progress; using fresh spawn transform"), *RuntimeState.CheckpointId.ToString());
 		return false;
 	}
-	if (!IsCheckpointTransformValid(GetWorld(), RuntimeState.PlayerLocation))
+	if (!IsCheckpointTransformValid(GetWorld(), RuntimeState.ChapterState.Stage, RuntimeState.PlayerLocation))
 	{
 		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4.2][Checkpoint] rejected stale checkpoint id=%s transform=%s: no valid ground at saved location"), *RuntimeState.CheckpointId.ToString(), *RuntimeState.PlayerLocation.ToCompactString());
 		return false;
@@ -150,6 +210,27 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] restore id=%s objective=%d encounters=%d ammo=%d/%d grenades=%d"), *RuntimeState.CheckpointId.ToString(), RuntimeState.ObjectiveIndex, RuntimeState.CompletedEncounters.Num(), RuntimeState.Ammo.Magazine, RuntimeState.Ammo.Reserve, RuntimeState.Grenades);
 	#endif
+	return true;
+}
+
+bool UAHCheckpointSubsystem::RecoverToCanonicalStage()
+{
+	UAHChapterSubsystem* Chapter = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>()
+		: nullptr;
+	AAHCombatPlayerCharacter* Player = GetWorld() ? Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)) : nullptr;
+	if (!Chapter || !Player)
+	{
+		return false;
+	}
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Chapter->GetStage());
+	Player->SetActorLocationAndRotation(Definition.SafePlayerLocation, Definition.SafePlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
+	RuntimeState.PlayerLocation = Definition.SafePlayerLocation;
+	RuntimeState.PlayerRotation = Definition.SafePlayerRotation;
+	RuntimeState.Stage = Chapter->GetStage();
+	RuntimeState.ZoneId = Definition.ZoneId;
+	RuntimeState.SpatialSchemaVersion = AHChapterStateConstants::CurrentSpatialSchemaVersion;
+	UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.5][Checkpoint] recovered stage=%s zone=%s location=%s"), *UEnum::GetValueAsString(Chapter->GetStage()), *Definition.ZoneId.ToString(), *Definition.SafePlayerLocation.ToCompactString());
 	return true;
 }
 

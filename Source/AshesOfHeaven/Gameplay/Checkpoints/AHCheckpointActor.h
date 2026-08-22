@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
 #include "AHCheckpointActor.generated.h"
 
 class UBoxComponent;
@@ -19,6 +20,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
 	FName CheckpointId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	FName ZoneId = NAME_None;
 
 	virtual void BeginPlay() override;
 

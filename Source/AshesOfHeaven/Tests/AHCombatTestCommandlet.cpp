@@ -353,6 +353,47 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		++RunCount;
 	}
 
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.SpatialDefinitions")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.SpatialDefinitions");
+		const int32 FailureCountBefore = FailureCount;
+		const TArray<FAHStageSpatialDefinition>& Definitions = AHChapterSpatial::GetStageDefinitions();
+		Expect(TestName, TEXT("every authored stage has one spatial definition"), Definitions.Num() == 21);
+		for (int32 Index = 0; Index < Definitions.Num(); ++Index)
+		{
+			const FAHStageSpatialDefinition& Definition = Definitions[Index];
+			const FBox Bounds(Definition.ExpectedBoundsMin, Definition.ExpectedBoundsMax);
+			Expect(TestName, TEXT("spatial definitions remain in authored stage order"), static_cast<uint8>(Definition.Stage) == Index);
+			Expect(TestName, TEXT("stage has a zone id"), !Definition.ZoneId.IsNone());
+			Expect(TestName, TEXT("safe player location is inside stage bounds"), Bounds.IsInside(Definition.SafePlayerLocation));
+			Expect(TestName, TEXT("stage anchor is inside stage bounds"), Bounds.IsInside(Definition.StageAnchor));
+			Expect(TestName, TEXT("safe player location is near stage anchor"), FVector::Dist2D(Definition.SafePlayerLocation, Definition.StageAnchor) <= Definition.MaxDistanceFromAnchor);
+			Expect(TestName, TEXT("objective target remains inside stage bounds"), Definition.ObjectiveTargetId == NAME_None || Bounds.IsInside(Definition.ObjectiveTargetLocation));
+			Expect(TestName, TEXT("stage floor is finite"), FMath::IsFinite(Definition.GameplayFloorZ));
+		}
+		const FAHStageSpatialDefinition& Cathedral = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior);
+		Expect(TestName, TEXT("Cathedral uses the raised continuous floor"), FMath::IsNearlyEqual(Cathedral.GameplayFloorZ, 790.0f) && FMath::IsNearlyEqual(Cathedral.SafePlayerLocation.Z, 890.0f));
+		const FAHStageSpatialDefinition& Manticore = AHChapterSpatial::GetStageDefinition(EAHChapterStage::ManticoreSection);
+		Expect(TestName, TEXT("Manticore objective target is nearby and on ground"), FVector::Dist2D(Manticore.SafePlayerLocation, Manticore.ObjectiveTargetLocation) < 600.0f && Manticore.ObjectiveTargetLocation.Z < 50.0f);
+		const TArray<FAHCheckpointSpatialDefinition>& Checkpoints = AHChapterSpatial::GetCheckpointDefinitions();
+		Expect(TestName, TEXT("checkpoint list is explicit and complete"), Checkpoints.Num() == 10);
+		const FAHCheckpointSpatialDefinition* OpeningCheckpoint = AHChapterSpatial::FindCheckpointDefinition(FName(TEXT("Ch01_Opening")));
+		Expect(TestName, TEXT("opening checkpoint uses the opening zone and safe spawn"), OpeningCheckpoint
+			&& OpeningCheckpoint->Stage == EAHChapterStage::OpeningBlack
+			&& OpeningCheckpoint->ZoneId == FName(TEXT("Opening"))
+			&& OpeningCheckpoint->Location == AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpeningBlack).SafePlayerLocation);
+		for (const FAHCheckpointSpatialDefinition& Checkpoint : Checkpoints)
+		{
+			const FAHCheckpointSpatialDefinition* Resolved = AHChapterSpatial::FindCheckpointDefinition(Checkpoint.CheckpointId);
+			Expect(TestName, TEXT("checkpoint id resolves to its authored definition"), Resolved && Resolved->Stage == Checkpoint.Stage && Resolved->ZoneId == Checkpoint.ZoneId);
+			const int32 CheckpointObjective = UAHChapterSubsystem::ObjectiveIndexForStage(Checkpoint.Stage);
+			Expect(TestName, TEXT("checkpoint stage maps to a valid objective index"), CheckpointObjective != INDEX_NONE);
+		}
+		Expect(TestName, TEXT("legacy checkpoint ids resolve to canonical definitions"), AHChapterSpatial::FindCheckpointDefinition(FName(TEXT("Ch01_Checkpoint_03"))) != nullptr);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
 	if (BeginTest(TEXT("AshesOfHeaven.Chapter.ObjectiveChain")))
 	{
 		const FString TestName = TEXT("AshesOfHeaven.Chapter.ObjectiveChain");

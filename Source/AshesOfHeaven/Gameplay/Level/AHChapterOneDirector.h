@@ -91,8 +91,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Chapter|Debug")
 	void DebugTeleportToPresentDay();
 
+	UFUNCTION(BlueprintCallable, Category="Chapter|Debug")
+	void DebugSpatialAudit();
+
 protected:
 	void BuildGreybox();
+	void BuildCathedralSpatialRoute();
+	void BuildStageAnchors();
 	void SpawnGreyboxLighting();
 	void BuildMissionGraph();
 	void BuildMissionActors();
@@ -125,15 +130,21 @@ protected:
 	void SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
 	void SpawnVisualDust(const FVector& Location, float Scale = 1.0f);
 	AActor* SpawnPresentationProp(const TCHAR* BlueprintPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
+	FName ResolvePresentationZone(const FVector& Location) const;
 	void SpawnVisualEffect(const TCHAR* SystemPath, const FVector& Location, const FVector& Scale = FVector::OneVector);
 	void SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale = 1.0f);
 	ASkeletalMeshActor* SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId);
 	void SpawnCheckpoint(const FVector& Location, FName Id);
-	AAHChapterTrigger* SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id);
+	AAHChapterTrigger* SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id, EAHChapterStage Stage = EAHChapterStage::OpeningBlack);
 	AAHCombatEncounter* SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns, bool bAutoActivate = false);
 	void SpawnFriendly(const FVector& Location, FName DisplayId = NAME_None);
 	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White, float WorldSize = 90.0f, const FRotator& Rotation = FRotator(0.0f, 90.0f, 0.0f));
 	void TeleportPlayer(const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
+	bool ValidateStageSpatialDefinition(const FAHStageSpatialDefinition& Definition, bool bLogDetails) const;
+	bool ValidateStageSpatialState(EAHChapterStage Stage, bool bLogDetails) const;
+	void EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason);
+	void RunDelayedStageSpatialValidation(EAHChapterStage Stage);
+	void ValidateStageObjectiveConsistency(EAHChapterStage Stage) const;
 	void LogPresentationState(EAHChapterStage Stage);
 	UFUNCTION()
 	void HandleTrigger(FName TriggerId);
@@ -228,8 +239,13 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<AAHChapterTrigger>> Triggers;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AActor>> StageAnchors;
+
 	FTimerHandle StageTimer;
+	FTimerHandle StageSpatialValidationTimer;
 	float StageElapsed = 0.0f;
+	float LastSpatialRecoveryTime = -BIG_NUMBER;
 	float DestructionFadeAlpha = 0.0f;
 	bool bMissionActorsBuilt = false;
 	bool bOpeningSequenceStarted = false;
@@ -242,6 +258,10 @@ protected:
 	bool bVisualArtTargetsBuilt = false;
 	int32 PresentationActorCount = 0;
 	int32 PresentationVFXCount = 0;
+	int32 MissingPresentationAssets = 0;
+	int32 FailedBlueprintSpawns = 0;
+	int32 FailedMeshLoads = 0;
+	int32 FailedVFXLoads = 0;
 	EAHChapterStage LastLoggedPresentationStage = EAHChapterStage::OpeningBlack;
 	bool bHasLoggedPresentationStage = false;
 };

@@ -49,6 +49,7 @@ bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointSta
 
 	SaveObject->CheckpointId = State.CheckpointId;
 	SaveObject->MapName = State.MapName;
+	SaveObject->SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
 	const bool bChapterOneState = State.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase)
 		|| State.CheckpointId.ToString().StartsWith(TEXT("Ch01_"))
 		|| State.ChapterState.CompletedSections.Num() > 0;
