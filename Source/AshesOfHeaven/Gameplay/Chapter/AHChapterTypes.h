@@ -5,6 +5,12 @@
 
 class USoundBase;
 
+namespace AHChapterStateConstants
+{
+	constexpr int32 CurrentSaveVersion = 2;
+	constexpr int32 ObjectiveCount = 17;
+}
+
 UENUM(BlueprintType)
 enum class EAHChapterStage : uint8
 {
@@ -88,7 +94,7 @@ struct ASHESOFHEAVEN_API FAHChapterState
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Chapter")
-	int32 SaveVersion = 1;
+	int32 SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Chapter")
 	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;

@@ -71,6 +71,11 @@ bool UAHCheckpointSubsystem::RestoreLatestCheckpoint()
 	{
 		return false;
 	}
+	if (!RuntimeState.MapName.IsEmpty() && !RuntimeState.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase))
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4][Checkpoint] ignored checkpoint from different map=%s"), *RuntimeState.MapName);
+		return false;
+	}
 
 	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
 	UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>();
@@ -79,6 +84,8 @@ bool UAHCheckpointSubsystem::RestoreLatestCheckpoint()
 	{
 		return false;
 	}
+	RuntimeState.ChapterState = UAHChapterSubsystem::NormalizeState(RuntimeState.ChapterState);
+	RuntimeState.ObjectiveIndex = RuntimeState.ChapterState.ObjectiveIndex;
 
 	Player->SetActorLocationAndRotation(RuntimeState.PlayerLocation, RuntimeState.PlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	if (Player->GetHealthComponent())

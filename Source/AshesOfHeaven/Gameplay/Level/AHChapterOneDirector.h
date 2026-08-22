@@ -16,6 +16,7 @@ class UMaterialInterface;
 class UStaticMesh;
 class AStaticMeshActor;
 class ASkeletalMeshActor;
+class UNiagaraSystem;
 
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHMissionStage
@@ -45,6 +46,9 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+
+	/** Development review toggle; collision and navigation remain unchanged. */
+	void SetGreyboxVisualVisibility(bool bVisible);
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	EAHChapterStage GetCurrentStage() const;
@@ -108,6 +112,8 @@ protected:
 	AStaticMeshActor* SpawnVisualShape(const TCHAR* MeshPath, const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator, UMaterialInterface* MaterialOverride = nullptr);
 	void SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
 	void SpawnVisualDust(const FVector& Location, float Scale = 1.0f);
+	AActor* SpawnPresentationProp(const TCHAR* BlueprintPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
+	void SpawnVisualEffect(const TCHAR* SystemPath, const FVector& Location, const FVector& Scale = FVector::OneVector);
 	void SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale = 1.0f);
 	ASkeletalMeshActor* SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId);
 	void SpawnCheckpoint(const FVector& Location, FName Id);
@@ -116,6 +122,7 @@ protected:
 	void SpawnFriendly(const FVector& Location, FName DisplayId = NAME_None);
 	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White, float WorldSize = 90.0f, const FRotator& Rotation = FRotator(0.0f, 90.0f, 0.0f));
 	void TeleportPlayer(const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
+	void LogPresentationState(EAHChapterStage Stage);
 	UFUNCTION()
 	void HandleTrigger(FName TriggerId);
 	UFUNCTION()
@@ -199,4 +206,8 @@ protected:
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;
+	int32 PresentationActorCount = 0;
+	int32 PresentationVFXCount = 0;
+	EAHChapterStage LastLoggedPresentationStage = EAHChapterStage::OpeningBlack;
+	bool bHasLoggedPresentationStage = false;
 };

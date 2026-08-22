@@ -492,6 +492,89 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		++RunCount;
 	}
 
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.NewGameHasNoCompletion")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.NewGameHasNoCompletion");
+		const int32 FailureCountBefore = FailureCount;
+		const FAHChapterState NewGame = UAHChapterSubsystem::NormalizeState(FAHChapterState());
+		Expect(TestName, TEXT("new game begins at OpeningBlack"), NewGame.Stage == EAHChapterStage::OpeningBlack);
+		Expect(TestName, TEXT("new game objective index is zero"), NewGame.ObjectiveIndex == 0);
+		Expect(TestName, TEXT("new game completion is false"), !NewGame.bChapterComplete);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.ManticoreDoesNotShowCompletion")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.ManticoreDoesNotShowCompletion");
+		const int32 FailureCountBefore = FailureCount;
+		FAHChapterState InvalidState;
+		InvalidState.Stage = EAHChapterStage::ChapterComplete;
+		InvalidState.ObjectiveIndex = 5;
+		InvalidState.bChapterComplete = true;
+		const FAHChapterState Restored = UAHChapterSubsystem::NormalizeState(InvalidState);
+		Expect(TestName, TEXT("Manticore state restores to ManticoreSection"), Restored.Stage == EAHChapterStage::ManticoreSection);
+		Expect(TestName, TEXT("Manticore state keeps objective six"), Restored.ObjectiveIndex == 5);
+		Expect(TestName, TEXT("Manticore state cannot be complete"), !Restored.bChapterComplete);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.CompletionOnlyAfterFinalStage")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.CompletionOnlyAfterFinalStage");
+		const int32 FailureCountBefore = FailureCount;
+		FAHChapterState BeforeFinal;
+		BeforeFinal.Stage = EAHChapterStage::StarsDisappearing;
+		BeforeFinal.ObjectiveIndex = 16;
+		const FAHChapterState PreCompletion = UAHChapterSubsystem::NormalizeState(BeforeFinal);
+		Expect(TestName, TEXT("StarsDisappearing remains pre-completion"), PreCompletion.Stage == EAHChapterStage::StarsDisappearing && !PreCompletion.bChapterComplete);
+		FAHChapterState Final;
+		Final.Stage = EAHChapterStage::ChapterComplete;
+		Final.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+		const FAHChapterState Completion = UAHChapterSubsystem::NormalizeState(Final);
+		Expect(TestName, TEXT("only terminal objective reaches ChapterComplete"), Completion.Stage == EAHChapterStage::ChapterComplete && Completion.bChapterComplete);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Chapter.CheckpointRestoreStateConsistency")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Chapter.CheckpointRestoreStateConsistency");
+		const int32 FailureCountBefore = FailureCount;
+		FAHChapterState Saved;
+		Saved.Stage = EAHChapterStage::ChapterComplete;
+		Saved.ObjectiveIndex = 5;
+		Saved.bChapterComplete = true;
+		const FAHChapterState Restored = UAHChapterSubsystem::NormalizeState(Saved);
+		Expect(TestName, TEXT("checkpoint restores to ManticoreSection"), Restored.Stage == EAHChapterStage::ManticoreSection);
+		Expect(TestName, TEXT("checkpoint restores objective six"), Restored.ObjectiveIndex == 5);
+		Expect(TestName, TEXT("checkpoint does not restore completion early"), !Restored.bChapterComplete);
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.Presentation.RuntimeReferencesArtAssets")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.Presentation.RuntimeReferencesArtAssets");
+		const int32 FailureCountBefore = FailureCount;
+		for (const TCHAR* Path : {
+			TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"),
+			TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"),
+			TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Sign.BP_Transit_Sign_C"),
+			TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C") })
+		{
+			Expect(TestName, TEXT("runtime presentation Blueprint resolves"), LoadObject<UClass>(nullptr, Path) != nullptr);
+		}
+		Expect(TestName, TEXT("Transit profile resolves"), LoadObject<UAHEnvironmentStyleData>(nullptr, TEXT("/Game/Ashes/Presentation/DA_EnvironmentStyle_Transit.DA_EnvironmentStyle_Transit")) != nullptr);
+		Expect(TestName, TEXT("PresentDay profile resolves"), LoadObject<UAHEnvironmentStyleData>(nullptr, TEXT("/Game/Ashes/Presentation/DA_EnvironmentStyle_PresentDay.DA_EnvironmentStyle_PresentDay")) != nullptr);
+		UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
+		const TSoftObjectPtr<USoundBase>* PresentDay = Palette ? Palette->Environments.Find(FName(TEXT("Environment.PresentDay"))) : nullptr;
+		Expect(TestName, TEXT("PresentDay audio environment is mapped"), PresentDay && PresentDay->ToSoftObjectPath().IsValid());
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
 	UE_LOG(LogTemp, Display, TEXT("AshesOfHeaven combat commandlet: %d tests, %d failed checks, %s"), RunCount, FailureCount, bAllSuccessful ? TEXT("PASS") : TEXT("FAIL"));
 	return RunCount > 0 && bAllSuccessful ? 0 : 1;
 }

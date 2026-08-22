@@ -94,3 +94,12 @@ void AAHCombatHUD::ShowMissionComplete()
 		RootWidget->ShowMissionComplete();
 	}
 }
+
+void AAHCombatHUD::HideMissionComplete()
+{
+	bMissionComplete = false;
+	if (RootWidget)
+	{
+		RootWidget->HideMissionComplete();
+	}
+}

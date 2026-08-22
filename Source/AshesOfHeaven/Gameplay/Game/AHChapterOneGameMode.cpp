@@ -1,4 +1,5 @@
 #include "Gameplay/Game/AHChapterOneGameMode.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
@@ -9,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/Parse.h"
 
 AAHChapterOneGameMode::AAHChapterOneGameMode()
 {
@@ -20,6 +22,11 @@ AAHChapterOneGameMode::AAHChapterOneGameMode()
 void AAHChapterOneGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+	bool bFreshChapter = false;
+#if !UE_BUILD_SHIPPING
+	bFreshChapter = FParse::Param(FCommandLine::Get(), TEXT("freshchapter"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("resetprogress"));
+#endif
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UAHChapterSubsystem* Chapter = GameInstance->GetSubsystem<UAHChapterSubsystem>())
@@ -27,10 +34,30 @@ void AAHChapterOneGameMode::BeginPlay()
 			if (UAHPlatformSaveSubsystem* Save = GameInstance->GetSubsystem<UAHPlatformSaveSubsystem>())
 			{
 				FAHCombatCheckpointState SavedState;
-				if (Save->LoadCombatCheckpoint(SavedState) && SavedState.ChapterState.SaveVersion > 0)
+				if (bFreshChapter)
+				{
+					Save->ResetProgress();
+					Chapter->RestoreState(FAHChapterState());
+				}
+				else if (Save->LoadCombatCheckpoint(SavedState)
+					&& SavedState.ChapterState.SaveVersion > 0
+					&& (SavedState.MapName.IsEmpty() || SavedState.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase)))
 				{
 					Chapter->RestoreState(SavedState.ChapterState);
 				}
+				else
+				{
+					Chapter->RestoreState(FAHChapterState());
+				}
+				UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Runtime] Map=%s Stage=%s ObjectiveIndex=%d Objective=%s ChapterComplete=%s CompletionWidgetVisible=false Checkpoint=%s SaveLoaded=%s FreshChapter=%s"),
+					*GetWorld()->GetMapName(),
+					*UEnum::GetValueAsString(Chapter->GetStage()),
+					Chapter->GetState().ObjectiveIndex,
+					*UEnum::GetValueAsString(Chapter->GetStage()),
+					Chapter->IsChapterComplete() ? TEXT("true") : TEXT("false"),
+					*Chapter->GetState().CheckpointId.ToString(),
+					(!bFreshChapter && Save->HasSave()) ? TEXT("true") : TEXT("false"),
+					bFreshChapter ? TEXT("true") : TEXT("false"));
 			}
 		}
 	}

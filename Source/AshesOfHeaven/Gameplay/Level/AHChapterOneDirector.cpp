@@ -16,6 +16,7 @@
 #include "Gameplay/Weapons/AHWeaponPickup.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Gameplay/Presentation/AHPresentationData.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -25,6 +26,7 @@
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Engine/DirectionalLight.h"
@@ -146,17 +148,19 @@ AAHChapterOneDirector::AAHChapterOneDirector()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
+	// Gameplay collision still uses the engine cube, but no normal-runtime visual may
+	// resolve to the old checker/grid material.
+	BlockMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"));
 	CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_CathedralMatter_Dark.MI_CathedralMatter_Dark"));
 	HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark"));
 	ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"));
 	VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black"));
 	EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_EmissiveGlyph_Cyan.MI_EmissiveGlyph_Cyan"));
-	if (!CathedralMaterial) CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray.MI_PrototypeGrid_Gray"));
-	if (!HumanMetalMaterial) HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_02.MI_PrototypeGrid_Gray_02"));
-	if (!ConcreteMaterial) ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray_Round.MI_PrototypeGrid_Gray_Round"));
-	if (!VeilObsidianMaterial) VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
-	if (!EmissiveTechnologyMaterial) EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Interactable/JumpPad/Assets/Materials/MI_GlowNT.MI_GlowNT"));
+	if (!CathedralMaterial) CathedralMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter"));
+	if (!HumanMetalMaterial) HumanMetalMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"));
+	if (!ConcreteMaterial) ConcreteMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"));
+	if (!VeilObsidianMaterial) VeilObsidianMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"));
+	if (!EmissiveTechnologyMaterial) EmissiveTechnologyMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"));
 }
 
 void AAHChapterOneDirector::BeginPlay()
@@ -187,6 +191,7 @@ void AAHChapterOneDirector::BeginPlay()
 	}
 
 	StartStage(Chapter ? Chapter->GetStage() : EAHChapterStage::OpeningBlack);
+	LogPresentationState(GetCurrentStage());
 
 #if !UE_BUILD_SHIPPING
 	FString ArtTarget;
@@ -324,6 +329,7 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d player=%s"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE, LoggedPlayer ? *LoggedPlayer->GetActorLocation().ToCompactString() : TEXT("none"));
 	#endif
 	Chapter->SetStage(Stage);
+	LogPresentationState(GetCurrentStage());
 
 	switch (Stage)
 	{
@@ -457,7 +463,11 @@ void AAHChapterOneDirector::HandleObjectiveCompleted(FName ObjectiveId)
 	#endif
 	if (Chapter)
 	{
-		Chapter->SetObjectiveIndex(Objectives ? Objectives->GetCurrentObjectiveIndex() : Chapter->GetState().ObjectiveIndex + 1);
+		// The objective delegate fires before UAHObjectiveSubsystem advances its cursor.
+		// Persist the next index so stage/objective/checkpoint state cannot diverge.
+		Chapter->SetObjectiveIndex(Objectives
+			? FMath::Min(Objectives->GetCurrentObjectiveIndex() + 1, Objectives->GetObjectiveCount())
+			: Chapter->GetState().ObjectiveIndex + 1);
 	}
 
 	if (ObjectiveId == OpeningObjective) StartStage(EAHChapterStage::OpeningBattle);
@@ -475,7 +485,8 @@ void AAHChapterOneDirector::HandleObjectiveCompleted(FName ObjectiveId)
 	else if (ObjectiveId == MayaObjective) StartStage(EAHChapterStage::MayaScene);
 	else if (ObjectiveId == NysaObjective) StartStage(EAHChapterStage::NysaTransmission);
 	else if (ObjectiveId == FleetObjective) StartStage(EAHChapterStage::StarsDisappearing);
-	else if (ObjectiveId == StarsObjective) StartStage(EAHChapterStage::ChapterComplete);
+	else if (ObjectiveId == StarsObjective) StartStage(EAHChapterStage::StarsDisappearing);
+	else if (ObjectiveId == TitleObjective) StartStage(EAHChapterStage::ChapterComplete);
 }
 
 void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
@@ -565,6 +576,10 @@ void AAHChapterOneDirector::HandleMissionComplete()
 	#endif
 	if (Chapter)
 	{
+		if (Objectives)
+		{
+			Chapter->SetObjectiveIndex(Objectives->GetObjectiveCount());
+		}
 		Chapter->SetStage(EAHChapterStage::ChapterComplete);
 		Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_TitleReveal")));
 	}
@@ -631,9 +646,20 @@ void AAHChapterOneDirector::BuildVisualArtTargets()
 
 void AAHChapterOneDirector::BuildErebusArtTarget()
 {
-	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
-	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
-	const TCHAR* ChamferCube = TEXT("/Game/LevelPrototyping/Meshes/SM_ChamferCube.SM_ChamferCube");
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
+	// Keep the presentation layer project-owned so a cooked game never depends on
+	// editor-only LevelPrototyping content.
+	const TCHAR* ChamferCube = Cube;
+
+	// The authored prop Blueprints are the normal gameplay presentation layer. The
+	// primitive shapes below remain modular framing pieces, not the whole scene.
+	SpawnVisualShape(Cube, FVector(5200.0f, 0.0f, -72.0f), FVector(64.0f, 22.0f, 0.22f), FRotator::ZeroRotator, ConcreteMaterial);
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"), FVector(800.0f, -620.0f, 180.0f), FRotator(0.0f, 8.0f, 0.0f), FVector(1.8f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Barricade.BP_Erebus_Barricade_C"), FVector(1500.0f, 460.0f, 100.0f), FRotator(0.0f, -5.0f, 0.0f), FVector(1.25f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"), FVector(2350.0f, 650.0f, 120.0f), FRotator(0.0f, 18.0f, 0.0f), FVector(1.35f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Wreck.BP_Erebus_Wreck_C"), FVector(3020.0f, -420.0f, 110.0f), FRotator(0.0f, -20.0f, -4.0f), FVector(1.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(4100.0f, 540.0f, 120.0f), FRotator::ZeroRotator, FVector(1.0f));
 
 	// Foreground: recoverable human fortification pieces with visible industrial mass.
 	for (int32 Index = 0; Index < 5; ++Index)
@@ -666,14 +692,22 @@ void AAHChapterOneDirector::BuildErebusArtTarget()
 
 	SpawnVisualDust(FVector(950.0f, 0.0f, 420.0f), 1.7f);
 	SpawnVisualDust(FVector(2550.0f, 760.0f, 520.0f), 1.2f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_AshField.NS_AshField"), FVector(2500.0f, 0.0f, 480.0f), FVector(2.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_EmberDrift.NS_EmberDrift"), FVector(1250.0f, -260.0f, 210.0f), FVector(1.2f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_FireSmall.NS_FireSmall"), FVector(1180.0f, 260.0f, 80.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_SmokeColumn.NS_SmokeColumn"), FVector(2160.0f, 500.0f, 120.0f), FVector(1.0f));
 	SpawnLabel(FVector(700.0f, -1180.0f, 430.0f), TEXT("EREBUS / DEFENSIVE LINE"), FColor(180, 194, 202), 105.0f);
 }
 
 void AAHChapterOneDirector::BuildTransitStationArtTarget()
 {
-	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
-	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
-	const TCHAR* DoorFrame = TEXT("/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge");
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
+	const TCHAR* DoorFrame = Cube;
+
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Sign.BP_Transit_Sign_C"), FVector(3500.0f, -760.0f, 190.0f), FRotator::ZeroRotator, FVector(1.3f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Bench.BP_Transit_Bench_C"), FVector(3250.0f, -380.0f, 120.0f), FRotator(0.0f, 90.0f, 0.0f), FVector(1.0f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Bench.BP_Transit_Bench_C"), FVector(3780.0f, 380.0f, 120.0f), FRotator(0.0f, -90.0f, 0.0f), FVector(1.0f));
 
 	// Platforms and rails form a recognizable transit corridor without changing gameplay collision.
 	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, -30.0f), FVector(16.0f, 9.0f, 0.10f), FRotator::ZeroRotator, ConcreteMaterial);
@@ -713,12 +747,19 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 	SpawnVisualLight(FVector(3300.0f, -500.0f, 540.0f), FLinearColor(1.0f, 0.48f, 0.16f), 620.0f, 700.0f);
 	SpawnVisualLight(FVector(3820.0f, 500.0f, 460.0f), FLinearColor(0.95f, 0.08f, 0.03f), 360.0f, 520.0f);
 	SpawnVisualDust(FVector(3500.0f, 0.0f, 520.0f), 0.8f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_DustSheet.NS_DustSheet"), FVector(3500.0f, 0.0f, 620.0f), FVector(0.8f));
 }
 
 void AAHChapterOneDirector::BuildCathedralArtTarget()
 {
-	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
-	const TCHAR* Cylinder = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
+	const TCHAR* Cylinder = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cylinder.SM_AH_Cylinder");
+
+	SpawnVisualShape(Cube, FVector(16400.0f, 0.0f, -50.0f), FVector(20.0f, 5.0f, 0.18f), FRotator::ZeroRotator, CathedralMaterial);
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), FVector(15100.0f, -700.0f, 880.0f), FRotator(0.0f, 0.0f, -3.0f), FVector(2.8f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), FVector(16800.0f, 700.0f, 1000.0f), FRotator(0.0f, 180.0f, 4.0f), FVector(2.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_GlyphPanel.BP_Cathedral_GlyphPanel_C"), FVector(17600.0f, -250.0f, 1250.0f), FRotator(0.0f, 0.0f, 0.0f), FVector(1.4f));
+	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Human_ExpeditionLight.BP_Human_ExpeditionLight_C"), FVector(16000.0f, -360.0f, 790.0f), FRotator::ZeroRotator, FVector(0.85f));
 
 	// A controlled vocabulary of fins, frames and voids establishes the Cathedral language.
 	for (const float X : {14200.0f, 15100.0f, 16000.0f, 17200.0f})
@@ -748,12 +789,13 @@ void AAHChapterOneDirector::BuildCathedralArtTarget()
 	SpawnVisualLight(FVector(17900.0f, 0.0f, 1000.0f), FLinearColor(0.72f, 0.82f, 1.0f), 420.0f, 650.0f);
 	SpawnVisualDust(FVector(15800.0f, 0.0f, 1600.0f), 1.4f);
 	SpawnVisualDust(FVector(17700.0f, 260.0f, 1250.0f), 0.9f);
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes"), FVector(16800.0f, 0.0f, 1500.0f), FVector(1.5f));
 	SpawnLabel(FVector(15700.0f, -1320.0f, 2700.0f), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
 }
 
 void AAHChapterOneDirector::BuildPresentDayArtTarget()
 {
-	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
 	SpawnVisualShape(Cube, FVector(30000.0f, 0.0f, -60.0f), FVector(18.0f, 10.0f, 0.08f), FRotator::ZeroRotator, ConcreteMaterial);
 	SpawnVisualShape(Cube, FVector(30200.0f, -850.0f, 260.0f), FVector(5.0f, 0.08f, 2.6f), FRotator::ZeroRotator, HumanMetalMaterial);
 	SpawnVisualShape(Cube, FVector(30200.0f, 850.0f, 260.0f), FVector(5.0f, 0.08f, 2.6f), FRotator::ZeroRotator, HumanMetalMaterial);
@@ -780,6 +822,9 @@ AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath,
 	UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath);
 	if (!Mesh)
 	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] mesh failed to load path=%s"), MeshPath);
+		#endif
 		return nullptr;
 	}
 	AStaticMeshActor* Shape = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(Rotation, Location, Scale));
@@ -791,12 +836,71 @@ AStaticMeshActor* AAHChapterOneDirector::SpawnVisualShape(const TCHAR* MeshPath,
 		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Component->SetCanEverAffectNavigation(false);
 		Shape->Tags.Add(FName(TEXT("Phase4Visual")));
+		Shape->Tags.Add(FName(TEXT("Phase4Presentation")));
+		++PresentationActorCount;
 		if (MaterialOverride || BlockMaterial)
 		{
 			Component->SetMaterial(0, MaterialOverride ? MaterialOverride : BlockMaterial.Get());
 		}
 	}
 	return Shape;
+}
+
+AActor* AAHChapterOneDirector::SpawnPresentationProp(const TCHAR* BlueprintPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale)
+{
+	if (!GetWorld() || !BlueprintPath)
+	{
+		return nullptr;
+	}
+	UClass* PropClass = LoadClass<AActor>(nullptr, BlueprintPath);
+	if (!PropClass)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] prop failed to load path=%s"), BlueprintPath);
+		#endif
+		return nullptr;
+	}
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* Prop = GetWorld()->SpawnActor<AActor>(PropClass, FTransform(Rotation, Location, Scale), SpawnParams);
+	if (Prop)
+	{
+		Prop->Tags.Add(FName(TEXT("Phase4Presentation")));
+		Prop->Tags.Add(FName(TEXT("Phase4RuntimeProp")));
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
+		Prop->GetComponents(PrimitiveComponents);
+		for (UPrimitiveComponent* Component : PrimitiveComponents)
+		{
+			if (Component)
+			{
+				Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Component->SetCanEverAffectNavigation(false);
+			}
+		}
+		++PresentationActorCount;
+	}
+	return Prop;
+}
+
+void AAHChapterOneDirector::SpawnVisualEffect(const TCHAR* SystemPath, const FVector& Location, const FVector& Scale)
+{
+	if (!GetWorld() || !SystemPath)
+	{
+		return;
+	}
+	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, SystemPath);
+	if (!System)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] VFX failed to load path=%s"), SystemPath);
+		#endif
+		return;
+	}
+	if (UNiagaraComponent* Component = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), System, Location, FRotator::ZeroRotator, Scale, true, true, ENCPoolMethod::AutoRelease))
+	{
+		Component->ComponentTags.Add(FName(TEXT("Phase4PresentationFX")));
+		++PresentationVFXCount;
+	}
 }
 
 void AAHChapterOneDirector::SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius)
@@ -831,7 +935,7 @@ void AAHChapterOneDirector::SpawnVisualDust(const FVector& Location, float Scale
 
 void AAHChapterOneDirector::SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale)
 {
-	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+	const TCHAR* Cube = TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube");
 	const float SafeScale = FMath::Max(0.1f, Scale);
 	// Original glyph grammar: a central axis, a crossbar, four interrupted radial
 	// segments, and two short orbit marks. It is deliberately made from simple
@@ -1054,9 +1158,9 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		return;
 	}
 
-	// The greybox map is generated empty and every actor here is spawned at runtime, so
-	// nothing in the level provides illumination. Without these the scene renders black.
-	// Neutral working light only - Phase 4 replaces this with the real lighting pass.
+	// The map is generated empty and every actor here is spawned at runtime, so the
+	// presentation layer owns the lighting. This is deliberately authored as a low-sat,
+	// smoke-heavy war profile; it is not the old neutral black-screen workaround.
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -1066,13 +1170,25 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		SunLight->SetMobility(EComponentMobility::Movable);
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
-			SunComponent->SetIntensity(2.2f);
-			SunComponent->SetLightColor(FLinearColor(0.64f, 0.70f, 0.82f));
+			SunComponent->SetIntensity(1.45f);
+			SunComponent->SetLightColor(FLinearColor(0.58f, 0.62f, 0.68f));
 			SunComponent->SetAtmosphereSunLight(true);
 		}
 	}
 
-	GetWorld()->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (ASkyAtmosphere* SkyAtmosphere = GetWorld()->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+	{
+		if (USkyAtmosphereComponent* Atmosphere = SkyAtmosphere->GetComponent())
+		{
+			Atmosphere->GroundAlbedo = FColor(14, 15, 17);
+			Atmosphere->RayleighScattering = FLinearColor(0.012f, 0.016f, 0.022f);
+			Atmosphere->MieScattering = FLinearColor(0.030f, 0.034f, 0.040f);
+			Atmosphere->MieAbsorption = FLinearColor(0.016f, 0.018f, 0.022f);
+			Atmosphere->MieAnisotropy = 0.62f;
+			Atmosphere->MultiScatteringFactor = 0.32f;
+			Atmosphere->MarkRenderStateDirty();
+		}
+	}
 
 	if (ASkyLight* Sky = GetWorld()->SpawnActor<ASkyLight>(
 		ASkyLight::StaticClass(), FVector(0.0f, 0.0f, 4000.0f), FRotator::ZeroRotator, SpawnParams))
@@ -1083,7 +1199,7 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Real-time capture sources ambient from the atmosphere; a static capture of an
 			// unlit scene would just bake black.
 			SkyComponent->SetRealTimeCapture(true);
-			SkyComponent->SetIntensity(0.45f);
+			SkyComponent->SetIntensity(0.22f);
 		}
 	}
 
@@ -1092,14 +1208,14 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		if (UExponentialHeightFogComponent* FogComponent = Fog->GetComponent())
 		{
 			FogComponent->SetMobility(EComponentMobility::Movable);
-			FogComponent->SetFogDensity(0.012f);
+			FogComponent->SetFogDensity(0.020f);
 			FogComponent->SetFogHeightFalloff(0.28f);
-			FogComponent->SetFogInscatteringColor(FLinearColor(0.045f, 0.060f, 0.085f));
-			FogComponent->SetStartDistance(650.0f);
+			FogComponent->SetFogInscatteringColor(FLinearColor(0.028f, 0.034f, 0.042f));
+			FogComponent->SetStartDistance(420.0f);
 		}
 	}
 
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] lighting spawned cold daylight, war fog, and restrained practicals"));
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] lighting profile=ErebusWar atmosphere=low-saturation fog=active"));
 }
 
 void AAHChapterOneDirector::SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation, UMaterialInterface* MaterialOverride)
@@ -1113,6 +1229,10 @@ void AAHChapterOneDirector::SpawnBlock(const FVector& Location, const FVector& S
 	{
 		Block->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
 		Block->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+		// This actor is the gameplay collision layer. Its prototype visual is disabled in
+		// normal play; Phase 4 presentation actors provide the visible ground and cover.
+		Block->GetStaticMeshComponent()->SetVisibility(false);
+		Block->Tags.Add(FName(TEXT("Phase4GreyboxCollision")));
 		if (MaterialOverride || BlockMaterial)
 		{
 			UMaterialInterface* Material = MaterialOverride ? MaterialOverride : BlockMaterial.Get();
@@ -1189,7 +1309,84 @@ void AAHChapterOneDirector::SpawnLabel(const FVector& Location, const FString& T
 		Label->GetTextRender()->SetWorldSize(WorldSize);
 		Label->GetTextRender()->SetHorizontalAlignment(EHTA_Center);
 		Label->GetTextRender()->SetVerticalAlignment(EVRTA_TextCenter);
+		Label->Tags.Add(FName(TEXT("Phase4DebugVisual")));
+		Label->GetTextRender()->SetVisibility(false);
 	}
+}
+
+void AAHChapterOneDirector::SetGreyboxVisualVisibility(bool bVisible)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor || !Actor->ActorHasTag(FName(TEXT("Phase4GreyboxCollision"))))
+		{
+			continue;
+		}
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
+		Actor->GetComponents(PrimitiveComponents);
+		for (UPrimitiveComponent* Component : PrimitiveComponents)
+		{
+			if (Component)
+			{
+				Component->SetVisibility(bVisible, true);
+			}
+		}
+	}
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] GreyboxVisualLayer=%s collision_preserved=true"), bVisible ? TEXT("visible") : TEXT("hidden"));
+}
+
+void AAHChapterOneDirector::LogPresentationState(EAHChapterStage Stage)
+{
+	if (bHasLoggedPresentationStage && LastLoggedPresentationStage == Stage)
+	{
+		return;
+	}
+	bHasLoggedPresentationStage = true;
+	LastLoggedPresentationStage = Stage;
+
+	FString Profile = TEXT("Erebus");
+	if (Stage == EAHChapterStage::TransitStation)
+	{
+		Profile = TEXT("Transit");
+	}
+	else if (Stage >= EAHChapterStage::CathedralApproach && Stage <= EAHChapterStage::Escape)
+	{
+		Profile = TEXT("Cathedral");
+	}
+	else if (Stage >= EAHChapterStage::TenYearsLater && Stage < EAHChapterStage::ChapterComplete)
+	{
+		Profile = TEXT("PresentDay");
+	}
+	const FString ProfilePath = FString::Printf(TEXT("/Game/Ashes/Presentation/DA_EnvironmentStyle_%s.DA_EnvironmentStyle_%s"), *Profile, *Profile);
+	const UAHEnvironmentStyleData* EnvironmentStyle = LoadObject<UAHEnvironmentStyleData>(nullptr, *ProfilePath);
+	const FName EnvironmentAudio = Stage == EAHChapterStage::TransitStation
+		? FName(TEXT("Environment.Transit"))
+		: Stage == EAHChapterStage::ManticoreSection
+		? FName(TEXT("Environment.Manticore"))
+		: Stage >= EAHChapterStage::TenYearsLater && Stage < EAHChapterStage::ChapterComplete
+		? FName(TEXT("Environment.PresentDay"))
+		: Stage >= EAHChapterStage::CathedralApproach && Stage <= EAHChapterStage::Escape
+		? FName(TEXT("Environment.Cathedral"))
+		: FName(TEXT("Environment.Erebus"));
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Presentation] Stage=%s Profile=%s MaterialFamily=%s Atmosphere=%s Audio=%s PlacedActors=%d VFX=%d"),
+		*UEnum::GetValueAsString(Stage),
+		*Profile,
+		EnvironmentStyle ? TEXT("authored") : TEXT("missing"),
+		EnvironmentStyle ? TEXT("fog+sky+lighting") : TEXT("missing"),
+		*EnvironmentAudio.ToString(),
+		PresentationActorCount,
+		PresentationVFXCount);
+	#if !UE_BUILD_SHIPPING
+	if (!EnvironmentStyle)
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Presentation] environment profile failed to load path=%s"), *ProfilePath);
+	}
+	#endif
 }
 
 void AAHChapterOneDirector::TeleportPlayer(const FVector& Location, const FRotator& Rotation)

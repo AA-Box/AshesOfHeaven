@@ -15,6 +15,7 @@
 #include "Gameplay/UI/AHCombatHUD.h"
 #include "Gameplay/UI/AHHUDRootWidget.h"
 #include "Gameplay/Audio/AHAudioPaletteData.h"
+#include "Gameplay/Presentation/AHPresentationData.h"
 #include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
@@ -575,6 +576,104 @@ bool FAHChapterCountdownNarrativeTest::RunTest(const FString& Parameters)
 	UAHChapterSubsystem* Restored = NewObject<UAHChapterSubsystem>(TestGameInstance);
 	Restored->RestoreState(State);
 	TestTrue(TEXT("Countdown and narrative state restore"), FMath::IsNearlyEqual(Restored->GetCountdownSeconds(), 500.0f) && Restored->HasCompletedNarrativeEvent(FName(TEXT("Ch01_VeilRevelation"))));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterStateConsistencyTest, "AshesOfHeaven.Chapter.NewGameHasNoCompletion", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterStateConsistencyTest::RunTest(const FString& Parameters)
+{
+	const FAHChapterState NewGame = UAHChapterSubsystem::NormalizeState(FAHChapterState());
+	TestTrue(TEXT("new Chapter One state begins at OpeningBlack"), NewGame.Stage == EAHChapterStage::OpeningBlack);
+	TestEqual(TEXT("new Chapter One objective index is zero"), NewGame.ObjectiveIndex, 0);
+	TestFalse(TEXT("new Chapter One is not complete"), NewGame.bChapterComplete);
+
+	FAHChapterState InvalidManticore;
+	InvalidManticore.Stage = EAHChapterStage::ChapterComplete;
+	InvalidManticore.ObjectiveIndex = 5;
+	InvalidManticore.bChapterComplete = true;
+	const FAHChapterState Manticore = UAHChapterSubsystem::NormalizeState(InvalidManticore);
+	TestTrue(TEXT("Manticore checkpoint canonicalizes to ManticoreSection"), Manticore.Stage == EAHChapterStage::ManticoreSection);
+	TestEqual(TEXT("Manticore checkpoint keeps objective six"), Manticore.ObjectiveIndex, 5);
+	TestFalse(TEXT("Manticore checkpoint cannot be complete"), Manticore.bChapterComplete);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterCompletionInvariantTest, "AshesOfHeaven.Chapter.CompletionOnlyAfterFinalStage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterCompletionInvariantTest::RunTest(const FString& Parameters)
+{
+	FAHChapterState BeforeFinal;
+	BeforeFinal.Stage = EAHChapterStage::StarsDisappearing;
+	BeforeFinal.ObjectiveIndex = 16;
+	const FAHChapterState NormalizedBeforeFinal = UAHChapterSubsystem::NormalizeState(BeforeFinal);
+	TestTrue(TEXT("StarsDisappearing remains the pre-completion stage"), NormalizedBeforeFinal.Stage == EAHChapterStage::StarsDisappearing);
+	TestFalse(TEXT("completion is hidden before the final objective"), NormalizedBeforeFinal.bChapterComplete);
+
+	FAHChapterState Final;
+	Final.Stage = EAHChapterStage::ChapterComplete;
+	Final.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+	const FAHChapterState NormalizedFinal = UAHChapterSubsystem::NormalizeState(Final);
+	TestTrue(TEXT("ChapterComplete is reachable at the terminal objective"), NormalizedFinal.Stage == EAHChapterStage::ChapterComplete);
+	TestTrue(TEXT("completion is true only at the terminal stage"), NormalizedFinal.bChapterComplete);
+	TestEqual(TEXT("final state owns the terminal objective index"), NormalizedFinal.ObjectiveIndex, AHChapterStateConstants::ObjectiveCount);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHManticoreCompletionRegressionTest, "AshesOfHeaven.Chapter.ManticoreDoesNotShowCompletion", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHManticoreCompletionRegressionTest::RunTest(const FString& Parameters)
+{
+	FAHChapterState State;
+	State.Stage = EAHChapterStage::ManticoreSection;
+	State.ObjectiveIndex = 5;
+	State.bChapterComplete = true;
+	const FAHChapterState Restored = UAHChapterSubsystem::NormalizeState(State);
+	TestTrue(TEXT("Manticore objective remains active"), Restored.Stage == EAHChapterStage::ManticoreSection);
+	TestEqual(TEXT("Manticore objective is objective six"), Restored.ObjectiveIndex, 5);
+	TestFalse(TEXT("Manticore cannot show chapter completion"), Restored.bChapterComplete);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterCheckpointRestoreConsistencyTest, "AshesOfHeaven.Chapter.CheckpointRestoreStateConsistency", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHChapterCheckpointRestoreConsistencyTest::RunTest(const FString& Parameters)
+{
+	FAHCombatCheckpointState Checkpoint;
+	Checkpoint.bValid = true;
+	Checkpoint.MapName = TEXT("L_ChapterOne_Greybox");
+	Checkpoint.CheckpointId = FName(TEXT("Ch01_Checkpoint_03"));
+	Checkpoint.ObjectiveIndex = 5;
+	Checkpoint.ChapterState.Stage = EAHChapterStage::ChapterComplete;
+	Checkpoint.ChapterState.ObjectiveIndex = 5;
+	Checkpoint.ChapterState.bChapterComplete = true;
+	const FAHChapterState Restored = UAHChapterSubsystem::NormalizeState(Checkpoint.ChapterState);
+	TestTrue(TEXT("checkpoint restore is canonicalized to ManticoreSection"), Restored.Stage == EAHChapterStage::ManticoreSection);
+	TestEqual(TEXT("checkpoint restore keeps the Manticore objective"), Restored.ObjectiveIndex, 5);
+	TestFalse(TEXT("checkpoint restore hides completion before the final stage"), Restored.bChapterComplete);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHRuntimePresentationReferenceTest, "AshesOfHeaven.Presentation.RuntimeReferencesArtAssets", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHRuntimePresentationReferenceTest::RunTest(const FString& Parameters)
+{
+	const TArray<FString> RuntimePropPaths = {
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_BlastWall.BP_Erebus_BlastWall_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_PipeCluster.BP_Erebus_PipeCluster_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Erebus_Wreck.BP_Erebus_Wreck_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Sign.BP_Transit_Sign_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Transit_Bench.BP_Transit_Bench_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"),
+		TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_GlyphPanel.BP_Cathedral_GlyphPanel_C")
+	};
+	for (const FString& Path : RuntimePropPaths)
+	{
+		TestNotNull(*FString::Printf(TEXT("runtime presentation prop resolves: %s"), *Path), LoadObject<UClass>(nullptr, *Path));
+	}
+	for (const TCHAR* Profile : { TEXT("Transit"), TEXT("PresentDay") })
+	{
+		const FString Path = FString::Printf(TEXT("/Game/Ashes/Presentation/DA_EnvironmentStyle_%s.DA_EnvironmentStyle_%s"), Profile, Profile);
+		TestNotNull(*FString::Printf(TEXT("runtime environment profile resolves: %s"), Profile), LoadObject<UAHEnvironmentStyleData>(nullptr, *Path));
+	}
+	UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
+	const TSoftObjectPtr<USoundBase>* PresentDay = Palette ? Palette->Environments.Find(FName(TEXT("Environment.PresentDay"))) : nullptr;
+	TestTrue(TEXT("present-day runtime audio mapping is assigned"), PresentDay && PresentDay->ToSoftObjectPath().IsValid());
 	return true;
 }
 

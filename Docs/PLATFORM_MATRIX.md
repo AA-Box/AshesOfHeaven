@@ -135,3 +135,34 @@ unchanged. A fresh rebuild and recertification after that guard passed all gates
   combat/AI/movement/ADS/recoil, pickup/grenade/melee behavior, death/restart/checkpoint inventory
   restoration, Manticore enter/drive/fire/exit, dialogue timing, countdown, terminal progression,
   completion, final art quality, and real Windows/iOS/Android devices.
+
+## Phase 4.4 runtime/state recertification — 2026-08-22
+
+This is the latest evidence record for the current source. It supersedes the older Phase 4.2/4.3
+machine counts above without deleting their historical records.
+
+- Development Editor: **PASS** — UE 5.8 Mac arm64 compile/link; `/tmp/phase44-editor-build-r4.log`.
+- Fresh `AHCombatVerificationCommandlet`: **PASS** — 20 checks, 0 failed checks, 0 errors;
+  `/tmp/phase44-commandlet-r3.log`.
+- Full `Automation RunTests AshesOfHeaven`: **PASS** — 21 project tests completed with
+  `Result={Success}`, exit code 0; `/tmp/phase44-automation-r4.log`.
+- Mac Development package: **PASS** — fresh `Builds/macOS-Development/AshesOfHeaven.app`, with
+  automatic MCP-port selection exercised; `/tmp/phase44-development-package-script-auto.log`.
+- Mac Shipping package: **PASS** — fresh `Builds/macOS/AshesOfHeaven.app`;
+  `/tmp/phase44-shipping-package-final.log`.
+- Deep strict codesign: **PASS** for both fresh packages; `/tmp/phase44-codesign-final2.log`.
+- Normal Metal launch: **PASS** for process-level smokes on both fresh packages. They stayed alive
+  for 18 seconds without `-nullrhi` or `-nosound` and exited with controlled status 0;
+  `/tmp/phase44-development-normal-script-auto.log` and `/tmp/phase44-shipping-normal-final.log`.
+- Fresh Development runtime integration: **PASS for smoke evidence** — normal
+  `L_ChapterOne_Greybox` startup logged clean state (`OpeningBlack`, objective 0, completion false),
+  authored presentation profile/material/fog/lighting/audio, 117 placed actors, and six VFX systems.
+  No Phase 4.4 runtime errors remained after rebuilding; `/tmp/phase44-development-normal-script-auto.log`.
+- Screenshot capture: **UNAVAILABLE** — window capture hung and full-screen capture returned
+  `could not create image from display`; no visual approval is claimed.
+- Interactive gameplay, combat/death/restart/pickups/checkpoint progression, Manticore behavior,
+  Chapter completion, subjective HUD/audio/art review, and target-device performance: **UNTESTED**.
+
+The connected Unreal MCP editor service owns port 8000. `Scripts/Build-Mac.sh` now selects a free
+isolated MCP port for cook commandlets when necessary; this is packaging-environment handling and
+does not change the game's runtime architecture.

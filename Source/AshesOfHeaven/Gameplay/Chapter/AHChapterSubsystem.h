@@ -39,7 +39,19 @@ public:
 	bool IsCountdownActive() const { return State.bCountdownActive; }
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
-	bool IsChapterComplete() const { return State.bChapterComplete; }
+	bool IsChapterComplete() const { return State.Stage == EAHChapterStage::ChapterComplete; }
+
+	/** Returns the only canonical stage for a persisted Chapter One objective index. */
+	UFUNCTION(BlueprintPure, Category="Chapter")
+	static EAHChapterStage StageForObjectiveIndex(int32 ObjectiveIndex);
+
+	/** Returns the objective represented by a stage, or INDEX_NONE for non-objective stages. */
+	UFUNCTION(BlueprintPure, Category="Chapter")
+	static int32 ObjectiveIndexForStage(EAHChapterStage Stage);
+
+	/** Repairs old or contradictory saves before any gameplay or presentation is restored. */
+	UFUNCTION(BlueprintPure, Category="Chapter")
+	static FAHChapterState NormalizeState(const FAHChapterState& Candidate);
 
 	UFUNCTION(BlueprintPure, Category="Chapter")
 	bool HasCompletedNarrativeEvent(FName EventId) const;

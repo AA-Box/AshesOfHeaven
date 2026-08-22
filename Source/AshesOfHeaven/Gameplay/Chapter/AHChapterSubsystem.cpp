@@ -5,6 +5,91 @@ void UAHChapterSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	State = FAHChapterState();
+	State.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+}
+
+EAHChapterStage UAHChapterSubsystem::StageForObjectiveIndex(int32 ObjectiveIndex)
+{
+	switch (FMath::Clamp(ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount))
+	{
+	case 0: return EAHChapterStage::ErebusOpening;
+	case 1: return EAHChapterStage::OpeningBattle;
+	case 2: return EAHChapterStage::TransitStation;
+	case 3: return EAHChapterStage::VeilRevelation;
+	case 4: return EAHChapterStage::OpenBattlefield;
+	case 5: return EAHChapterStage::ManticoreSection;
+	case 6: return EAHChapterStage::CathedralApproach;
+	case 7: return EAHChapterStage::FailsafeOrder;
+	case 8: return EAHChapterStage::CathedralInterior;
+	case 9: return EAHChapterStage::FailsafeTerminal;
+	case 10: return EAHChapterStage::Escape;
+	case 11: return EAHChapterStage::ErebusDestruction;
+	case 12: return EAHChapterStage::TenYearsLater;
+	case 13: return EAHChapterStage::MayaScene;
+	case 14: return EAHChapterStage::NysaTransmission;
+	case 15: return EAHChapterStage::FleetDeparture;
+	case 16: return EAHChapterStage::StarsDisappearing;
+	default: return EAHChapterStage::ChapterComplete;
+	}
+}
+
+int32 UAHChapterSubsystem::ObjectiveIndexForStage(EAHChapterStage Stage)
+{
+	switch (Stage)
+	{
+	case EAHChapterStage::OpeningBlack:
+	case EAHChapterStage::ErebusOpening: return 0;
+	case EAHChapterStage::OpeningBattle: return 1;
+	case EAHChapterStage::TransitStation: return 2;
+	case EAHChapterStage::VeilRevelation: return 3;
+	case EAHChapterStage::OpenBattlefield: return 4;
+	case EAHChapterStage::ManticoreSection: return 5;
+	case EAHChapterStage::CathedralApproach: return 6;
+	case EAHChapterStage::FailsafeOrder: return 7;
+	case EAHChapterStage::CathedralInterior:
+	case EAHChapterStage::SaelTransmission: return 8;
+	case EAHChapterStage::FailsafeTerminal: return 9;
+	case EAHChapterStage::Escape:
+	case EAHChapterStage::OtherLucian: return 10;
+	case EAHChapterStage::ErebusDestruction: return 11;
+	case EAHChapterStage::TenYearsLater: return 12;
+	case EAHChapterStage::MayaScene: return 13;
+	case EAHChapterStage::NysaTransmission: return 14;
+	case EAHChapterStage::FleetDeparture: return 15;
+	case EAHChapterStage::StarsDisappearing: return 16;
+	case EAHChapterStage::ChapterComplete: return AHChapterStateConstants::ObjectiveCount;
+	default: return INDEX_NONE;
+	}
+}
+
+FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candidate)
+{
+	FAHChapterState Normalized = Candidate;
+	Normalized.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
+
+	const int32 StageObjectiveIndex = ObjectiveIndexForStage(Candidate.Stage);
+	const bool bObjectiveIsFinal = Normalized.ObjectiveIndex >= AHChapterStateConstants::ObjectiveCount;
+	const bool bStageIsFinal = Candidate.Stage == EAHChapterStage::ChapterComplete;
+	if (bObjectiveIsFinal)
+	{
+		Normalized.Stage = EAHChapterStage::ChapterComplete;
+	}
+	else if (bStageIsFinal || (StageObjectiveIndex != INDEX_NONE && StageObjectiveIndex != Normalized.ObjectiveIndex))
+	{
+		// Objective progress is the canonical progression value. This repairs saves such as
+		// Stage=ErebusOpening/Objectives=5 and old completion overlays at a mid-chapter index.
+		Normalized.Stage = StageForObjectiveIndex(Normalized.ObjectiveIndex);
+	}
+
+	Normalized.bChapterComplete = Normalized.Stage == EAHChapterStage::ChapterComplete;
+	if (Normalized.bChapterComplete)
+	{
+		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+		Normalized.bCountdownActive = false;
+		Normalized.CountdownSeconds = 0.0f;
+	}
+	return Normalized;
 }
 
 bool UAHChapterSubsystem::HasCompletedNarrativeEvent(FName EventId) const
@@ -14,6 +99,11 @@ bool UAHChapterSubsystem::HasCompletedNarrativeEvent(FName EventId) const
 
 bool UAHChapterSubsystem::SetStage(EAHChapterStage NewStage)
 {
+	if (NewStage == EAHChapterStage::ChapterComplete && State.ObjectiveIndex < AHChapterStateConstants::ObjectiveCount)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4][Chapter] rejected premature completion stage objective=%d"), State.ObjectiveIndex);
+		return false;
+	}
 	if (State.Stage == NewStage)
 	{
 		return false;
@@ -130,7 +220,7 @@ void UAHChapterSubsystem::SetVehicleState(const FAHVehicleState& VehicleState)
 
 void UAHChapterSubsystem::RestoreState(const FAHChapterState& RestoredState)
 {
-	State = RestoredState;
+	State = NormalizeState(RestoredState);
 	LastCountdownMilestone = FMath::FloorToInt(State.CountdownSeconds);
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] restore stage=%s objective=%d checkpoint=%s countdown=%0.1f vehicle_spawned=%s vehicle_destroyed=%s"), *UEnum::GetValueAsString(State.Stage), State.ObjectiveIndex, *State.CheckpointId.ToString(), State.CountdownSeconds, State.Vehicle.bSpawned ? TEXT("true") : TEXT("false"), State.Vehicle.bDestroyed ? TEXT("true") : TEXT("false"));

@@ -143,3 +143,24 @@ and `Audio` are available through the development art-target launcher.
 Machine validation proves asset existence, class loading, buildability, and packaged integration.
 It does not prove subjective reference match, final sound quality, final character quality, mobile
 performance, or human gameplay approval. Those remain explicitly `HUMAN REVIEW REQUIRED`.
+
+## Phase 4.4 runtime integration status — 2026-08-22
+
+The four targets are now integrated into the normal `L_ChapterOne_Greybox` runtime path as a
+presentation layer. The gameplay collision and navigation layer remains separate and intact:
+greybox collision actors are hidden visually, while project-owned props, meshes, materials, fog,
+lighting, Niagara systems, environment profiles, and stage-mapped audio are spawned for presentation.
+
+| Target | Asset pipeline | Normal runtime | Packaged smoke | Human visual approval |
+| --- | --- | --- | --- | --- |
+| Erebus battlefield | **READY** — project-owned starter mesh/material/prop/VFX/audio assets | **INTEGRATED** — war lighting, fog, props, ash/ember/dust, Erebus ambience | **PASS** — Development package logged the target on `L_ChapterOne_Greybox` | **UNTESTED** |
+| Transit Station | **READY** — station props, signage, profile, VFX/audio references | **INTEGRATED** — normal stage path consumes the Transit profile and props | **PASS** — included in the fresh cooked package | **UNTESTED** |
+| Cathedral interior | **READY** — fins, glyph scaffold, dark material/profile, VFX/audio references | **INTEGRATED** — normal stage path consumes the Cathedral profile and props | **PASS** — included in the fresh cooked package | **UNTESTED** |
+| Present-day Lucian / Maya | **READY** — mannequin scaffold, profile, props, present-day ambience mapping | **INTEGRATED** — normal stage mapping reaches the present-day presentation layer | **PASS** — included in the fresh cooked package | **UNTESTED** |
+
+This is runtime ownership/integration evidence, not final art approval. The environment meshes are
+still replaceable starter geometry, the Lucian/Maya figures are mannequin proxies, and the Manticore
+area still combines authored material/profile treatment with a gameplay scaffold vehicle. Final
+environment kits, character art, animation, authored sound design/voice/music, and the visual match
+to the approved images remain open art-production and human-review work. No normal-runtime screenshot
+was available from this execution environment, so none is presented as evidence.

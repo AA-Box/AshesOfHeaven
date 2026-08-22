@@ -1,5 +1,6 @@
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Level/AHChapterOneDirector.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
 #include "Gameplay/UI/AHHUDRootWidget.h"
@@ -7,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 #include "UObject/SoftObjectPath.h"
 
 #if !UE_BUILD_SHIPPING
@@ -63,5 +65,19 @@ namespace
 	FAutoConsoleCommandWithWorldAndArgs DebugAudioTransit(TEXT("AH.Debug.Audio.Transit"), TEXT("Log Transit audio target."), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) { UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Debug][Audio] Transit environment contract=Environment.Transit")); }));
 	FAutoConsoleCommandWithWorldAndArgs DebugAudioCathedral(TEXT("AH.Debug.Audio.Cathedral"), TEXT("Log Cathedral audio target."), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) { UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Debug][Audio] Cathedral environment contract=Environment.Cathedral")); }));
 	FAutoConsoleCommandWithWorldAndArgs DebugMaterials(TEXT("AH.Debug.Materials"), TEXT("Verify authored material target paths."), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld*) { const TCHAR* Paths[] = { TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"), TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"), TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter") }; for (const TCHAR* Path : Paths) UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Debug][Materials] %s=%s"), Path, FSoftObjectPath(Path).ResolveObject() ? TEXT("loaded") : TEXT("soft")); }));
+	FAutoConsoleCommandWithWorldAndArgs DebugGreybox(
+		TEXT("AH.Debug.Greybox"), TEXT("Toggle the Development-only greybox visual layer without changing collision or navigation."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World)
+			{
+				return;
+			}
+			const bool bVisible = Args.Num() > 0 && Args[0].ToBool();
+			if (AAHChapterOneDirector* Director = Cast<AAHChapterOneDirector>(UGameplayStatics::GetActorOfClass(World, AAHChapterOneDirector::StaticClass())))
+			{
+				Director->SetGreyboxVisualVisibility(bVisible);
+			}
+		}));
 }
 #endif

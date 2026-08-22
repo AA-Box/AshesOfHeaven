@@ -536,3 +536,68 @@ match, authored environment/character/animation quality, localization, and real 
 Android/device performance are also not claimed by these machine checks.
 
 Do not start Phase 5 or Chapter Two from this record.
+
+## PHASE 4.4 — Runtime art integration and Chapter state correctness — 2026-08-22
+
+This pass fixes the normal packaged Chapter One path, not only the ArtTarget launcher. Phase 5 and
+Chapter Two were not started.
+
+### Defects reproduced and fixed
+
+- A stale save could restore an early stage with a later objective/checkpoint. Chapter state now has
+  one canonical normalization path, a save version, bounded objective indices, stage/objective
+  mapping, map validation, and a development-only `-freshchapter`/`-resetprogress` clean start.
+- Objective completion now persists the next objective index. `StarsDisappearing` no longer jumps
+  directly to completion; the final title objective is the only route to `ChapterComplete`.
+- The HUD explicitly initializes transient widgets hidden, and controller/HUD completion delegates
+  refuse to display completion before the canonical final stage. This fixes the Objective 06 / chapter
+  completion overlap at the state and delegate boundaries instead of hiding it cosmetically.
+- Checkpoint restore normalizes chapter/objective state before restoring objectives and rejects a
+  checkpoint saved for another map. Inventory, grenade, encounter, vehicle, and narrative state stay
+  on the same restore path.
+- Normal `L_ChapterOne_Greybox` startup now consumes project-owned presentation meshes/materials,
+  environment profiles, Blueprint props, Niagara systems, and stage-mapped audio. Greybox collision
+  and navigation actors remain present but their visible prototype meshes/labels are hidden. Two
+  remaining runtime LevelPrototyping mesh references were replaced with project-owned meshes after
+  the first packaged smoke exposed their load errors.
+- The five combat semantic events now resolve five distinct project Sound Cue sources rather than
+  reusing the M91 impact source for melee, hurt, armor, death, and grenade.
+- `Scripts/Build-Mac.sh` automatically selects an isolated MCP cook port when the editor owns 8000;
+  this prevents the connected editor service from turning a successful cook into a commandlet error.
+
+### Machine verification
+
+| Gate | Result |
+| --- | --- |
+| Development Editor | **PASS** — Mac arm64 compile/link, exit code 0; `/tmp/phase44-editor-build-r4.log` |
+| `AHCombatVerificationCommandlet` | **PASS** — 20 checks, 0 failed checks, 0 errors; `/tmp/phase44-commandlet-r3.log` |
+| `Automation RunTests AshesOfHeaven` | **PASS** — 21 project tests completed with `Result={Success}`, exit code 0; `/tmp/phase44-automation-r4.log` |
+| Mac Development cook/package | **PASS** — `BUILD SUCCESSFUL`, fresh app at `Builds/macOS-Development/AshesOfHeaven.app`, with automatic MCP-port selection exercised; `/tmp/phase44-development-package-script-auto.log` |
+| Mac Shipping cook/package | **PASS** — `BUILD SUCCESSFUL`, fresh app at `Builds/macOS/AshesOfHeaven.app`; `/tmp/phase44-shipping-package-final.log` |
+| Deep strict codesign | **PASS** — both fresh packages valid on disk and satisfy their designated requirements; `/tmp/phase44-codesign-final2.log` |
+| Normal Metal launch | **PASS** — both fresh packages stayed alive for 18 seconds without `-nullrhi` or `-nosound`, then exited via controlled status 0; `/tmp/phase44-development-normal-script-auto.log`, `/tmp/phase44-shipping-normal-final.log` |
+| Normal Development runtime presentation | **PASS for integration smoke** — `L_ChapterOne_Greybox`, `OpeningBlack`, `ErebusOpening`, authored material family, fog/sky/lighting, `SC_Erebus_Ambience`, 117 placed presentation actors, and six VFX systems were logged with no Phase 4.4 errors; `/tmp/phase44-development-normal-script-auto.log` |
+
+The first post-package presentation smoke did find and fix two missing LevelPrototyping mesh loads;
+the final package was rebuilt and the final runtime smoke was rerun after that fix. Remaining log
+noise is engine/toolchain noise: the MetalShaderConverter include warning and the MCP licensing
+warning. The commandlet also retains the known objective-HUD test-world teardown warning after its
+passing checks; it is not a project test failure.
+
+No normal-runtime screenshot was captured. Window capture hung in this environment and full-screen
+`screencapture` returned `could not create image from display`; no screenshot or visual approval is
+being claimed.
+
+### Human validation still required
+
+Machine checks do not replace the two requested interactive runs. Human review is still required for
+movement/mouse feel, shooting/ADS/recoil/reload, enemy and friendly AI, objective clarity and pacing,
+pickup/grenade/melee behavior, death/restart inventory restoration, checkpoint transitions, Manticore
+enter/drive/fire/exit, dialogue timing, countdown, terminal progression, awkward routes, collision,
+softlocks, crashes, and reaching Chapter Complete. It also remains required for subjective HUD and
+reference-image match, listening quality, final authored environment/character/animation quality,
+Windows/iOS/Android validation, and target-device performance. Geometry, lighting, placeholder
+animation, VFX, and sound remain prototype/scaffold quality where the earlier art-target sections say
+so; this pass does not claim AAA visual approval.
+
+Do not start Phase 5 or Chapter Two from this record.

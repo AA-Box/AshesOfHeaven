@@ -38,6 +38,16 @@ UAT_ARGS=(
 )
 if [[ -n "${ADDITIONAL_COOKER_OPTIONS:-}" ]]; then
   UAT_ARGS+=("-AdditionalCookerOptions=$ADDITIONAL_COOKER_OPTIONS")
+elif command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
+  # The editor's Unreal MCP server commonly owns 8000. Cook treats its failed
+  # auto-start as a fatal error, so give the cook commandlet an isolated port.
+  for MCP_COOK_PORT in $(seq 18080 18099); do
+    if ! lsof -nP -iTCP:${MCP_COOK_PORT} -sTCP:LISTEN -t >/dev/null 2>&1; then
+      UAT_ARGS+=("-AdditionalCookerOptions=-ModelContextProtocolPort=${MCP_COOK_PORT}")
+      echo "MCP port 8000 is occupied; cooking with ModelContextProtocolPort=${MCP_COOK_PORT}."
+      break
+    fi
+  done
 fi
 "$UAT" "${UAT_ARGS[@]}"
 

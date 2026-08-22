@@ -32,6 +32,7 @@ public:
 	void ShowHitMarker(bool bHeadshot);
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
 	void ShowMissionComplete();
+	void HideMissionComplete();
 
 	UFUNCTION(BlueprintCallable, Category="HUD|Presentation")
 	void SetCrosshairState(bool bAimingDownSights, float Spread, bool bHit, bool bHeadshot, bool bInteraction, bool bVehicle);

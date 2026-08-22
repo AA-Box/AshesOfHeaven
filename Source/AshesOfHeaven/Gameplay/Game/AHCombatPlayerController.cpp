@@ -4,6 +4,7 @@
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
@@ -201,14 +202,33 @@ void AAHCombatPlayerController::HandleObjectiveChanged(FText Objective, int32 In
 	#endif
 	if (AAHCombatHUD* HUD = GetCombatHUD())
 	{
+		if (HUD->IsMissionCompleteDisplayed())
+		{
+			HUD->HideMissionComplete();
+		}
 		HUD->SetObjective(Objective, Index, Count);
 	}
 }
 
 void AAHCombatPlayerController::HandleMissionComplete()
 {
+	if (UAHChapterSubsystem* Chapter = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>()
+		: nullptr)
+	{
+		if (!Chapter->IsChapterComplete())
+		{
+			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.4][HUD] ignored objective completion before ChapterComplete stage=%s objective=%d"),
+				*UEnum::GetValueAsString(Chapter->GetStage()), Chapter->GetState().ObjectiveIndex);
+			if (AAHCombatHUD* HUD = GetCombatHUD())
+			{
+				HUD->HideMissionComplete();
+			}
+			return;
+		}
+	}
 	#if !UE_BUILD_SHIPPING
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][HUD] mission_complete_display"));
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][HUD] mission_complete_display stage=ChapterComplete"));
 	#endif
 	if (AAHCombatHUD* HUD = GetCombatHUD())
 	{

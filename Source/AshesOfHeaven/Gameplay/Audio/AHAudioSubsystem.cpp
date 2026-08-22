@@ -133,6 +133,11 @@ FName UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage Stage) const
 	case EAHChapterStage::SaelTransmission:
 	case EAHChapterStage::FailsafeTerminal:
 	case EAHChapterStage::Escape: return FName(TEXT("Environment.Cathedral"));
+	case EAHChapterStage::TenYearsLater:
+	case EAHChapterStage::MayaScene:
+	case EAHChapterStage::NysaTransmission:
+	case EAHChapterStage::FleetDeparture:
+	case EAHChapterStage::StarsDisappearing: return FName(TEXT("Environment.PresentDay"));
 	default: return FName(TEXT("Environment.Erebus"));
 	}
 }
@@ -155,11 +160,11 @@ void UAHAudioSubsystem::HandleChapterStageChanged(EAHChapterStage Stage)
 		{
 			ActiveEnvironmentComponent->FadeIn(0.8f, 0.35f);
 		}
-		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Audio] authored environment changed id=%s asset=%s"), *EnvironmentId.ToString(), *GetNameSafe(Environment));
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Audio] Stage=%s Environment=%s Asset=%s"), *UEnum::GetValueAsString(Stage), *EnvironmentId.ToString(), *GetNameSafe(Environment));
 	}
 	else
 	{
-		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.2][Audio] authored environment missing id=%s; no fallback is permitted"), *EnvironmentId.ToString());
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Audio] authored environment missing id=%s; no fallback is permitted"), *EnvironmentId.ToString());
 	}
 }
 

@@ -69,6 +69,11 @@ bool UAHPlatformSaveSubsystem::LoadCombatCheckpoint(FAHCombatCheckpointState& St
 	return false;
 }
 
+bool UAHPlatformSaveSubsystem::ResetProgress()
+{
+	return UGameplayStatics::DeleteGameInSlot(GetSaveSlotName(), 0);
+}
+
 bool UAHPlatformSaveSubsystem::LoadCheckpoint(FName& CheckpointId, float& CampaignProgress, FString& MapName, int32& Difficulty)
 {
 	if (const UAHSaveGame* SaveObject = LoadSaveObject())

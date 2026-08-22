@@ -14,7 +14,14 @@ The logical sections are:
 
 `UAHChapterSubsystem` owns persistent chapter state independently of the current world: stage, objective index, checkpoint identifier, countdown/failsafe flags, completed narrative/section/encounter history, and Manticore state. `UAHCheckpointSubsystem` serializes that state with player health, equipment, and encounter state so death/restart and checkpoint reload do not depend on transient actor lifetime.
 
-The current one-map layout is intentional for the first greybox. When authored content grows, each logical section can become a streamed level or World Partition region. The existing stage boundaries are the streaming seams: load the next section before the transit, battlefield, Cathedral, destruction, or present-day transition; commit checkpoint state before unloading completed content; and preserve the `GameInstance` chapter state across travel.
+The current one-map layout is intentional for the first greybox. The Phase 4.4 presentation layer is
+also runtime-integrated in this map, but remains separate from gameplay collision/navigation: the
+director hides the visible greybox collision meshes and places non-colliding project-owned props,
+materials, VFX, lighting, profiles, and audio by stage. When authored content grows, each logical
+section can become a streamed level or World Partition region. The existing stage boundaries are the
+streaming seams: load the next section before the transit, battlefield, Cathedral, destruction, or
+present-day transition; commit checkpoint state before unloading completed content; and preserve the
+`GameInstance` chapter state across travel.
 
 The target streaming policy is:
 

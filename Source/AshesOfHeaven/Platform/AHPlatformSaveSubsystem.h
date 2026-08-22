@@ -62,6 +62,9 @@ public:
 	bool SaveCombatCheckpoint(const FAHCombatCheckpointState& State);
 	bool LoadCombatCheckpoint(FAHCombatCheckpointState& State) const;
 
+	/** Development-only clean-run support; callers decide whether exposing it is appropriate. */
+	bool ResetProgress();
+
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Save")
 	bool HasSave() const;
 

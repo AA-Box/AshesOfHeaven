@@ -39,7 +39,25 @@ void UAHHUDRootWidget::NativeConstruct()
 		&& HealthBar && ArmorBar && WeaponNameText && AmmoText && GrenadeText && CrosshairText
 		&& InteractionText && DamageText && DialogueSpeakerText && DialogueSubtitleText
 		&& MissionCompleteText && VehicleText && VehicleHealthBar;
+	// Widget Blueprint defaults are layout defaults, not gameplay state. Explicitly clear
+	// every transient presentation element before the first delegate can arrive.
 	ApplyVisibility(CrosshairText, false);
+	ApplyVisibility(CrosshairCore, false);
+	ApplyVisibility(CrosshairTop, false);
+	ApplyVisibility(CrosshairBottom, false);
+	ApplyVisibility(CrosshairLeft, false);
+	ApplyVisibility(CrosshairRight, false);
+	ApplyVisibility(CrosshairHit, false);
+	ApplyVisibility(MissionCompleteText, false);
+	ApplyVisibility(ChapterTitleWidget, false);
+	ApplyVisibility(DamageText, false);
+	ApplyVisibility(DamageRule, false);
+	ApplyVisibility(InteractionText, false);
+	ApplyVisibility(DialogueSpeakerText, false);
+	ApplyVisibility(DialogueSubtitleText, false);
+	ApplyVisibility(CountdownText, false);
+	ApplyVisibility(VehicleText, false);
+	ApplyVisibility(VehicleHealthBar, false);
 	if (UWorld* World = GetWorld())
 	{
 		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
@@ -284,10 +302,23 @@ void UAHHUDRootWidget::PlayPresentationAnimation(UWidgetAnimation* Animation)
 
 void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 Count)
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
+		{
+			if (Chapter->IsChapterComplete())
+			{
+				HideMissionComplete();
+				return;
+			}
+		}
+	}
 	const bool bChanged = !CurrentObjective.EqualTo(Objective) || CurrentObjectiveIndex != Index;
 	CurrentObjective = Objective;
 	CurrentObjectiveIndex = Index;
 	CurrentObjectiveCount = Count;
+	ApplyVisibility(ObjectiveWidget, true);
+	ApplyVisibility(ChapterTitleWidget, false);
 	SetText(ObjectiveIndexText, FText::FromString(FString::Printf(TEXT("OBJECTIVE %02d"), Index + 1)));
 	SetText(ObjectiveText, Objective.IsEmpty() ? NSLOCTEXT("AshesHUD", "AwaitingOrders2", "AWAITING ORDERS") : Objective);
 	if (bChanged)
@@ -338,8 +369,29 @@ void UAHHUDRootWidget::ShowDamageFeedback(bool bArmorBreak, float DirectionAngle
 
 void UAHHUDRootWidget::ShowMissionComplete()
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
+		{
+			if (!Chapter->IsChapterComplete())
+			{
+				HideMissionComplete();
+				return;
+			}
+		}
+	}
+	ApplyVisibility(ChapterTitleWidget, true);
 	ApplyVisibility(MissionCompleteText, true);
+	ApplyVisibility(ObjectiveWidget, false);
+	ApplyVisibility(InteractionText, false);
+	ApplyVisibility(CountdownText, false);
 	PlayPresentationAnimation(ObjectiveRevealAnimation);
+}
+
+void UAHHUDRootWidget::HideMissionComplete()
+{
+	ApplyVisibility(MissionCompleteText, false);
+	ApplyVisibility(ChapterTitleWidget, false);
 }
 
 void UAHHUDRootWidget::SetCrosshairState(bool bAimingDownSights, float Spread, bool bHit, bool bHeadshot, bool bInteraction, bool bVehicle)
@@ -437,6 +489,17 @@ void UAHHUDRootWidget::HandleChapterStageChanged(EAHChapterStage Stage)
 	if (Stage == EAHChapterStage::ChapterComplete)
 	{
 		ShowMissionComplete();
+		SetText(ObjectiveText, FText::GetEmpty());
+		SetText(ObjectiveIndexText, FText::GetEmpty());
+		ApplyVisibility(DialogueSpeakerText, false);
+		ApplyVisibility(DialogueSubtitleText, false);
+		ApplyVisibility(InteractionText, false);
+		ApplyVisibility(CountdownText, false);
+	}
+	else
+	{
+		HideMissionComplete();
+		ApplyVisibility(ObjectiveWidget, true);
 	}
 }
 
