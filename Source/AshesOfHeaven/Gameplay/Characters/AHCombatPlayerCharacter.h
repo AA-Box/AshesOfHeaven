@@ -51,6 +51,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	virtual void DoMove(float Right, float Forward) override;
+	virtual void DoAim(float Yaw, float Pitch) override;
 	virtual void DoJumpStart() override;
 	virtual void DoJumpEnd() override;
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -86,4 +87,5 @@ protected:
 	bool bCrouched = false;
 	bool bGodMode = false;
 	float FootstepTimeRemaining = 0.0f;
+	float LookInputEnableTime = 0.0f;
 };

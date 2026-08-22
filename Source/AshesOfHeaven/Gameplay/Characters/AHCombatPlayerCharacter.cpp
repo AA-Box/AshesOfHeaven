@@ -65,6 +65,11 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 void AAHCombatPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	// The OS mouse-capture warp on launch arrives as one huge look delta in the first
+	// frames and rails the camera pitch into the sky before the player ever touches the
+	// mouse. Swallow look input for a moment so every fresh spawn faces the authored
+	// first frame.
+	LookInputEnableTime = GetWorld() ? GetWorld()->GetTimeSeconds() + 0.35f : 0.0f;
 	if (StartingWeaponClass && InventoryComponent && InventoryComponent->GetWeapons().IsEmpty())
 	{
 		InventoryComponent->AddWeaponClass(StartingWeaponClass);
@@ -135,6 +140,15 @@ void AAHCombatPlayerCharacter::DoMove(float Right, float Forward)
 		bSprinting = false;
 	}
 	Super::DoMove(Right, Forward);
+}
+
+void AAHCombatPlayerCharacter::DoAim(float Yaw, float Pitch)
+{
+	if (GetWorld() && GetWorld()->GetTimeSeconds() < LookInputEnableTime)
+	{
+		return;
+	}
+	Super::DoAim(Yaw, Pitch);
 }
 
 void AAHCombatPlayerCharacter::DoJumpStart()
