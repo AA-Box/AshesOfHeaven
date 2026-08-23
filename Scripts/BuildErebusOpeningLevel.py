@@ -141,9 +141,9 @@ def open_clean_level():
 
 
 def build_ground():
-    # Mud base fields under everything.
+    # Mud base fields under everything — extra rows cover the widened vista floor.
     for column, cx in enumerate((-1600, 600, 2800, 5000, 7200)):
-        for row, cy in enumerate((-1100, 1100)):
+        for row, cy in enumerate((-1100, 1100, -3200, 3200)):
             mesh("SM_Erebus_MudBase_A", (cx, cy, -24), (0, 0, (column * 2 + row) % 4 * 90),
                  label="Mud_%d_%d" % (column, row))
 
@@ -183,12 +183,13 @@ def build_ground():
         decal("MI_Erebus_Decal_Grime", (px, py, 8), (0, -90, yaw), (40, 240 * size, 210 * size),
               "PuddleRim_%d" % index)
 
-    # Rubble berms at the building feet tie architecture into the ground.
-    for index, (bx, by, yaw, s) in enumerate([(-1500, -1000, 8, 1.2), (-600, -1050, -12, 1.4),
-                                              (500, -1080, 4, 1.3), (1600, -1020, -6, 1.5),
-                                              (-1100, 980, 174, 1.3), (100, 1020, 186, 1.2),
-                                              (1200, 1000, 178, 1.4), (2400, 1040, 182, 1.3),
-                                              (2700, -1060, 10, 1.2)]):
+    # Rubble berms: some at the new wall feet, some as mid-field battlefield mounds.
+    for index, (bx, by, yaw, s) in enumerate([(-1500, -1750, 8, 1.4), (-600, -1800, -12, 1.5),
+                                              (1600, -1750, -6, 1.5), (2700, -1820, 10, 1.4),
+                                              (-1100, 1700, 174, 1.4), (100, 1750, 186, 1.3),
+                                              (1200, 1720, 178, 1.5), (2400, 1780, 182, 1.4),
+                                              (-600, -1050, -12, 1.2), (1600, -1020, -6, 1.2),
+                                              (100, 1020, 186, 1.1), (2400, 1040, 182, 1.1)]):
         mesh("SM_Erebus_RubbleBerm_A", (bx, by, -8), (0, 0, yaw), (s, s, s), label="Berm_%d" % index)
 
     rubble_patches = [(-1200, -450, 3), (-880, 380, 2), (-480, -140, 2), (150, 260, 3),
@@ -206,63 +207,86 @@ def build_ground():
 
 
 def build_street_architecture():
-    """Generation-2 corridor architecture: layered fortress facades with secondary
-    structure replacing the featureless dark planes the visual gate rejected.
+    """Phase 4.7 recompose: the gate feedback called the scene a narrow dark corridor.
+    Walls move out to ±1900..2500 (the gameplay collision corridor stays at ±1050),
+    the south side opens into a layered ruin vista between x -100..1600, and the
+    rooflines step DOWN toward the transit gate so the Cathedral owns the sky gap.
     South side = -Y (details face +Y via yaw 180); north side = +Y (yaw 0)."""
-    # South street wall, spawn to midground: stepped depth, alternating language.
+    # Open-field flanking (gate feedback round 2): continuous street walls at any
+    # near distance exceed the frame and read as a canyon. The reference is an open
+    # ruin field: tall masses far out in the fog, airy collapsed frames mid-field,
+    # and a single near anchor at each frame edge. The sky owns the upper frame.
     south = [
-        ("SM_Erebus_Facade_Heavy_A", -1750, -1290, 180, 1.0),
-        ("SM_Erebus_Facade_Broken_A", -150, -1340, 176, 1.1),
-        ("SM_Erebus_ServiceBay_A", 900, -1260, 184, 1.2),
-        ("SM_Erebus_Facade_Heavy_B", 1750, -1380, 180, 1.15),
-        ("SM_Erebus_StructureFrame_A", 2650, -1300, 178, 1.4),
-        ("SM_Erebus_Facade_Heavy_A", 3600, -1420, 182, 1.2),
+        ("SM_Erebus_Facade_Heavy_A", -1650, -1950, 180, 1.15),   # near-left edge anchor
+        ("SM_Erebus_ServiceBay_A", -700, -4000, 184, 1.3),
+        ("SM_Erebus_StructureFrame_B", 900, -2700, 168, 1.6),     # airy: sky reads through
+        ("SM_Erebus_Facade_Broken_A", 2300, -3900, 176, 1.3),
+        ("SM_Erebus_StructureFrame_A", 3100, -2500, 178, 1.5),
+        ("SM_Erebus_Facade_Heavy_B", 3900, -3600, 182, 1.2),
     ]
     for index, (name, fx, fy, yaw, s) in enumerate(south):
-        mesh(name, (fx, fy, 0), (0, 0, yaw), (s, s, s), label="StreetS_%d" % index)
-    # North street wall.
+        mesh(name, (fx, fy, 0), (0, 0, yaw), (s, s, s * 0.75), label="StreetS_%d" % index)
     north = [
-        ("SM_Erebus_Facade_Heavy_B", -1550, 1300, 0, 1.1),
-        ("SM_Erebus_ServiceBay_Destroyed_A", -450, 1240, -4, 1.25),
-        ("SM_Erebus_Facade_Heavy_A", 550, 1360, 2, 1.05),
-        ("SM_Erebus_Facade_Broken_A", 1900, 1330, -2, 1.15),
-        ("SM_Erebus_StructureFrame_B", 2900, 1260, 6, 1.5),
-        ("SM_Erebus_Facade_Heavy_B", 3700, 1400, -3, 1.2),
+        ("SM_Erebus_Facade_Heavy_B", -1750, 2100, 0, 1.2),        # near-right edge anchor
+        ("SM_Erebus_ServiceBay_Destroyed_A", -500, 2300, -4, 1.3),
+        ("SM_Erebus_Facade_Heavy_A", 700, 3900, 2, 1.35),
+        ("SM_Erebus_StructureFrame_B", 1900, 2700, -6, 1.5),
+        ("SM_Erebus_Facade_Broken_A", 2900, 3800, -2, 1.3),
+        ("SM_Erebus_Facade_Heavy_B", 3800, 3500, -3, 1.1),
     ]
     for index, (name, fx, fy, yaw, s) in enumerate(north):
-        mesh(name, (fx, fy, 0), (0, 0, yaw), (s, s, s), label="StreetN_%d" % index)
+        mesh(name, (fx, fy, 0), (0, 0, yaw), (s, s, s * 0.75), label="StreetN_%d" % index)
 
-    # Rooflines: jagged ruin edges + frame silhouettes break the flat parapets.
+    # Roofline damage on the near anchors and the two most visible distant masses.
     for index, (ex, ey, ez, yaw, variant) in enumerate([
-            (-1750, -1270, 2530, 180, "B"), (-150, -1320, 2780, 176, "A"),
-            (1750, -1360, 2400, 180, "B"), (3600, -1400, 3030, 182, "A"),
-            (-1550, 1280, 2300, 0, "A"), (550, 1340, 2660, 2, "B"),
-            (1900, 1310, 2900, -2, "A"), (3700, 1380, 2510, -3, "B")]):
-        mesh("SM_Erebus_RuinEdge_" + variant, (ex, ey, ez), (0, 0, yaw), (1.4, 1.4, 1.4),
+            (-1650, -1930, 2175, 180, "B"), (-1750, 2080, 1960, 0, "A"),
+            (-700, -3980, 1600, 184, "B"), (700, 3880, 2540, 2, "A")]):
+        mesh("SM_Erebus_RuinEdge_" + variant, (ex, ey, ez), (0, 0, yaw), (1.5, 1.5, 1.5),
              label="Roofline_%d" % index)
-    mesh("SM_Erebus_StructureFrame_B", (-150, -1500, 2530), (0, 0, 174), (1.1, 1.1, 1.1), label="RoofFrame_S")
-    mesh("SM_Erebus_StructureFrame_A", (550, 1520, 2620), (0, 0, 4), (0.9, 0.9, 0.9), label="RoofFrame_N")
 
-    # Street-level infrastructure at the building feet (tertiary read).
-    mesh("SM_Erebus_VentBank_A", (-1350, -1180, 0), (0, 0, 180), label="Vent_S0")
-    mesh("SM_Erebus_PanelBank_A", (-700, -1190, 0), (0, 0, 176), label="Panels_S0")
-    mesh("SM_Erebus_IndustrialDoor_A", (-2050, -1170, 0), (0, 0, 184), label="Door_S0")
-    mesh("SM_Erebus_VentBank_A", (300, 1180, 0), (0, 0, -2), label="Vent_N0")
-    mesh("SM_Erebus_PanelBank_A", (1300, 1190, 0), (0, 0, 4), label="Panels_N0")
-    mesh("SM_Erebus_IndustrialDoor_A", (2350, 1180, 0), (0, 0, -4), label="Door_N0")
-    mesh("SM_Erebus_Overhang_A", (-700, -1215, 380), (0, 0, 180), (1.1, 1.1, 1.1), label="Overhang_S")
-    mesh("SM_Erebus_Overhang_A", (1300, 1215, 420), (0, 0, 0), (1.2, 1.2, 1.2), label="Overhang_N")
+    # South vista depth: rubble aprons -> mid ruins -> a burning block far out.
+    mesh("SM_Erebus_RubbleBerm_A", (200, -1450, -8), (0, 0, 24), (1.8, 1.8, 1.3), label="VistaBerm_A")
+    mesh("SM_Erebus_RubbleBerm_A", (900, -1600, -8), (0, 0, -18), (2.0, 2.0, 1.5), label="VistaBerm_B")
+    mesh("SM_Erebus_RubbleBerm_A", (1500, -1500, -8), (0, 0, 156), (1.6, 1.6, 1.2), label="VistaBerm_C")
+    for index, (rx, ry) in enumerate([(300, -1750), (750, -1950), (1250, -1800), (550, -2200)]):
+        mesh("SM_Erebus_RubbleLarge_A", (rx, ry, -6), (0, 0, index * 77), (1.4, 1.4, 1.4),
+             label="VistaRubble_%d" % index)
+    mesh("SM_Erebus_RuinedFacade_B", (500, -3100, 0), (0, 0, 8), (1.6, 1.6, 1.6), label="VistaRuin_A")
+    mesh("SM_Erebus_Facade_Heavy_A", (-600, -3500, 0), (0, 0, 168), (1.3, 1.3, 1.2), label="VistaRuin_B")
+    mesh("SM_Erebus_RuinBlock_A", (1500, -3700, 0), (0, 0, 14), (1.4, 1.4, 1.3), label="VistaRuin_Burning")
+    mesh("SM_Erebus_StructureFrame_B", (2300, -3000, 0), (0, 0, 152), (1.8, 1.8, 1.8), label="VistaFrame")
+    mesh("SM_Erebus_RuinEdge_A", (500, -3080, 2350), (0, 0, 8), (1.9, 1.9, 1.9), label="VistaRuinEdge")
 
-    # Catwalk fragment clinging to the broken facade + heavy columns pacing the wall.
-    mesh("SM_Erebus_Catwalk_A", (-150, -1180, 860), (0, 0, 176), (1.2, 1.2, 1.2), label="Catwalk_S")
-    mesh("SM_Erebus_CatwalkSupport_A", (-400, -1170, 530), (0, 0, 176), label="CatwalkSup_S0")
-    mesh("SM_Erebus_Catwalk_A", (1900, 1170, 940), (0, 14, -2), (1.1, 1.1, 1.1), label="Catwalk_N_Fallen")
-    for index, cx in enumerate((-1100, 100, 1250, 2400)):
-        mesh("SM_Erebus_ColumnHeavy_A", (cx, -1140, 0), (0, 0, index * 45), label="ColS_%d" % index)
-        mesh("SM_Erebus_ColumnHeavy_A", (cx + 550, 1140, 0), (0, 0, index * 30 + 10), label="ColN_%d" % index)
-    # Leaning heavy beams tie street to walls; collapsed catwalk debris below it.
-    mesh("SM_Erebus_BeamHeavy_A", (2650, -1050, 40), (0, -24, 30), label="LeanBeam_S")
-    mesh("SM_Erebus_BeamHeavy_A", (2050, 1080, 20), (0, -18, -140), label="LeanBeam_N")
+    # North gap depth: ruin masses read through the collapsed frame.
+    mesh("SM_Erebus_RuinBlock_B", (1700, 3200, 0), (0, 0, -12), (1.4, 1.4, 1.1), label="NorthGapRuin_A")
+    mesh("SM_Erebus_RuinedFacade_A", (2300, 2900, 0), (0, 0, -172), (1.4, 1.4, 1.4), label="NorthGapRuin_B")
+
+    # Street-level infrastructure at the new wall feet (tertiary read).
+    mesh("SM_Erebus_VentBank_A", (-1500, -1880, 0), (0, 0, 180), label="Vent_S0")
+    mesh("SM_Erebus_PanelBank_A", (-1880, -1850, 0), (0, 0, 176), label="Panels_S0")
+    mesh("SM_Erebus_IndustrialDoor_A", (-1300, -1900, 0), (0, 0, 184), label="Door_S0")
+    mesh("SM_Erebus_VentBank_A", (-1400, 2050, 0), (0, 0, -2), label="Vent_N0")
+    mesh("SM_Erebus_PanelBank_A", (-2100, 2030, 0), (0, 0, 4), label="Panels_N0")
+    mesh("SM_Erebus_IndustrialDoor_A", (-500, 2170, 0), (0, 0, -4), label="Door_N0")
+    mesh("SM_Erebus_Overhang_A", (-1450, -1890, 380), (0, 0, 180), (1.1, 1.1, 1.1), label="Overhang_S")
+    mesh("SM_Erebus_Overhang_A", (-900, 2240, 420), (0, 0, 0), (1.2, 1.2, 1.2), label="Overhang_N")
+
+    mesh("SM_Erebus_Catwalk_A", (900, -2650, 860), (0, 0, 168), (1.2, 1.2, 1.2), label="Catwalk_S")
+    mesh("SM_Erebus_CatwalkSupport_A", (700, -2620, 530), (0, 0, 168), label="CatwalkSup_S0")
+    mesh("SM_Erebus_Catwalk_A", (1900, 2650, 940), (0, 14, -6), (1.1, 1.1, 1.1), label="Catwalk_N_Fallen")
+    # Broken colonnade: full 26m ColumnHeavy pillars at 22m out formed a canyon that
+    # sealed the sky (they were the unmovable dark towers in three packaged rounds).
+    # Snapped stubs + one fallen shaft keep the ruin vocabulary at ground level.
+    for index, cx in enumerate((-1200, 0, 1150, 2300)):
+        stub_s = 0.30 + (index % 3) * 0.14
+        stub_n = 0.24 + ((index + 1) % 3) * 0.16
+        mesh("SM_Erebus_ColumnHeavy_A", (cx, -2250, 0), (index * 3 - 4, 0, index * 45),
+             (1.0, 1.0, stub_s), label="ColS_%d" % index)
+        mesh("SM_Erebus_ColumnHeavy_A", (cx + 550, 2230, 0), (0, index * 2 - 3, index * 30 + 10),
+             (1.0, 1.0, stub_n), label="ColN_%d" % index)
+    mesh("SM_Erebus_ColumnHeavy_A", (600, -2100, 30), (0, -86, 20), (1.0, 1.0, 0.9), label="ColS_Fallen")
+    mesh("SM_Erebus_BeamHeavy_A", (2750, -2150, 40), (0, -24, 30), label="LeanBeam_S")
+    mesh("SM_Erebus_BeamHeavy_A", (2150, 2170, 20), (0, -18, -140), label="LeanBeam_N")
 
 
 def build_spawn_area():
@@ -287,9 +311,9 @@ def build_spawn_area():
     mesh("SM_Erebus_Crate_A", (-1290, -230, 0), (0, 0, -12))
 
     # Right flank pipe cluster.
-    mesh("SM_Erebus_Pipe_Large_A", (-900, 700, 0), (0, 0, -15))
-    mesh("SM_Erebus_Pipe_Large_A", (-880, 760, 84), (0, 0, -13), label="PipeStacked")
-    mesh("SM_Erebus_Pipe_Elbow_A", (-580, 640, 0), (0, 0, 165))
+    mesh("SM_Erebus_Pipe_Large_A", (-900, 700, 0), (0, 0, -35))
+    mesh("SM_Erebus_Pipe_Large_A", (-880, 760, 84), (0, 0, -33), label="PipeStacked")
+    mesh("SM_Erebus_Pipe_Elbow_A", (-580, 640, 0), (0, 0, 60))
     mesh("SM_Erebus_PipeSupport_A", (-1080, 690, 0), (0, 0, -15))
     mesh("SM_Erebus_PipeSupport_A", (-720, 720, 0), (0, 0, -15))
     mesh("SM_Erebus_SandbagRow_A", (-1350, 480, 0), (0, 0, 12), (1.0, 1.0, 0.72))
@@ -346,15 +370,32 @@ def build_midground():
 
     # Banner monoliths: the reference's dominant midground vocabulary — plinth bases
     # tie them into the ground like the reference's fortress blocks.
-    mesh("SM_Erebus_Monolith_A", (950, -880, 0), (0, 0, 186), (1.0, 1.0, 1.0), label="Monolith_A")
-    mesh("SM_Erebus_Monolith_A", (2150, 880, 0), (0, 0, -8), (0.9, 0.9, 1.15), label="Monolith_B")
-    mesh("SM_Erebus_Monolith_A", (3350, -860, 0), (0, 0, 172), (1.15, 1.15, 1.25), label="Monolith_C")
-    mesh("SM_Erebus_Monolith_A", (4600, 940, 0), (0, 0, 5), (1.1, 1.1, 1.5), label="Monolith_D")
-    mesh("SM_Erebus_RubbleBerm_A", (950, -760, -6), (0, 0, 96), (1.3, 1.3, 1.1), label="MonolithBerm_A")
-    mesh("SM_Erebus_RubbleBerm_A", (2150, 760, -6), (0, 0, 274), (1.2, 1.2, 1.0), label="MonolithBerm_B")
+    mesh("SM_Erebus_Monolith_A", (2800, -2700, 0), (0, 0, 186), (1.0, 1.0, 1.0), label="Monolith_A")
+    mesh("SM_Erebus_Monolith_A", (3600, 2800, 0), (0, 0, -8), (1.1, 1.1, 1.0), label="Monolith_B")
+    mesh("SM_Erebus_Monolith_A", (5200, -2400, 0), (0, 0, 172), (1.3, 1.3, 1.0), label="Monolith_C")
+    mesh("SM_Erebus_Monolith_A", (6400, 2200, 0), (0, 0, 5), (1.2, 1.2, 1.1), label="Monolith_D")
+    mesh("SM_Erebus_RubbleBerm_A", (2800, -2560, -6), (0, 0, 96), (1.6, 1.6, 1.2), label="MonolithBerm_A")
+    mesh("SM_Erebus_RubbleBerm_A", (3600, 2660, -6), (0, 0, 274), (1.5, 1.5, 1.1), label="MonolithBerm_B")
 
-    # Gantry tower on the right flank.
-    mesh("SM_Erebus_GantryTower_A", (1650, 1080, 0), (0, 0, 4))
+    # Gantry tower on the right flank (moved out with the widened north wall).
+    mesh("SM_Erebus_GantryTower_A", (1650, 1500, 0), (0, 0, 4))
+
+    # --- Phase 4.7 hero pieces: specific destroyed objects, not generic modules ---
+    # Knocked-out tank guarding the road edge; barrel drooped, hull breached.
+    mesh("SM_Erebus_TankHulk_A", (380, -730, 0), (0, 0, -155), (1.0, 1.0, 1.0), label="Hero_TankHulk")
+    mesh("SM_Erebus_RubbleMedium_A", (240, -640, -4), (0, 0, 60), (0.9, 0.9, 0.9), label="TankDebris_A")
+    # Crashed gunship nose-in past the bunker; debris trail rakes back toward the road.
+    # z -70: the crushed-belly boolean leaves the airframe bbox floor at +72, so the
+    # wreck must sink to sit in the mud instead of hovering.
+    mesh("SM_Erebus_GunshipWreck_A", (2120, -520, -70), (0, 0, -140), (1.15, 1.15, 1.15), label="Hero_Gunship")
+    for index, (dx, dy, s) in enumerate([(1820, -380, 0.8), (1650, -290, 0.6), (1950, -460, 0.7)]):
+        mesh("SM_Erebus_Wreckage_B", (dx, dy, -4), (0, 0, index * 111), (s, s, s),
+             label="GunshipDebris_%d" % index)
+    # Field gun dug in behind the north sandbag line, still aimed down the corridor.
+    mesh("SM_Erebus_ArtilleryGun_A", (-820, 430, 0), (0, 0, -8), (1.0, 1.0, 1.0), label="Hero_Artillery")
+    mesh("SM_Erebus_SandbagRow_A", (-680, 430, 0), (0, 0, 92), (1.0, 1.0, 0.72), label="ArtillerySandbags")
+    # Burned-out supply truck on the spawn flank.
+    mesh("SM_Erebus_TruckWreck_A", (-1520, -620, 0), (0, 0, 24), (1.0, 1.0, 1.0), label="Hero_Truck")
 
     # NO standing utility poles on the corridor axis: from the spawn sightline a
     # crossarm against the sky reads as a giant cross (visual gate §18). Poles are
@@ -367,15 +408,15 @@ def build_midground():
 
     # Cool ambient bounce fills: fake GI so the street walls read in the overcast
     # key instead of crushing to black (no Lumen on the Mac profile).
-    light((-900, 0, 620), (0.42, 0.47, 0.58), 1100.0, 2600.0, "CorridorFill_A")
-    light((600, 0, 640), (0.42, 0.47, 0.58), 1100.0, 2600.0, "CorridorFill_B")
-    light((2100, 0, 660), (0.42, 0.47, 0.58), 1000.0, 2600.0, "CorridorFill_C")
     light((-960, -210, 280), (1.0, 0.42, 0.12), 3600.0, 760.0, "BarrelFire")
     light((-350, -620, 90), (1.0, 0.38, 0.10), 4200.0, 720.0, "CraterFire")
     light((1500, 560, 160), (1.0, 0.26, 0.07), 5600.0, 950.0, "WreckFire")
     light((2160, 500, 350), (1.0, 0.48, 0.12), 2400.0, 560.0, "BunkerLamp")
     light((2620, -700, 220), (1.0, 0.33, 0.09), 3800.0, 680.0, "PipeFire")
-    light((950, -780, 210), (1.0, 0.34, 0.09), 6200.0, 1200.0, "MonolithFire")
+    light((2800, -2540, 260), (1.0, 0.34, 0.09), 7500.0, 1600.0, "MonolithFire")
+    light((2120, -520, 200), (1.0, 0.30, 0.08), 5400.0, 950.0, "GunshipFire")
+    light((380, -730, 180), (1.0, 0.40, 0.12), 1500.0, 420.0, "TankSmolder")
+    light((1500, -3300, 400), (1.0, 0.34, 0.09), 12000.0, 3200.0, "VistaFire")
 
 
 def build_background():
@@ -410,16 +451,19 @@ def build_background():
              (scale, scale, scale), label="SkylineFar_%d" % index)
 
     # Cathedral (visual gate §17): enormous, vertical, structurally unique, largely
-    # black, substantially taller than the human skyline. Fluted tower cluster right
-    # of the corridor axis so it dominates the gap without blocking the route read.
-    # Nearly on-axis so the towers punch through the corridor sky gap above the
-    # transit gate from the spawn/reference view, instead of hiding behind the
-    # street wall (§17: the landmark must be obvious and pull the eye).
-    mesh("SM_Erebus_CathedralTower_A", (9200, 500, 0), (0, 0, 20), (1.0, 1.0, 1.0), label="Cathedral_Main")
-    mesh("SM_Erebus_CathedralTower_B", (8300, 1400, 0), (0, 0, -15), (1.0, 1.0, 1.0), label="Cathedral_Flank")
-    mesh("SM_Erebus_CathedralTower_C", (10200, -400, 0), (0, 0, 45), (1.0, 1.0, 1.0), label="Cathedral_Fore")
-    mesh("SM_Erebus_RuinBlock_B", (8900, 1000, 0), (0, 0, 8), (2.2, 2.2, 1.1), label="CathedralBase_A")
-    mesh("SM_Erebus_RuinBlock_B", (9600, 200, 0), (0, 0, -14), (2.0, 2.0, 0.9), label="CathedralBase_B")
+    # black. Gate feedback: "not visually dominant at all" — the towers were 9km out
+    # and fog-swallowed. They move to ~6km, nearly on the corridor axis, scaled up,
+    # so the main tower fills the sky gap above the transit gate from spawn and
+    # clears the volumetric fog enough to read as a hard silhouette.
+    mesh("SM_Erebus_CathedralTower_A", (8200, 400, 0), (0, 0, 20), (1.25, 1.25, 1.2), label="Cathedral_Main")
+    mesh("SM_Erebus_CathedralTower_B", (7300, 1700, 0), (0, 0, -15), (1.1, 1.1, 1.0), label="Cathedral_Flank")
+    mesh("SM_Erebus_CathedralTower_C", (9000, -1000, 0), (0, 0, 45), (1.15, 1.15, 1.1), label="Cathedral_Fore")
+    mesh("SM_Erebus_RuinBlock_B", (7900, 1000, 0), (0, 0, 8), (2.4, 2.4, 1.2), label="CathedralBase_A")
+    mesh("SM_Erebus_RuinBlock_B", (8600, -100, 0), (0, 0, -14), (2.2, 2.2, 1.0), label="CathedralBase_B")
+    # Buttress shoulders bridge the towers into one massed landmark instead of
+    # three separate needles.
+    mesh("SM_Erebus_RuinBlock_B", (8250, 750, 0), (0, 0, 24), (1.6, 1.6, 2.6), label="CathedralShoulder_A")
+    mesh("SM_Erebus_RuinBlock_B", (8700, -450, 0), (0, 0, -30), (1.4, 1.4, 2.2), label="CathedralShoulder_B")
 
 
 def build_vfx_and_decals():
@@ -433,6 +477,9 @@ def build_vfx_and_decals():
     decal("MI_Erebus_Decal_Scorch", (950, -800, 6), (0, -90, 30), (110, 320, 320), "Scorch_MonolithFire")
     decal("MI_Erebus_Decal_Scorch", (1500, 560, 6), (0, -90, -20), (90, 280, 280), "Scorch_Wreck")
     decal("MI_Erebus_Decal_Scorch", (2620, -700, 6), (0, -90, 45), (80, 240, 240), "Scorch_Pipe")
+    decal("MI_Erebus_Decal_Scorch", (2120, -520, 6), (0, -90, -40), (120, 420, 420), "Scorch_Gunship")
+    decal("MI_Erebus_Decal_Scorch", (380, -730, 6), (0, -90, 25), (90, 300, 300), "Scorch_Tank")
+    decal("MI_Erebus_Decal_Scorch", (-1520, -620, 6), (0, -90, 24), (80, 260, 260), "Scorch_Truck")
     decal("MI_Erebus_Decal_Grime", (-2100, 0, 180), (0, 0, 0), (70, 300, 220), "Grime_RearWall")
     decal("MI_Erebus_Decal_Grime", (952, -822, 400), (0, 0, 6), (70, 380, 420), "Grime_Monolith_A")
     decal("MI_Erebus_Decal_Grime", (2148, 822, 420), (0, 0, 186), (70, 380, 420), "Grime_Monolith_B")

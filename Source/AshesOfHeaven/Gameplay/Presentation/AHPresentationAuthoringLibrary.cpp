@@ -719,15 +719,15 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Fire.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Fire.bLocalSpace = true;
 		Fire.Bounds = 160.0f;
-		Fire.SpawnRate = 34.0f;
+		Fire.SpawnRate = 46.0f;
 		Fire.LifeMin = 0.35f; Fire.LifeMax = 0.7f;
-		Fire.SizeMin = 4.0f; Fire.SizeMax = 9.0f;
+		Fire.SizeMin = 6.0f; Fire.SizeMax = 14.0f;
 		Fire.VelMin = 40.0f; Fire.VelMax = 100.0f;
 		Fire.ConeAngle = 18.0f;
 		Fire.GravityZ = 0.0f;
 		Fire.Drag = 1.2f;
 		Fire.ShapeRadius = 22.0f;
-		Fire.Color = FLinearColor(3.8f, 1.35f, 0.32f, 1.0f);
+		Fire.Color = FLinearColor(5.2f, 1.8f, 0.42f, 1.0f);
 		Recipes.Add(Fire);
 
 		FAHNearVFXRecipe Wreck;
@@ -735,14 +735,14 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Wreck.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Wreck.bLocalSpace = true;
 		Wreck.Bounds = 320.0f;
-		Wreck.SpawnRate = 46.0f;
+		Wreck.SpawnRate = 60.0f;
 		Wreck.LifeMin = 0.5f; Wreck.LifeMax = 1.0f;
-		Wreck.SizeMin = 12.0f; Wreck.SizeMax = 26.0f;
+		Wreck.SizeMin = 16.0f; Wreck.SizeMax = 36.0f;
 		Wreck.VelMin = 70.0f; Wreck.VelMax = 170.0f;
 		Wreck.ConeAngle = 24.0f;
 		Wreck.Drag = 1.0f;
 		Wreck.ShapeRadius = 60.0f;
-		Wreck.Color = FLinearColor(3.4f, 1.05f, 0.26f, 1.0f);
+		Wreck.Color = FLinearColor(4.8f, 1.5f, 0.36f, 1.0f);
 		Recipes.Add(Wreck);
 
 		FAHNearVFXRecipe Embers;

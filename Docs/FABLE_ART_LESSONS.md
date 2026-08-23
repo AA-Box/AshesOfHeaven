@@ -72,3 +72,22 @@ Durable lessons only. Each entry prevents a repeated mistake.
   assets: a bare gate lintel plus ANY nearer vertical (pole, column, mast) on
   the camera axis reads as a giant cross. Fill gate centers with mass and keep
   crossarm poles off the corridor sightline.
+- Textures imported with TC_Masks compression need SAMPLERTYPE_MASKS on their
+  sample nodes; SAMPLERTYPE_LINEAR_COLOR fails the whole material compile and
+  every mesh silently falls back to the checkerboard default.
+- Budget silhouettes by angular height before placing: an object whose
+  height/distance exceeds tan(vertical half-FOV) seals the sky from the player
+  camera. The 26m banner monoliths at 30m read as canyon walls, not landmarks;
+  the reference's blocks work because they sit at 60m+.
+- The MCP Scene/Actor toolsets operate on the PIE world while PIE runs:
+  find_actors returns UEDPIE actors and set_actor_transform moves them live
+  (remove_from_scene is blocked). Teleporting suspects to -100000 Z one at a
+  time is the fastest way to identify an unknown mass in the frame.
+- The reference's tonal hierarchy (bright sky, dark ground, silhouetted
+  structures) is an exposure-anchoring problem, not an albedo problem. Bright
+  fog inscattering + a visible bright sky give auto-exposure something to key
+  on so everything terrestrial falls dark; ambient point fills over the street
+  light the FLOOR first (inverse square) and invert the hierarchy — delete
+  them and light walls with a shadowless cross-street key instead. Albedo cuts
+  cannot out-run AE: after adaptation only relative light distribution moves
+  the wall:ground ratio.

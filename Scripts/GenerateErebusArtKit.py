@@ -206,7 +206,19 @@ def finalize(name, mesh, materials):
 MEL = unreal.MaterialEditingLibrary
 
 
-def make_instance(name, parent_name, tint, scalars):
+TEX_DIR = "/Game/Ashes/Textures/Erebus"
+
+# Baked procedural texture families for the M_ErebusSurface master.
+FAMILY_TEXTURES = {
+    "concrete": {"AlbedoTex": "T_Erebus_Concrete_D", "NormalTex": "T_Erebus_Concrete_N", "RoughTex": "T_Erebus_Concrete_R"},
+    "metal":    {"AlbedoTex": "T_Erebus_Metal_D",    "NormalTex": "T_Erebus_Metal_N",    "RoughTex": "T_Erebus_Metal_R"},
+    "mud":      {"AlbedoTex": "T_Erebus_Mud_D",      "NormalTex": "T_Erebus_Mud_N",      "RoughTex": "T_Erebus_Mud_R"},
+    "asphalt":  {"AlbedoTex": "T_Erebus_Asphalt_D",  "NormalTex": "T_Erebus_Asphalt_N",  "RoughTex": "T_Erebus_Asphalt_R"},
+}
+FAMILY_UVTILE = {"concrete": 0.25, "metal": 0.5, "mud": 0.14, "asphalt": 0.22}
+
+
+def make_instance(name, parent_name, tint, scalars, family=None):
     full = INST_DIR + "/" + name
     inst = unreal.load_asset(full)
     if not inst:
@@ -223,38 +235,52 @@ def make_instance(name, parent_name, tint, scalars):
             inst, "BaseTint", unreal.LinearColor(tint[0], tint[1], tint[2], 1.0))
     for key, value in scalars.items():
         MEL.set_material_instance_scalar_parameter_value(inst, key, value)
+    if family:
+        for param, tex_name in FAMILY_TEXTURES[family].items():
+            tex = unreal.load_asset(TEX_DIR + "/" + tex_name)
+            if tex:
+                MEL.set_material_instance_texture_parameter_value(inst, param, tex)
+            else:
+                unreal.log_error("[ErebusKit] missing texture %s for %s" % (tex_name, name))
+        if "UVTile" not in scalars:
+            MEL.set_material_instance_scalar_parameter_value(inst, "UVTile", FAMILY_UVTILE[family])
     MEL.update_material_instance(inst)
     unreal.EditorAssetLibrary.save_asset(full)
     return inst
 
 
 INSTANCES = {
-    # name: (parent master, BaseTint, scalar params)
-    # Phase 4.6 readability retune: the rejected gate capture collapsed every surface
-    # into near-black. Albedos move up into the mid-dark range so materials separate
-    # (painted steel vs bare metal vs concrete vs soot) while the scene stays dark.
-    "MI_Erebus_Concrete_Dry":    ("M_Concrete",        (0.170, 0.164, 0.150), {"Roughness": 0.88, "GrimeAmount": 0.35, "WearAmount": 0.35, "Wetness": 0.0}),
-    "MI_Erebus_Concrete_Light":  ("M_Concrete",        (0.240, 0.234, 0.216), {"Roughness": 0.85, "GrimeAmount": 0.25, "WearAmount": 0.30, "Wetness": 0.0}),
-    "MI_Erebus_Concrete_Panels": ("M_Concrete",        (0.195, 0.188, 0.170), {"Roughness": 0.86, "GrimeAmount": 0.40, "WearAmount": 0.55, "Wetness": 0.0}),
-    "MI_Erebus_Concrete_Wet":    ("M_WetConcrete",     (0.060, 0.062, 0.064), {"Roughness": 0.30, "GrimeAmount": 0.45, "Wetness": 0.55}),
-    "MI_Erebus_Concrete_Burned": ("M_Concrete",        (0.052, 0.048, 0.043), {"Roughness": 0.94, "GrimeAmount": 0.75, "DamageMaskStrength": 0.60, "Wetness": 0.0}),
-    "MI_Erebus_Steel_Dark":      ("M_HumanMetal",      (0.075, 0.078, 0.082), {"Roughness": 0.50, "Metallic": 0.80, "GrimeAmount": 0.45, "WearAmount": 0.40}),
-    "MI_Erebus_Steel_Painted":   ("M_HumanPaintedMetal", (0.090, 0.096, 0.075), {"Roughness": 0.58, "Metallic": 0.30, "GrimeAmount": 0.42, "WearAmount": 0.55}),
-    "MI_Erebus_Steel_Olive":     ("M_HumanPaintedMetal", (0.072, 0.080, 0.058), {"Roughness": 0.60, "Metallic": 0.30, "GrimeAmount": 0.50, "WearAmount": 0.60}),
-    "MI_Erebus_Metal_Bare":      ("M_HumanMetal",      (0.160, 0.160, 0.165), {"Roughness": 0.38, "Metallic": 0.90, "GrimeAmount": 0.35, "WearAmount": 0.60}),
-    "MI_Erebus_Steel_Scorched":  ("M_HumanMetal",      (0.030, 0.027, 0.025), {"Roughness": 0.92, "Metallic": 0.35, "GrimeAmount": 0.85, "DamageMaskStrength": 0.65}),
-    "MI_Erebus_Mud":             ("M_WetConcrete",     (0.012, 0.010, 0.008), {"Roughness": 0.88, "GrimeAmount": 0.60, "Wetness": 0.25}),
-    "MI_Erebus_RoadAsphalt":     ("M_Concrete",        (0.020, 0.020, 0.022), {"Roughness": 0.82, "GrimeAmount": 0.55, "WearAmount": 0.60, "Wetness": 0.0}),
-    "MI_Erebus_WreckMetal":      ("M_HumanMetal",      (0.100, 0.072, 0.052), {"Roughness": 0.80, "Metallic": 0.55, "GrimeAmount": 0.75, "DamageMaskStrength": 0.70}),
-    "MI_Erebus_Rubber":          ("M_HumanArmor",      (0.024, 0.024, 0.025), {"Roughness": 0.90, "Metallic": 0.0, "GrimeAmount": 0.60}),
-    "MI_Erebus_Glass_Damaged":   ("M_Glass",           (0.030, 0.038, 0.042), {"Roughness": 0.35, "GrimeAmount": 0.50}),
-    "MI_Erebus_Puddle":          ("M_Glass",           (0.010, 0.012, 0.016), {"Roughness": 0.05, "Wetness": 1.0}),
-    "MI_Erebus_RuinDark":        ("M_Concrete",        (0.075, 0.077, 0.082), {"Roughness": 0.90, "GrimeAmount": 0.60}),
-    "MI_Erebus_CathedralSilhouette": ("M_VeilObsidian", (0.016, 0.017, 0.020), {"Roughness": 0.85}),
-    "MI_Erebus_BannerCloth":     ("M_HumanArmor",      (0.030, 0.030, 0.032), {"Roughness": 0.95, "Metallic": 0.0}),
-    "MI_Erebus_BannerEmblem":    ("M_HumanMetal",      (0.300, 0.310, 0.285), {"Roughness": 0.85, "Metallic": 0.08, "GrimeAmount": 0.35}),
-    "MI_Erebus_Decal_Scorch":    ("M_Scorch",          (0.030, 0.018, 0.010), {"DecalOpacity": 0.85}),
-    "MI_Erebus_Decal_Grime":     ("M_Decal_Master",    (0.055, 0.050, 0.042), {"DecalOpacity": 0.65}),
+    # name: (parent master, BaseTint, scalar params, texture family or None)
+    # Phase 4.7 PBR retune: surface materials ride M_ErebusSurface, which samples
+    # the baked procedural texture sets (albedo detail x tint, normal, roughness).
+    # Concrete albedos lift again: the gate feedback said the walls crush so dark
+    # the secondary geometry is lost. Ground stays dark/wet like the reference.
+    "MI_Erebus_Concrete_Dry":    ("M_ErebusSurface", (0.230, 0.222, 0.204), {"Roughness": 0.92, "GrimeAmount": 0.30, "WearAmount": 0.30, "Wetness": 0.0}, "concrete"),
+    "MI_Erebus_Concrete_Light":  ("M_ErebusSurface", (0.320, 0.312, 0.290), {"Roughness": 0.90, "GrimeAmount": 0.22, "WearAmount": 0.26, "Wetness": 0.0}, "concrete"),
+    "MI_Erebus_Concrete_Panels": ("M_ErebusSurface", (0.260, 0.252, 0.230), {"Roughness": 0.90, "GrimeAmount": 0.34, "WearAmount": 0.45, "Wetness": 0.0}, "concrete"),
+    "MI_Erebus_Concrete_Wet":    ("M_ErebusSurface", (0.085, 0.088, 0.092), {"Roughness": 0.55, "GrimeAmount": 0.40, "Wetness": 0.55}, "concrete"),
+    "MI_Erebus_Concrete_Burned": ("M_ErebusSurface", (0.060, 0.055, 0.050), {"Roughness": 0.96, "GrimeAmount": 0.65, "DamageMaskStrength": 0.75, "Wetness": 0.0}, "concrete"),
+    "MI_Erebus_Steel_Dark":      ("M_ErebusSurface", (0.085, 0.088, 0.094), {"Roughness": 0.70, "Metallic": 0.80, "GrimeAmount": 0.40, "WearAmount": 0.38}, "metal"),
+    "MI_Erebus_Steel_Painted":   ("M_ErebusSurface", (0.105, 0.112, 0.088), {"Roughness": 0.80, "Metallic": 0.30, "GrimeAmount": 0.38, "WearAmount": 0.50}, "metal"),
+    "MI_Erebus_Steel_Olive":     ("M_ErebusSurface", (0.085, 0.095, 0.068), {"Roughness": 0.82, "Metallic": 0.30, "GrimeAmount": 0.45, "WearAmount": 0.55}, "metal"),
+    "MI_Erebus_Metal_Bare":      ("M_ErebusSurface", (0.175, 0.175, 0.180), {"Roughness": 0.55, "Metallic": 0.90, "GrimeAmount": 0.32, "WearAmount": 0.55}, "metal"),
+    "MI_Erebus_Steel_Scorched":  ("M_ErebusSurface", (0.034, 0.031, 0.028), {"Roughness": 0.96, "Metallic": 0.35, "GrimeAmount": 0.75, "DamageMaskStrength": 0.85}, "metal"),
+    "MI_Erebus_Mud":             ("M_ErebusSurface", (0.011, 0.009, 0.007), {"Roughness": 0.95, "GrimeAmount": 0.50, "Wetness": 0.22}, "mud"),
+    # Dark wet pavement for horizontal ground surfaces: the gate feedback said the
+    # foreground ground reads bright/flat vs the reference's dark wet battlefield,
+    # and bright ground also drags auto-exposure down, crushing the walls.
+    "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.028, 0.029, 0.031), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.10}, "concrete"),
+    "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.016, 0.016, 0.018), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.06}, "asphalt"),
+    "MI_Erebus_WreckMetal":      ("M_ErebusSurface", (0.110, 0.080, 0.058), {"Roughness": 0.92, "Metallic": 0.55, "GrimeAmount": 0.65, "DamageMaskStrength": 0.85}, "metal"),
+    "MI_Erebus_Rubber":          ("M_HumanArmor",    (0.024, 0.024, 0.025), {"Roughness": 0.90, "Metallic": 0.0, "GrimeAmount": 0.60}, None),
+    "MI_Erebus_Glass_Damaged":   ("M_Glass",         (0.030, 0.038, 0.042), {"Roughness": 0.35, "GrimeAmount": 0.50}, None),
+    "MI_Erebus_Puddle":          ("M_Glass",         (0.010, 0.012, 0.016), {"Roughness": 0.05, "Wetness": 1.0}, None),
+    "MI_Erebus_RuinDark":        ("M_ErebusSurface", (0.105, 0.108, 0.115), {"Roughness": 0.95, "GrimeAmount": 0.50, "WearAmount": 0.40}, "concrete"),
+    "MI_Erebus_CathedralSilhouette": ("M_VeilObsidian", (0.016, 0.017, 0.020), {"Roughness": 0.85}, None),
+    "MI_Erebus_BannerCloth":     ("M_HumanArmor",    (0.030, 0.030, 0.032), {"Roughness": 0.95, "Metallic": 0.0}, None),
+    "MI_Erebus_BannerEmblem":    ("M_HumanMetal",    (0.300, 0.310, 0.285), {"Roughness": 0.85, "Metallic": 0.08, "GrimeAmount": 0.35}, None),
+    "MI_Erebus_Decal_Scorch":    ("M_Scorch",        (0.030, 0.018, 0.010), {"DecalOpacity": 0.85}, None),
+    "MI_Erebus_Decal_Grime":     ("M_Decal_Master",  (0.055, 0.050, 0.042), {"DecalOpacity": 0.65}, None),
 }
 
 # Shorthand paths used by the mesh builders.
@@ -376,7 +402,7 @@ def build_brokenfloor_a():
     subtract(m, tool_box((-60, 40, 34), 8, 380, 12, rot=(0, 0, -40)))
     noise(m, 2.0, 0.02, seed=23, above_z=20)
     bevel(m, 2.5)
-    return finalize("SM_Erebus_BrokenFloor_A", m, [(M["MI_Erebus_Concrete_Dry"], "Concrete")])
+    return finalize("SM_Erebus_BrokenFloor_A", m, [(M["MI_Erebus_Concrete_Ground"], "Concrete")])
 
 
 def build_pipe_large_a():
@@ -544,7 +570,7 @@ def build_groundslab_a():
     subtract(m, tool_box((-150, 100, 28), 10, 760, 9, rot=(0, 0, -35)))
     noise(m, 2.4, 0.012, seed=83, above_z=16)
     bevel(m, 3.0)
-    return finalize("SM_Erebus_GroundSlab_A", m, [(M["MI_Erebus_Concrete_Dry"], "Concrete")])
+    return finalize("SM_Erebus_GroundSlab_A", m, [(M["MI_Erebus_Concrete_Ground"], "Concrete")])
 
 
 def build_mudbase_a():
@@ -1027,13 +1053,122 @@ def build_worklight_a():
         (M["MI_Erebus_Metal_Bare"], "Lens")])
 
 
+# ---------------------------------------------------------------------------
+# Phase 4.7 hero pieces: single-purpose destroyed set pieces with enough
+# sub-structure to read as specific objects (tank, gunship, gun, truck),
+# not recombined generic modules. X+ is forward for all four.
+# ---------------------------------------------------------------------------
+
+def build_tankhulk_a():
+    m = new_mesh()
+    # track assemblies with sprocket/idler wheels poking past the skirt
+    for side in (-1, 1):
+        y = side * 165
+        box(m, (0, y, 0), 600, 95, 100, mat=2)
+        cyl(m, (300, y - 15 * side, 45), 46, 30, rot=(90 if side > 0 else -90, 0, 0), mat=3, radial_steps=10)
+        cyl(m, (-300, y - 15 * side, 45), 46, 30, rot=(90 if side > 0 else -90, 0, 0), mat=3, radial_steps=10)
+    box(m, (0, 0, 95), 640, 285, 125, mat=0)                       # hull
+    subtract(m, tool_box((330, 0, 225), 280, 340, 150, rot=(0, 35, 0)))   # sloped glacis
+    box(m, (-200, 0, 218), 220, 250, 26, mat=1)                    # engine deck
+    for gx in (-260, -200, -140):
+        box(m, (gx, 0, 244), 40, 230, 6, mat=3)                    # deck grilles
+    cyl(m, (-30, 0, 220), 98, 88, mat=0, radial_steps=16)          # turret
+    box(m, (70, 0, 250), 90, 95, 62, mat=0)                        # mantlet
+    cyl(m, (110, 0, 272), 15, 430, rot=(0, 105, 0), mat=3)         # drooped barrel (knocked out)
+    box(m, (-70, 35, 308), 64, 64, 10, rot=(24, 0, 40), mat=0)     # blown-open hatch
+    cyl(m, (-90, -70, 300), 4, 160, rot=(30, 12, 0), mat=3)        # bent antenna
+    box(m, (-170, -120, 90), 170, 110, 130, mat=1)                 # charred interior behind the breach
+    subtract(m, tool_box((-180, -170, 160), 200, 120, 170, rot=(20, 0, 30)))  # hull breach
+    subtract(m, tool_box((270, 175, 40), 170, 130, 150, rot=(0, 0, 25)))      # thrown track / broken skirt
+    noise(m, 2.0, 0.02, 331)
+    return finalize("SM_Erebus_TankHulk_A", m, [
+        (M["MI_Erebus_Steel_Olive"], "Hull"), (M["MI_Erebus_Steel_Scorched"], "Burned"),
+        (M["MI_Erebus_Rubber"], "Tracks"), (M["MI_Erebus_WreckMetal"], "Wreck")])
+
+
+def build_gunshipwreck_a():
+    m = new_mesh()
+    capsule(m, (60, 0, 150), 92, 420, rot=(0, 82, 0), mat=0)       # fuselage, nose dug in
+    cone(m, (430, 0, 130), 88, 30, 190, rot=(0, 98, 0), mat=1)     # crushed nose cone
+    box(m, (330, 0, 190), 110, 90, 60, rot=(0, 12, 0), mat=3)      # canopy frame w/ glass slot
+    box(m, (80, 0, 205), 60, 540, 26, rot=(8, 4, 0), mat=0)        # stub wings
+    subtract(m, tool_box((70, -290, 210), 150, 160, 90, rot=(0, 0, 30)))  # sheared left wingtip
+    cyl(m, (110, 245, 160), 46, 160, rot=(0, 90, 0), mat=2)        # right nacelle
+    cyl(m, (40, -215, 170), 46, 140, rot=(0, 96, 0), mat=2)        # left nacelle, torn loose
+    cyl(m, (-120, 0, 210), 33, 340, rot=(0, -108, 0), mat=0)       # tail boom kicked up
+    box(m, (-430, 0, 300), 26, 90, 150, rot=(14, 0, 0), mat=1)     # tail fin
+    cyl(m, (70, 0, 262), 26, 44, mat=3)                            # rotor hub
+    for blade_yaw in (15, 135, 255):
+        box(m, (70, 0, 292), 430, 36, 9, rot=(0, -16, blade_yaw), mat=1)  # drooped blades
+    subtract(m, tool_box((380, 0, 60), 320, 280, 150, rot=(0, 22, 0)))    # belly crush at the nose
+    subtract(m, tool_box((-40, 130, 140), 160, 100, 120, rot=(15, 0, -20)))  # flank rupture
+    box(m, (-30, 100, 120), 130, 80, 90, mat=1)                    # charred interior in the rupture
+    noise(m, 2.5, 0.015, 337)
+    return finalize("SM_Erebus_GunshipWreck_A", m, [
+        (M["MI_Erebus_Steel_Dark"], "Airframe"), (M["MI_Erebus_Steel_Scorched"], "Burned"),
+        (M["MI_Erebus_WreckMetal"], "Wreck"), (M["MI_Erebus_Glass_Damaged"], "Canopy")])
+
+
+def build_artillerygun_a():
+    m = new_mesh()
+    for side in (-1, 1):                                            # wheels
+        cyl(m, (0, -155 if side < 0 else 121, 75), 75, 34, rot=(90, 0, 0), mat=2, radial_steps=14)
+    cyl(m, (0, -155, 75), 18, 310, rot=(90, 0, 0), mat=1)           # axle
+    box(m, (0, 0, 80), 160, 120, 70, mat=0)                         # carriage
+    box(m, (-250, 60, 55), 430, 36, 42, rot=(0, 0, 14), mat=0)      # split trail L
+    box(m, (-250, -60, 55), 430, 36, 42, rot=(0, 0, -14), mat=0)    # split trail R
+    box(m, (30, 0, 132), 140, 72, 52, mat=0)                        # cradle
+    cyl(m, (60, 0, 152), 13, 520, rot=(0, 72, 0), mat=1)            # barrel, elevated 18deg
+    box(m, (554, 0, 300), 58, 38, 38, rot=(0, 72, 0), mat=1)        # muzzle brake
+    box(m, (18, 0, 142), 72, 48, 48, mat=1)                         # breech
+    box(m, (95, 0, 62), 14, 265, 145, rot=(0, -10, 0), mat=0)       # gun shield
+    subtract(m, tool_box((95, -95, 175), 40, 80, 60))               # shield sight notch
+    for i, (sx, sy) in enumerate([(-170, 95), (-200, 65), (-150, 130)]):
+        cyl(m, (sx, sy, 12), 8, 42, rot=(90, 15 * i, 0), mat=1)     # spent casings
+    noise(m, 1.2, 0.03, 341)
+    return finalize("SM_Erebus_ArtilleryGun_A", m, [
+        (M["MI_Erebus_Steel_Olive"], "Carriage"), (M["MI_Erebus_Metal_Bare"], "Gun"),
+        (M["MI_Erebus_Rubber"], "Wheels")])
+
+
+def build_truckwreck_a():
+    m = new_mesh()
+    for side in (-1, 1):
+        box(m, (0, side * 70, 55), 600, 24, 20, mat=1)              # chassis rails
+    cyl(m, (200, 92, 55), 55, 38, rot=(90, 0, 0), mat=2, radial_steps=12)     # front right wheel
+    cyl(m, (200, -125, 55), 22, 30, rot=(90, 0, 0), mat=3, radial_steps=10)   # front left: bare drum
+    for rx in (-120, -230):
+        cyl(m, (rx, 92, 55), 55, 38, rot=(90, 0, 0), mat=2, radial_steps=12)
+        cyl(m, (rx, -130, 55), 55, 38, rot=(90, 0, 0), mat=2, radial_steps=12)
+    box(m, (215, 0, 90), 190, 220, 165, mat=0)                      # cab
+    subtract(m, tool_box((215, 45, 265), 250, 270, 130, rot=(12, 0, 8)))     # crushed roof
+    subtract(m, tool_box((315, 0, 190), 40, 150, 70))               # windshield hole
+    box(m, (335, 0, 90), 130, 185, 75, mat=0)                       # hood
+    subtract(m, tool_box((345, 30, 175), 90, 90, 50, rot=(0, 8, 15)))        # blown hood opening
+    box(m, (340, 15, 95), 70, 60, 55, mat=3)                        # exposed engine block
+    box(m, (-115, 0, 100), 380, 220, 24, mat=1)                     # flatbed
+    for px in (-280, -160, -40, 60):                                # stake posts, one row torn
+        box(m, (px, 105, 124), 16, 12, 120, mat=1)
+        if px != -160:
+            box(m, (px, -105, 124), 16, 12, 120, mat=1)
+    for rib_x in (-240, -120, 0):                                   # burned canopy ribs
+        box(m, (rib_x, 95, 244), 12, 10, 90, rot=(18, 0, 0), mat=1)
+        box(m, (rib_x, -95, 244), 12, 10, 90, rot=(-18, 0, 0), mat=1)
+        box(m, (rib_x, 0, 320), 12, 200, 10, mat=1)
+    cyl(m, (-140, 30, 124), 32, 85, rot=(0, 78, 30), mat=3)         # tipped fuel drum
+    noise(m, 1.8, 0.03, 347)
+    return finalize("SM_Erebus_TruckWreck_A", m, [
+        (M["MI_Erebus_Steel_Scorched"], "Burned"), (M["MI_Erebus_WreckMetal"], "Wreck"),
+        (M["MI_Erebus_Rubber"], "Wheels"), (M["MI_Erebus_Metal_Bare"], "Bare")])
+
+
 def run():
     ensure_folder(MESH_DIR)
     ensure_folder(INST_DIR)
     _calibrate_cut()
 
-    for name, (parent, tint, scalars) in INSTANCES.items():
-        make_instance(name, parent, tint, scalars)
+    for name, (parent, tint, scalars, family) in INSTANCES.items():
+        make_instance(name, parent, tint, scalars, family)
 
     build_blastwall_a()
     build_blastwall_b()
@@ -1101,6 +1236,12 @@ def run():
     build_cathedral_tower("SM_Erebus_CathedralTower_B", 11500, 307)
     build_cathedral_tower("SM_Erebus_CathedralTower_C", 8800, 311)
     build_worklight_a()
+
+    # Phase 4.7 hero pieces.
+    build_tankhulk_a()
+    build_gunshipwreck_a()
+    build_artillerygun_a()
+    build_truckwreck_a()
 
     # New Blueprint assembly wrappers (composition lives in AHPresentationPropActor styles).
     for prop in ["BP_Erebus_Bunker_A", "BP_Erebus_DefensivePosition_A", "BP_Erebus_WreckCluster_A",
