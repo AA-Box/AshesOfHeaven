@@ -1046,12 +1046,12 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_AshAmbient.NS_Erebus_AshAmbient"), FVector(1600.0f, 0.0f, 460.0f), FVector(1.0f));
 
 	// Near fires, each on an authored visible source (barrel, crater, wreck, pipe).
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-960.0f, -210.0f, 40.0f), FVector(1.0f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-960.0f, -210.0f, 60.0f), FVector(1.0f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-350.0f, -620.0f, -40.0f), FVector(1.3f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-350.0f, -620.0f, -30.0f), FVector(1.1f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-350.0f, -620.0f, -20.0f), FVector(1.0f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(1500.0f, 560.0f, -30.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-1120.0f, -560.0f, 30.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-1120.0f, -560.0f, 50.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-650.0f, -560.0f, -42.0f), FVector(0.9f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-650.0f, -560.0f, -28.0f), FVector(1.1f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-650.0f, -560.0f, -18.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(1460.0f, 470.0f, 20.0f), FVector(1.0f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(1500.0f, 560.0f, 10.0f), FVector(1.2f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(1500.0f, 560.0f, 0.0f), FVector(1.4f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(2620.0f, -700.0f, 120.0f), FVector(1.6f));
@@ -1065,16 +1065,19 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-1520.0f, -620.0f, 140.0f), FVector(0.9f));
 
 	// South vista: a burning ruin block anchors the open battlefield read.
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(1500.0f, -3300.0f, -40.0f), FVector(2.6f));
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(1520.0f, -3250.0f, -40.0f), FVector(1.4f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(2600.0f, -2100.0f, -40.0f), FVector(2.2f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(2620.0f, -2060.0f, -40.0f), FVector(1.2f));
 
 	// Battlefield smoke columns, near-to-far; fog dissolves the far ones into haze.
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(2160.0f, 500.0f, -40.0f), FVector(0.6f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(2160.0f, 1500.0f, -40.0f), FVector(0.6f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(2800.0f, -2600.0f, -40.0f), FVector(0.9f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(6100.0f, -1900.0f, -40.0f), FVector(1.6f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(8400.0f, 2300.0f, -40.0f), FVector(2.0f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(11200.0f, -1500.0f, -40.0f), FVector(1.8f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(12900.0f, 900.0f, -40.0f), FVector(2.2f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(17000.0f, -3800.0f, -40.0f), FVector(3.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(23000.0f, 4600.0f, -40.0f), FVector(3.6f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeColumn.NS_Erebus_SmokeColumn"), FVector(26500.0f, -1500.0f, -40.0f), FVector(3.2f));
 
 	// Distant fire glows under the far columns (large authored wreck fire, scaled).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(6100.0f, -1900.0f, -46.0f), FVector(3.4f));
@@ -1238,16 +1241,11 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 		SpawnVisualShape(DoorFrame, FVector(3500.0f, PillarY, 370.0f), FVector(2.4f, 2.4f, 5.2f), FRotator::ZeroRotator, DarkStructureMaterial);
 		SpawnVisualShape(Cube, FVector(3500.0f, PillarY, 740.0f), FVector(0.45f, 0.45f, 3.3f), FRotator::ZeroRotator, DarkStructureMaterial);
 	}
-	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, 760.0f), FVector(0.45f, 7.4f, 0.40f), FRotator::ZeroRotator, DarkStructureMaterial);
-	// Centered gate block under the lintel: from the Erebus spawn axis the bare thin
-	// lintel plus any nearer vertical silhouette composited into an accidental cross
-	// (visual gate #18). A solid station header reads as architecture instead.
-	SpawnVisualShape(Cube, FVector(3500.0f, 0.0f, 640.0f), FVector(0.50f, 3.6f, 1.30f), FRotator::ZeroRotator, DarkStructureMaterial);
 	// A lit metal sign panel, not an emissive slab: from Objective 01 the emissive version
 	// reads as a glowing beige monolith on the horizon (Phase 4.4.2 capture finding); the
 	// pale emblem tint still glowed under the practical light, so the panel goes dark steel.
 	UMaterialInterface* SignPanelMaterial = MakeTintedMaterial(HumanMetalMaterial, FLinearColor(0.10f, 0.10f, 0.095f), 0.7f, 0.0f, 0.45f);
-	SpawnVisualShape(Cube, FVector(3500.0f, -735.0f, 760.0f), FVector(0.08f, 1.9f, 0.72f), FRotator::ZeroRotator, SignPanelMaterial);
+	SpawnVisualShape(Cube, FVector(3495.0f, -645.0f, 700.0f), FVector(0.06f, 1.4f, 0.52f), FRotator::ZeroRotator, SignPanelMaterial);
 	SpawnLabel(FVector(3500.0f, -820.0f, 770.0f), TEXT("TRANSIT\nSTATION"), FColor(224, 224, 210), 125.0f);
 	SpawnLabel(FVector(3500.0f, -760.0f, 930.0f), TEXT("NORTH LINE  /  PLATFORM 02"), FColor(232, 190, 118), 72.0f);
 	SpawnLabel(FVector(3500.0f, 790.0f, 710.0f), TEXT("CIVIL DEFENSE\nEVACUATION ROUTE"), FColor(222, 90, 62), 66.0f, FRotator(0.0f, -90.0f, 0.0f));
@@ -1261,15 +1259,11 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 	SpawnVisualShape(Cube, FVector(3630.0f, 270.0f, 145.0f), FVector(1.15f, 0.10f, 0.45f), FRotator::ZeroRotator, DarkStructureMaterial);
 	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 160.0f), FVector(1.3f, 0.65f, 0.72f), FRotator::ZeroRotator, DarkStructureMaterial);
 	SpawnVisualShape(Cube, FVector(3780.0f, 380.0f, 305.0f), FVector(1.1f, 0.58f, 0.08f), FRotator::ZeroRotator, BannerEmblemMaterial);
-	for (int32 Index = 0; Index < 4; ++Index)
-	{
-		SpawnVisualShape(Cylinder, FVector(3500.0f + Index * 480.0f, 0.0f, 1080.0f), FVector(0.08f, 0.08f, 4.5f), FRotator(0.0f, 90.0f, 0.0f), DarkStructureMaterial);
-	}
 
 	SpawnVisualLight(FVector(3300.0f, -500.0f, 540.0f), FLinearColor(1.0f, 0.48f, 0.16f), 620.0f, 700.0f);
 	SpawnVisualLight(FVector(3820.0f, 500.0f, 460.0f), FLinearColor(0.95f, 0.08f, 0.03f), 360.0f, 520.0f);
 	// Authored soft smoke instead of the factory dust fountains (square sprites).
-	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(3500.0f, 0.0f, 540.0f), FVector(1.1f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(3500.0f, -950.0f, 540.0f), FVector(0.8f));
 }
 
 void AAHChapterOneDirector::BuildCathedralArtTarget()
@@ -1930,7 +1924,7 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	if (ADirectionalLight* SunLight = GetWorld()->SpawnActor<ADirectionalLight>(
-		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-20.0f, -95.0f, 0.0f), SpawnParams))
+		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-15.0f, -150.0f, 0.0f), SpawnParams))
 	{
 		SunLight->SetMobility(EComponentMobility::Movable);
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
@@ -1939,13 +1933,16 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// key crosses the STREET (yaw -95) instead of running down it — vertical
 			// south-side facades catch direct light while the north side silhouettes, so
 			// auto-exposure stops trading the walls away against the skylit ground.
-			SunComponent->SetIntensity(2.8f);
-			SunComponent->SetLightColor(FLinearColor(0.46f, 0.52f, 0.62f));
+			// Phase 4.8 tonal recipe: the sun drives the SKY (atmosphere + clouds), not
+			// the ground. A bright backlit key from ahead-right anchors auto-exposure on
+			// the sky so structures fall into dark silhouette like the reference; grazing
+			// incidence keeps the ground dim while rooflines and right-face edges catch rim.
+			SunComponent->SetIntensity(32.0f);
+			SunComponent->SetLightColor(FLinearColor(0.55f, 0.58f, 0.66f));
 			SunComponent->SetAtmosphereSunLight(true);
-			// The 29m north-row facades at pitch -26 throw ~6km shadows across the whole
-			// street, blacking out the south walls the cross-street key exists to light.
-			// Overcast war gloom carries depth via fog+fills; hard sun shadows are cut.
-			SunComponent->SetCastShadows(false);
+			SunComponent->SetCastShadows(true);
+			SunComponent->DynamicShadowCascades = 4;
+			SunComponent->SetDynamicShadowDistanceMovableLight(12000.0f);
 		}
 	}
 
@@ -1956,12 +1953,15 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Overcast gray war sky, not a black void: packaged captures with heavy Mie
 			// absorption rendered the deck near-black with a visible sun disk. Scattering
 			// up, absorption down, multiscatter up = diffuse gray dome the clouds sit in.
-			Atmosphere->GroundAlbedo = FColor(34, 36, 39);
-			Atmosphere->RayleighScattering = FLinearColor(0.16f, 0.175f, 0.20f);
+			Atmosphere->GroundAlbedo = FColor(60, 62, 66);
+			Atmosphere->RayleighScattering = FLinearColor(0.30f, 0.32f, 0.36f);
+			Atmosphere->RayleighScatteringScale = 2.2f;
 			Atmosphere->MieScattering = FLinearColor(0.150f, 0.155f, 0.165f);
+			Atmosphere->MieScatteringScale = 0.6f;
 			Atmosphere->MieAbsorption = FLinearColor(0.007f, 0.008f, 0.009f);
-			Atmosphere->MieAnisotropy = 0.55f;
-			Atmosphere->MultiScatteringFactor = 1.0f;
+			Atmosphere->MieAbsorptionScale = 0.015f;
+			Atmosphere->MieAnisotropy = 0.75f;
+			Atmosphere->MultiScatteringFactor = 4.0f;
 			Atmosphere->MarkRenderStateDirty();
 		}
 	}
@@ -1972,8 +1972,15 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 	{
 		if (UVolumetricCloudComponent* CloudComponent = Clouds->FindComponentByClass<UVolumetricCloudComponent>())
 		{
-			CloudComponent->SetLayerBottomAltitude(2.2f);
-			CloudComponent->SetLayerHeight(3.5f);
+			CloudComponent->SetLayerBottomAltitude(0.8f);
+			CloudComponent->SetLayerHeight(6.0f);
+			// Storm-cloud instance of the engine cloud material: coverage/density up and
+			// the storm layer on, so the sky reads as the reference's roiling war deck
+			// instead of a flat gray gradient.
+			if (UMaterialInterface* StormClouds = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_StormCloud.MI_Erebus_StormCloud")))
+			{
+				CloudComponent->SetMaterial(StormClouds);
+			}
 		}
 	}
 
@@ -1986,7 +1993,7 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Real-time capture sources ambient from the atmosphere; a static capture of an
 			// unlit scene would just bake black.
 			SkyComponent->SetRealTimeCapture(true);
-			SkyComponent->SetIntensity(1.2f);
+			SkyComponent->SetIntensity(0.75f);
 			// Grey uplight instead of a second directional: lifts vertical architecture
 			// without competing for the single forward-shading directional slot (the
 			// competition warning renders on screen in Development builds).
@@ -2005,13 +2012,15 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			FogComponent->SetMobility(EComponentMobility::Movable);
 			// Deeper, brighter haze: distance dissolves into gray smoke instead of black,
 			// which is what layers the reference's midground/background depth.
-			FogComponent->SetFogDensity(0.028f);
-			FogComponent->SetFogHeightFalloff(0.10f);
-			FogComponent->SetFogInscatteringColor(FLinearColor(0.30f, 0.325f, 0.37f));
-			FogComponent->SetStartDistance(260.0f);
+			FogComponent->SetFogDensity(0.022f);
+			// Ground-hugging haze (scale height ~23m): bases dissolve, tower tops and the
+			// Cathedral rise out of the fog as dark silhouettes against the bright sky.
+			FogComponent->SetFogHeightFalloff(0.30f);
+			FogComponent->SetFogInscatteringColor(FLinearColor(0.42f, 0.44f, 0.49f));
+			FogComponent->SetStartDistance(0.0f);
 			// Distant landmarks must ghost through the smoke instead of vanishing: the
 			// Cathedral silhouette is the route's destination read.
-			FogComponent->SetFogMaxOpacity(0.92f);
+			FogComponent->SetFogMaxOpacity(1.0f);
 			// Volumetric fog carries the fire glow and sun shafts through the smoke.
 			FogComponent->SetVolumetricFog(true);
 		}
@@ -2036,11 +2045,11 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		// A high min brightness LOCKS dark scenes dark (adaptation clamps at the min), so
 		// the floor stays low and a positive bias lifts the whole key instead.
 		Post->Settings.bOverride_AutoExposureMinBrightness = true;
-		Post->Settings.AutoExposureMinBrightness = 0.05f;
+		Post->Settings.AutoExposureMinBrightness = 0.03f;
 		Post->Settings.bOverride_AutoExposureMaxBrightness = true;
-		Post->Settings.AutoExposureMaxBrightness = 2.0f;
+		Post->Settings.AutoExposureMaxBrightness = 3.0f;
 		Post->Settings.bOverride_AutoExposureBias = true;
-		Post->Settings.AutoExposureBias = -0.2f;
+		Post->Settings.AutoExposureBias = -0.55f;
 	}
 
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] lighting profile=ErebusWar clouds=volumetric fog=volumetric post=graded"));

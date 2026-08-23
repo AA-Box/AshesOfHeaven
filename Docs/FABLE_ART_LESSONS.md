@@ -91,3 +91,36 @@ Durable lessons only. Each entry prevents a repeated mistake.
   them and light walls with a shadowless cross-street key instead. Albedo cuts
   cannot out-run AE: after adaptation only relative light distribution moves
   the wall:ground ratio.
+- Do the angular-size math against the REAL chapter scale before placing any
+  landmark: the chapter is a ~350m diorama (1uu = 1cm), so "8.2km down the
+  corridor" is 82 METERS. A 200m-tall Cathedral tower at 82m is a wall that
+  seals the sky; the same tower reads as the reference's haze-veiled landmark
+  at 250-350m (X 24000-34000 anchor-local) with ground-hugging fog.
+- The full reference tonal recipe that finally inverted the value hierarchy:
+  sun intensity ~32 at pitch -15 / yaw -150 (backlit, shadows ON) driving a
+  bright SkyAtmosphere (RayleighScale 2.2, multiscatter 4) and a storm-cloud
+  material instance (engine m_SimpleVolumetricCloud_Inst with Cloud_GlobalCoverage
+  0.35+, StormClouds 1), plus GROUND-HUGGING fog (density 0.022, height falloff
+  0.30, bright inscattering 0.55) and AE bias -0.7. SkyLight intensity is the
+  ground-brightness knob (0.55-0.75); wetness above ~0.3 on horizontal ground
+  bounces the bright sky and lifts the floor right back up.
+- Ring-scatter copings (RuinEdge on RuinBlock tops) must be seated on the
+  block's ACTUAL randomized height; a fixed-height guess leaves 25m dark beams
+  floating against the bright sky, which read as major artifacts in every frame.
+- Freshly LOADED authored Niagara systems can render nothing in editor
+  SIE/PIE sessions until AuthorErebusNearVFX recompiles them in-session; run
+  the author step before starting the session when judging VFX in-editor, and
+  treat the packaged build (cook compiles systems) as the only acceptance
+  surface for particles.
+- Fire recipe geometry is legibility: flame sprites need >=16-38uu to read
+  past 5m; a tight cone/small shape radius stacks sprites into a flame tornado
+  next to the camera, while cone ~35 deg + shape radius ~40 reads as a burning
+  pool. Ember jets over ~120uu/s velocity stack into a sourceless vertical
+  string above every fire.
+- The Python remote-execution plugin is the fastest art-iteration control
+  plane on this Mac, but multicast is dead: drive the protocol with UNICAST
+  UDP to 127.0.0.1:6766 and omit `dest` (empty dest passes the receive
+  filter), listening on TCP 6776 for the editor's connect-back. A crashed
+  editor's CrashReportClient inherits BOTH the MCP port 8000 AND UDP 6766 —
+  pkill it before every relaunch, and approve the macOS firewall prompt for
+  the listening python binary once.

@@ -164,3 +164,14 @@ area still combines authored material/profile treatment with a gameplay scaffold
 environment kits, character art, animation, authored sound design/voice/music, and the visual match
 to the approved images remain open art-production and human-review work. No normal-runtime screenshot
 was available from this execution environment, so none is presented as evidence.
+
+## Phase 4.8 visual gate iteration (2026-08-23)
+
+Erebus-only iteration after the human rejected the Phase 4.6 result as "a dark
+dressed blockout". Changes: gen-3 large architecture (fortress slabs, elevated
+fortress block, near tower slab, checkpoint gate, banner drapes, debris fields),
+metric-sane Cathedral relocation to ~265-335m with ground-hugging fog, full
+tonal re-anchor (bright storm sky, backlit key, AE bias), retuned fire/smoke
+Niagara, legacy transit overhead wires removed from the comparison frame.
+Status: **UNTESTED — awaiting human visual review of Saved/Phase48Evidence.**
+Erebus is NOT human-approved. Transit/Cathedral/Lucian-Maya art untouched by design.

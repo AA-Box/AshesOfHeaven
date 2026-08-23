@@ -663,3 +663,29 @@ animation, VFX, and sound remain prototype/scaffold quality where the earlier ar
 so; this pass does not claim AAA visual approval.
 
 Do not start Phase 5 or Chapter Two from this record.
+
+## Phase 4.8 — Erebus visual gate iteration 2 (2026-08-23)
+
+The Phase 4.6 packaged result was rejected by human review as a dark dressed
+blockout. This pass iterated Erebus ONLY (Transit/Cathedral/Lucian-Maya
+prohibited and untouched):
+
+- Gen-3 architecture: SM_Erebus_Fortress_A (34m seamed fortress slab),
+  SM_Erebus_Fortress_B (elevated block on legs), SM_Erebus_TowerSlab_A,
+  SM_Erebus_CheckpointGate_A, SM_Erebus_BannerDrape_A/B,
+  SM_Erebus_DebrisField_A/B; deeper facade roofs/units, real Cathedral fluting.
+- Scale correction: Cathedral cluster moved from 82m (a sky-sealing wall) to
+  265-335m anchor-local; skyline rings pushed out; floating ring copings seated.
+- Tonal re-anchor: bright storm sky (MI_Erebus_StormCloud on the engine cloud
+  material), backlit sun 32 @ pitch -15/yaw -150 with shadows, RayleighScale
+  2.2/multiscatter 4, ground-hugging fog (0.022 / falloff 0.30 / inscattering
+  0.55), skylight 0.55-0.75, AE bias -0.7, min 0.03, max 3.0.
+- Materials: MI ground family darkened + wetness balanced, Concrete_Light
+  lifted for band contrast, mud/asphalt tiling densified.
+- Niagara: readable fires (pool-shaped), calmer embers, heavy smoke columns;
+  legacy transit overhead wires removed; fires repositioned onto sources
+  visible from the review pose.
+- Validation: editor automation 27/27, commandlet 21/21.
+
+Status: awaiting HUMAN visual review of Saved/Phase48Evidence packaged
+captures. NOT marked approved.

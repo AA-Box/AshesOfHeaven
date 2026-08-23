@@ -718,15 +718,19 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Fire.Name = TEXT("Erebus_FireSmall");
 		Fire.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Fire.bLocalSpace = true;
-		Fire.Bounds = 160.0f;
-		Fire.SpawnRate = 46.0f;
-		Fire.LifeMin = 0.35f; Fire.LifeMax = 0.7f;
-		Fire.SizeMin = 6.0f; Fire.SizeMax = 14.0f;
-		Fire.VelMin = 40.0f; Fire.VelMax = 100.0f;
-		Fire.ConeAngle = 18.0f;
+		Fire.Bounds = 280.0f;
+		Fire.SpawnRate = 70.0f;
+		Fire.LifeMin = 0.30f; Fire.LifeMax = 0.65f;
+		// Real fire licks: the 6-14uu sprites of the last pass were matchheads,
+		// invisible past 3m (visual gate 4.8 - fires must read as fires).
+		Fire.SizeMin = 16.0f; Fire.SizeMax = 38.0f;
+		Fire.VelMin = 30.0f; Fire.VelMax = 70.0f;
+		// Wide cone + wide shape = a burning pool that hugs its source instead of
+		// the vertical flame tornado the tight jet produced next to the camera.
+		Fire.ConeAngle = 35.0f;
 		Fire.GravityZ = 0.0f;
 		Fire.Drag = 1.2f;
-		Fire.ShapeRadius = 22.0f;
+		Fire.ShapeRadius = 40.0f;
 		Fire.Color = FLinearColor(5.2f, 1.8f, 0.42f, 1.0f);
 		Recipes.Add(Fire);
 
@@ -734,11 +738,11 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Wreck.Name = TEXT("Erebus_FireWreck");
 		Wreck.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Wreck.bLocalSpace = true;
-		Wreck.Bounds = 320.0f;
-		Wreck.SpawnRate = 60.0f;
-		Wreck.LifeMin = 0.5f; Wreck.LifeMax = 1.0f;
-		Wreck.SizeMin = 16.0f; Wreck.SizeMax = 36.0f;
-		Wreck.VelMin = 70.0f; Wreck.VelMax = 170.0f;
+		Wreck.Bounds = 520.0f;
+		Wreck.SpawnRate = 90.0f;
+		Wreck.LifeMin = 0.5f; Wreck.LifeMax = 1.1f;
+		Wreck.SizeMin = 34.0f; Wreck.SizeMax = 80.0f;
+		Wreck.VelMin = 90.0f; Wreck.VelMax = 210.0f;
 		Wreck.ConeAngle = 24.0f;
 		Wreck.Drag = 1.0f;
 		Wreck.ShapeRadius = 60.0f;
@@ -750,11 +754,13 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Embers.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Embers.bLocalSpace = false;
 		Embers.Bounds = 520.0f;
-		Embers.SpawnRate = 6.0f;
-		Embers.LifeMin = 1.0f; Embers.LifeMax = 2.0f;
-		Embers.SizeMin = 0.8f; Embers.SizeMax = 1.6f;
-		Embers.VelMin = 90.0f; Embers.VelMax = 200.0f;
-		Embers.ConeAngle = 30.0f;
+		Embers.SpawnRate = 4.0f;
+		Embers.LifeMin = 0.8f; Embers.LifeMax = 1.8f;
+		Embers.SizeMin = 1.0f; Embers.SizeMax = 2.2f;
+		// Slower, wider drift: the old 200uu/s jets stacked embers into a sourceless
+		// vertical string over every fire in the comparison frame.
+		Embers.VelMin = 50.0f; Embers.VelMax = 120.0f;
+		Embers.ConeAngle = 45.0f;
 		Embers.GravityZ = -20.0f;
 		Embers.Drag = 0.6f;
 		Embers.ShapeRadius = 60.0f;
@@ -766,29 +772,31 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Smoke.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
 		Smoke.bLocalSpace = false;
 		Smoke.Bounds = 700.0f;
-		Smoke.SpawnRate = 8.0f;
-		Smoke.LifeMin = 2.2f; Smoke.LifeMax = 4.2f;
-		Smoke.SizeMin = 55.0f; Smoke.SizeMax = 130.0f;
+		Smoke.SpawnRate = 12.0f;
+		Smoke.LifeMin = 3.0f; Smoke.LifeMax = 6.0f;
+		Smoke.SizeMin = 90.0f; Smoke.SizeMax = 220.0f;
 		Smoke.VelMin = 55.0f; Smoke.VelMax = 110.0f;
 		Smoke.ConeAngle = 14.0f;
 		Smoke.Drag = 0.8f;
 		Smoke.ShapeRadius = 45.0f;
-		Smoke.Color = FLinearColor(0.055f, 0.055f, 0.06f, 0.4f);
+		Smoke.Color = FLinearColor(0.055f, 0.055f, 0.06f, 0.55f);
 		Recipes.Add(Smoke);
 
 		FAHNearVFXRecipe Column;
 		Column.Name = TEXT("Erebus_SmokeColumn");
 		Column.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
 		Column.bLocalSpace = false;
-		Column.Bounds = 5200.0f;
-		Column.SpawnRate = 7.0f;
-		Column.LifeMin = 7.0f; Column.LifeMax = 12.0f;
-		Column.SizeMin = 260.0f; Column.SizeMax = 620.0f;
-		Column.VelMin = 300.0f; Column.VelMax = 460.0f;
-		Column.ConeAngle = 9.0f;
+		// The reference's sky is carried by massive dark plumes; the previous thin
+		// wisps disappeared entirely at 60m+ in every packaged capture.
+		Column.Bounds = 9000.0f;
+		Column.SpawnRate = 24.0f;
+		Column.LifeMin = 10.0f; Column.LifeMax = 16.0f;
+		Column.SizeMin = 700.0f; Column.SizeMax = 1500.0f;
+		Column.VelMin = 240.0f; Column.VelMax = 420.0f;
+		Column.ConeAngle = 11.0f;
 		Column.Drag = 0.4f;
-		Column.ShapeRadius = 220.0f;
-		Column.Color = FLinearColor(0.045f, 0.045f, 0.050f, 0.5f);
+		Column.ShapeRadius = 300.0f;
+		Column.Color = FLinearColor(0.045f, 0.045f, 0.050f, 0.9f);
 		Recipes.Add(Column);
 
 		FAHNearVFXRecipe Ash;

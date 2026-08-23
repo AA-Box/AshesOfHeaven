@@ -215,7 +215,7 @@ FAMILY_TEXTURES = {
     "mud":      {"AlbedoTex": "T_Erebus_Mud_D",      "NormalTex": "T_Erebus_Mud_N",      "RoughTex": "T_Erebus_Mud_R"},
     "asphalt":  {"AlbedoTex": "T_Erebus_Asphalt_D",  "NormalTex": "T_Erebus_Asphalt_N",  "RoughTex": "T_Erebus_Asphalt_R"},
 }
-FAMILY_UVTILE = {"concrete": 0.25, "metal": 0.5, "mud": 0.14, "asphalt": 0.22}
+FAMILY_UVTILE = {"concrete": 0.25, "metal": 0.5, "mud": 0.45, "asphalt": 0.32}
 
 
 def make_instance(name, parent_name, tint, scalars, family=None):
@@ -256,7 +256,7 @@ INSTANCES = {
     # Concrete albedos lift again: the gate feedback said the walls crush so dark
     # the secondary geometry is lost. Ground stays dark/wet like the reference.
     "MI_Erebus_Concrete_Dry":    ("M_ErebusSurface", (0.230, 0.222, 0.204), {"Roughness": 0.92, "GrimeAmount": 0.30, "WearAmount": 0.30, "Wetness": 0.0}, "concrete"),
-    "MI_Erebus_Concrete_Light":  ("M_ErebusSurface", (0.320, 0.312, 0.290), {"Roughness": 0.90, "GrimeAmount": 0.22, "WearAmount": 0.26, "Wetness": 0.0}, "concrete"),
+    "MI_Erebus_Concrete_Light":  ("M_ErebusSurface", (0.420, 0.410, 0.385), {"Roughness": 0.90, "GrimeAmount": 0.22, "WearAmount": 0.26, "Wetness": 0.0}, "concrete"),
     "MI_Erebus_Concrete_Panels": ("M_ErebusSurface", (0.260, 0.252, 0.230), {"Roughness": 0.90, "GrimeAmount": 0.34, "WearAmount": 0.45, "Wetness": 0.0}, "concrete"),
     "MI_Erebus_Concrete_Wet":    ("M_ErebusSurface", (0.085, 0.088, 0.092), {"Roughness": 0.55, "GrimeAmount": 0.40, "Wetness": 0.55}, "concrete"),
     "MI_Erebus_Concrete_Burned": ("M_ErebusSurface", (0.060, 0.055, 0.050), {"Roughness": 0.96, "GrimeAmount": 0.65, "DamageMaskStrength": 0.75, "Wetness": 0.0}, "concrete"),
@@ -265,12 +265,12 @@ INSTANCES = {
     "MI_Erebus_Steel_Olive":     ("M_ErebusSurface", (0.085, 0.095, 0.068), {"Roughness": 0.82, "Metallic": 0.30, "GrimeAmount": 0.45, "WearAmount": 0.55}, "metal"),
     "MI_Erebus_Metal_Bare":      ("M_ErebusSurface", (0.175, 0.175, 0.180), {"Roughness": 0.55, "Metallic": 0.90, "GrimeAmount": 0.32, "WearAmount": 0.55}, "metal"),
     "MI_Erebus_Steel_Scorched":  ("M_ErebusSurface", (0.034, 0.031, 0.028), {"Roughness": 0.96, "Metallic": 0.35, "GrimeAmount": 0.75, "DamageMaskStrength": 0.85}, "metal"),
-    "MI_Erebus_Mud":             ("M_ErebusSurface", (0.011, 0.009, 0.007), {"Roughness": 0.95, "GrimeAmount": 0.50, "Wetness": 0.22}, "mud"),
+    "MI_Erebus_Mud":             ("M_ErebusSurface", (0.011, 0.009, 0.007), {"Roughness": 0.95, "GrimeAmount": 0.50, "Wetness": 0.38}, "mud"),
     # Dark wet pavement for horizontal ground surfaces: the gate feedback said the
     # foreground ground reads bright/flat vs the reference's dark wet battlefield,
     # and bright ground also drags auto-exposure down, crushing the walls.
-    "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.028, 0.029, 0.031), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.10}, "concrete"),
-    "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.016, 0.016, 0.018), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.06}, "asphalt"),
+    "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.018, 0.019, 0.021), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.30}, "concrete"),
+    "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.010, 0.010, 0.012), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.28}, "asphalt"),
     "MI_Erebus_WreckMetal":      ("M_ErebusSurface", (0.110, 0.080, 0.058), {"Roughness": 0.92, "Metallic": 0.55, "GrimeAmount": 0.65, "DamageMaskStrength": 0.85}, "metal"),
     "MI_Erebus_Rubber":          ("M_HumanArmor",    (0.024, 0.024, 0.025), {"Roughness": 0.90, "Metallic": 0.0, "GrimeAmount": 0.60}, None),
     "MI_Erebus_Glass_Damaged":   ("M_Glass",         (0.030, 0.038, 0.042), {"Roughness": 0.35, "GrimeAmount": 0.50}, None),
@@ -723,6 +723,11 @@ def build_facade_heavy(name, bays, floors, seed, broken=False):
     box(m, (0, 36, 200), width - 40, 16, height - 220, mat=3)      # dark inset plane
     box(m, (0, -8, height), width + 30, 100, 46, mat=0)            # cornice
     box(m, (0, 6, height + 46), width, 60, 90, mat=1)              # parapet
+    for i in range(2 + bays // 2):                                 # rooftop units
+        ux = -width * 0.32 + i * width * 0.64 / max(1, 1 + bays // 2)
+        box(m, (ux, rng.uniform(-30, 30), height + 40), rng.uniform(140, 300),
+            rng.uniform(120, 240), rng.uniform(90, 220), rot=(0, 0, rng.uniform(0, 40)), mat=4)
+    box(m, (width * 0.28, 0, height + 40), 26, 26, 480, mat=4)     # roof mast
     for b in range(0, bays, 2):                                    # ground-floor grilles
         wx = -width / 2 + bay_w * (b + 0.5)
         box(m, (wx, -52, 240), 200, 16, 140, mat=4)
@@ -1022,9 +1027,9 @@ def build_cathedral_tower(name, height, seed):
         cx, cy = math.cos(math.radians(yaw)) * r, math.sin(math.radians(yaw)) * r
         subtract(m, tool_box((cx, cy, height * 0.5), w0 * 0.5, w0 * 0.5, height * 1.3, rot=(0, 0, 45)))
     for sx_ in (-1, 1):                                            # deep vertical flutes
-        for off in (-0.20, 0.20):
-            subtract(m, tool_box((sx_ * w0 * 0.5, w0 * off, height * 0.52), 60, w0 * 0.11, height * 1.02))
-            subtract(m, tool_box((w0 * off, sx_ * w0 * 0.5, height * 0.52), w0 * 0.11, 60, height * 1.02))
+        for off in (-0.26, 0.0, 0.26):
+            subtract(m, tool_box((sx_ * w0 * 0.5, w0 * off, height * 0.52), w0 * 0.24, w0 * 0.10, height * 1.02))
+            subtract(m, tool_box((w0 * off, sx_ * w0 * 0.5, height * 0.52), w0 * 0.10, w0 * 0.24, height * 1.02))
     # asymmetric shoulder spires
     box(m, (w0 * 0.55, w0 * 0.30, 0), w0 * 0.30, w0 * 0.30, height * 0.62, mat=0, steps=1)
     box(m, (-w0 * 0.48, -w0 * 0.42, 0), w0 * 0.24, w0 * 0.24, height * 0.5, mat=0, steps=1)
@@ -1037,6 +1042,242 @@ def build_cathedral_tower(name, height, seed):
         box(m, (fx, fy, 0), w0 * 0.06, w0 * 0.36, height * 0.42, rot=(0, 0, yaw), mat=0)
     noise(m, height * 0.0009, 0.0016, seed=seed)
     return finalize(name, m, [(M["MI_Erebus_CathedralSilhouette"], "Matter")])
+
+
+# ---------------------------------------------------------------------------
+# Generation 3 (Phase 4.8 visual gate iteration): the reference's dominant
+# large-form vocabulary. Fortress slabs, an elevated fortress block on legs,
+# a near-frame tower slab, hanging banners, and baked debris fields. All are
+# metric-sane for the ~350m diorama the chapter actually is (1uu = 1cm).
+# ---------------------------------------------------------------------------
+
+def _seam_bands(m, width, depth, z_start, z_end, spacing, band_h=36, inset=18):
+    """Horizontal recessed seam bands around the whole perimeter."""
+    z = z_start
+    while z < z_end:
+        subtract(m, tool_box((0, -depth / 2, z), width + 40, inset * 2, band_h))
+        subtract(m, tool_box((0, depth / 2, z), width + 40, inset * 2, band_h))
+        subtract(m, tool_box((-width / 2, 0, z), inset * 2, depth + 40, band_h))
+        subtract(m, tool_box((width / 2, 0, z), inset * 2, depth + 40, band_h))
+        z += spacing
+
+
+def _corner_chamfers(m, width, depth, height, size):
+    for sx_ in (-1, 1):
+        for sy_ in (-1, 1):
+            subtract(m, tool_box((sx_ * width / 2, sy_ * depth / 2, height / 2),
+                                 size, size, height * 1.3, rot=(0, 0, 45)))
+
+
+def _roof_units(m, rng, width, depth, top_z, count, mat):
+    for _ in range(count):
+        ux = rng.uniform(-width * 0.32, width * 0.32)
+        uy = rng.uniform(-depth * 0.30, depth * 0.30)
+        w_ = rng.uniform(120, 320)
+        box(m, (ux, uy, top_z), w_, w_ * rng.uniform(0.6, 1.1), rng.uniform(80, 260),
+            rot=(0, 0, rng.uniform(0, 90)), mat=mat)
+
+
+def build_fortress_a():
+    """Big military fortress slab: the reference's near-left block building.
+    Primary mass + heavy seam bands + recessed panel grid + battered plinth."""
+    import random
+    rng = random.Random(401)
+    W, D, H = 3000.0, 1600.0, 3400.0
+    m = new_mesh()
+    box(m, (0, 0, 0), W + 220, D + 220, 260, mat=0, steps=2)          # battered plinth
+    box(m, (0, 0, 240), W + 120, D + 120, 200, mat=2)                  # plinth cap band
+    box(m, (0, 0, 420), W, D, H - 420, mat=1, steps=3)                 # primary mass
+    _seam_bands(m, W, D, 900, H - 300, 620)                            # pour seams
+    for px in (-1050, -350, 350, 1050):                                # vertical joints
+        subtract(m, tool_box((px, -D / 2, (H + 420) / 2), 26, 30, H - 500))
+        subtract(m, tool_box((px, D / 2, (H + 420) / 2), 26, 30, H - 500))
+    for px in (-700, 0, 700):                                          # recessed slit rows
+        for wz in (1500, 2400):
+            subtract(m, tool_box((px, -D / 2, wz), 300, 60, 130))
+            box(m, (px, -D / 2 + 40, wz - 80), 340, 26, 24, mat=2)     # slit sills
+    box(m, (0, 0, H), W + 90, D + 90, 130, mat=2)                      # crown band
+    box(m, (0, 0, H + 130), W - 300, D - 300, 240, mat=1, steps=1)     # upper block
+    _corner_chamfers(m, W, D, H, 190)
+    for bx in (-1200, -400, 400, 1200):                                # buttress fins
+        box(m, (bx, -D / 2 - 60, 0), 200, 150, 1150, mat=0)
+        box(m, (bx, D / 2 + 60, 0), 200, 150, 1150, mat=0)
+    cyl(m, (W * 0.34, -D / 2 - 34, 480), 9, H - 900, mat=4, radial_steps=8)  # conduit pair
+    cyl(m, (W * 0.34 + 40, -D / 2 - 34, 480), 9, H - 1300, mat=4, radial_steps=8)
+    _roof_units(m, rng, W - 400, D - 400, H + 370, 4, 4)
+    box(m, (-W * 0.30, 0, H + 370), 30, 30, 520, mat=4)                # antenna mast
+    # Damage: raking bite through the crown's right shoulder + plinth chips.
+    subtract(m, tool_box((W * 0.44, 0, H + 260), 900, D * 1.4, 700, rot=(6, 0, 18)))
+    subtract(m, tool_box((-W / 2 - 40, -D / 2 - 40, 180), 300, 240, 260, rot=(0, 0, 30)))
+    noise(m, 2.4, 0.008, seed=401)
+    return finalize("SM_Erebus_Fortress_A", m, [
+        (M["MI_Erebus_Concrete_Panels"], "Plinth"),
+        (M["MI_Erebus_Concrete_Dry"], "Mass"),
+        (M["MI_Erebus_Concrete_Light"], "Band"),
+        (M["MI_Erebus_Steel_Scorched"], "Inset"),
+        (M["MI_Erebus_Steel_Dark"], "Steel")])
+
+
+def build_fortress_b():
+    """Elevated fortress block on heavy legs: the reference's center-left icon.
+    A massive suspended mass with a dark underside reads instantly non-blockout."""
+    import random
+    rng = random.Random(409)
+    W, D = 2600.0, 2000.0
+    LEG_H = 1150.0
+    BH = 2300.0
+    m = new_mesh()
+    box(m, (0, 0, 0), W + 500, D + 500, 240, mat=0, steps=2)           # podium
+    for lx in (-W * 0.38, W * 0.38):                                   # legs
+        for ly in (-D * 0.36, D * 0.36):
+            box(m, (lx, ly, 200), 460, 460, LEG_H + 80, mat=0, steps=1)
+            box(m, (lx, ly, 200), 560, 560, 180, mat=2)                # leg shoe
+    box(m, (0, -D * 0.36, 200), 380, 380, LEG_H + 80, mat=0)           # mid legs
+    box(m, (0, D * 0.36, 200), 380, 380, LEG_H + 80, mat=0)
+    for ly in (-D * 0.36, D * 0.36):                                   # transfer beams
+        box(m, (0, ly, LEG_H + 120), W * 0.86, 260, 300, mat=2)
+    box(m, (0, 0, LEG_H + 280), W, D, 300, mat=2)                      # deck slab
+    box(m, (0, 0, LEG_H + 560), W, D, BH, mat=1, steps=3)              # suspended mass
+    _seam_bands(m, W, D, LEG_H + 1000, LEG_H + 560 + BH - 260, 560)
+    for px in (-860, 0, 860):                                          # recessed bays
+        subtract(m, tool_box((px, -D / 2, LEG_H + 1500), 560, 70, 900))
+        for s in range(4):                                             # bay louvers
+            box(m, (px, -D / 2 + 44, LEG_H + 1160 + s * 220), 600, 22, 40, mat=4)
+    top = LEG_H + 560 + BH
+    box(m, (0, 0, top), W + 80, D + 80, 120, mat=2)                    # crown band
+    _corner_chamfers(m, W, D, top, 170)
+    _roof_units(m, rng, W - 300, D - 300, top + 110, 5, 4)
+    box(m, (W * 0.28, D * 0.2, top + 110), 34, 34, 640, mat=4)         # mast
+    # Damage: one shoulder torn open, exposing floor slabs inside.
+    subtract(m, tool_box((-W * 0.44, D * 0.30, top - 200), 820, 900, 900, rot=(10, 0, -24)))
+    for fz in (LEG_H + 1400, LEG_H + 2000):
+        box(m, (-W * 0.36, D * 0.30, fz), 500, 600, 24, mat=2)         # exposed slabs
+    for _ in range(5):                                                 # bent rebar
+        box(m, (-W * 0.40 + rng.uniform(0, 300), D * 0.28 + rng.uniform(-200, 200),
+                top - 500 + rng.uniform(0, 350)), 7, 7, rng.uniform(80, 200),
+            rot=(rng.uniform(-50, 50), rng.uniform(-50, 50), 0), mat=4)
+    noise(m, 2.6, 0.008, seed=409)
+    return finalize("SM_Erebus_Fortress_B", m, [
+        (M["MI_Erebus_Concrete_Panels"], "Podium"),
+        (M["MI_Erebus_Concrete_Dry"], "Mass"),
+        (M["MI_Erebus_Concrete_Light"], "Frame"),
+        (M["MI_Erebus_Steel_Scorched"], "Inset"),
+        (M["MI_Erebus_Steel_Dark"], "Steel")])
+
+
+def build_towerslab_a():
+    """Tall narrow tower slab for the near-right frame edge (reference right
+    towers): vertical ribs, banded setbacks, roof mast; top bitten off."""
+    W, D, H1, H2 = 1500.0, 1050.0, 3800.0, 1500.0
+    m = new_mesh()
+    box(m, (0, 0, 0), W + 160, D + 160, 300, mat=0, steps=1)           # base
+    box(m, (0, 0, 280), W, D, H1, mat=1, steps=3)                      # shaft
+    for px in (-560, -190, 190, 560):                                  # vertical ribs
+        box(m, (px, 0, 280), 110, D + 90, H1 - 60, mat=0)
+    for bz in (1300, 2300, 3300):                                      # band recesses
+        subtract(m, tool_box((0, -D / 2, bz), W + 60, 26, 50))
+        subtract(m, tool_box((0, D / 2, bz), W + 60, 26, 50))
+    for px in (-375, 0, 375):                                          # window slots
+        for wz in (900, 1800, 2700):
+            subtract(m, tool_box((px, -D / 2, wz), 170, 56, 300))
+            subtract(m, tool_box((px, D / 2, wz), 170, 56, 300))
+    box(m, (0, 0, H1 + 260), W - 340, D - 260, H2, mat=1, steps=2)     # setback top
+    box(m, (0, 0, H1 + 240), W - 180, D - 100, 110, mat=2)             # setback band
+    subtract(m, tool_box((W * 0.30, 0, H1 + H2 + 260), 800, D * 1.4, 700, rot=(8, 0, 24)))  # top bite
+    box(m, (-W * 0.18, 0, H1 + H2 + 90), 40, 40, 700, mat=4)           # mast
+    cyl(m, (-W * 0.18, 0, H1 + H2 + 780), 60, 40, mat=4, radial_steps=8)
+    box(m, (0, -D / 2 - 40, 460), 240, 90, 380, mat=4)                 # utility cabinet
+    cyl(m, (W * 0.42, -D / 2 - 30, 380), 8, H1 - 800, mat=4, radial_steps=8)  # conduit
+    noise(m, 2.2, 0.009, seed=419)
+    return finalize("SM_Erebus_TowerSlab_A", m, [
+        (M["MI_Erebus_Concrete_Panels"], "Rib"),
+        (M["MI_Erebus_Concrete_Dry"], "Shaft"),
+        (M["MI_Erebus_Concrete_Light"], "Band"),
+        (M["MI_Erebus_Steel_Scorched"], "Inset"),
+        (M["MI_Erebus_Steel_Dark"], "Steel")])
+
+
+def build_bannerdrape(name, width, drop, seed):
+    """Hanging military banner: rod + sagging cloth + pale emblem plate.
+    The reference hangs these off every major facade."""
+    import random
+    rng = random.Random(seed)
+    m = new_mesh()
+    cyl(m, (-width / 2 - 30, 0, -40), 16, width + 60, rot=(0, 90, 0), mat=1)  # rod
+    # cloth: three slightly kinked segments so the silhouette sags
+    box(m, (0, 6, -drop * 0.34), width, 12, drop * 0.36, rot=(2.5, 0, 0), mat=0)
+    box(m, (0, 14, -drop * 0.67), width * 0.97, 12, drop * 0.36, rot=(5.0, 0, 0), mat=0)
+    box(m, (0, 26, -drop), width * 0.94, 12, drop * 0.36, rot=(8.0, 0, 0), mat=0)
+    # torn lower edge
+    x = -width / 2
+    while x < width / 2 - 40:
+        w_ = rng.uniform(50, 150)
+        subtract(m, tool_box((x + w_ / 2, 30, -drop), w_, 80, rng.uniform(40, 170),
+                             rot=(0, 0, rng.uniform(-12, 12))))
+        x += w_ + rng.uniform(20, 90)
+    box(m, (0, 0, -drop * 0.42), width * 0.55, 20, width * 0.55, mat=2)  # emblem plate
+    box(m, (0, -6, -drop * 0.42), width * 0.10, 24, width * 0.44, mat=3)  # emblem: vertical bar
+    box(m, (0, -6, -drop * 0.30), width * 0.30, 24, width * 0.08, mat=3)  # emblem: offset crossbar
+    noise(m, 3.0, 0.02, seed=seed)
+    return finalize(name, m, [
+        (M["MI_Erebus_BannerCloth"], "Cloth"),
+        (M["MI_Erebus_Steel_Dark"], "Rod"),
+        (M["MI_Erebus_Concrete_Burned"], "Plate"),
+        (M["MI_Erebus_BannerEmblem"], "Emblem")])
+
+
+def build_debrisfield(name, radius, count, seed):
+    """Baked scatter of broken chunks: one draw call of ground storytelling."""
+    import random
+    rng = random.Random(seed)
+    m = new_mesh()
+    for _ in range(count):
+        import math
+        ang = rng.uniform(0, 6.283)
+        r = radius * math.sqrt(rng.uniform(0.05, 1.0))
+        px, py = math.cos(ang) * r, math.sin(ang) * r
+        s = rng.uniform(20, 95)
+        box(m, (px, py, -s * 0.25), s, s * rng.uniform(0.5, 1.1), s * rng.uniform(0.4, 0.8),
+            rot=(rng.uniform(-35, 35), rng.uniform(-30, 30), rng.uniform(0, 180)),
+            mat=0 if rng.random() < 0.6 else 1)
+    noise(m, 3.0, 0.03, seed=seed)
+    cut_keep_below(m, (0, 0, -6), (180, 0, 0))
+    return finalize(name, m, [
+        (M["MI_Erebus_RuinDark"], "Rubble"),
+        (M["MI_Erebus_WreckMetal"], "Metal")])
+
+
+def build_checkpointgate_a():
+    """Erebus corridor terminus gate: a heavy industrial security arch that
+    reads as engineered architecture where the legacy transit blockout posts
+    silhouetted as floating boxes from the comparison view."""
+    m = new_mesh()
+    for sy in (-1, 1):
+        y = sy * 760.0
+        box(m, (0, y, 0), 420, 420, 60, mat=1)                    # base plates
+        box(m, (0, y, 60), 300, 300, 1250, mat=0, steps=2)        # columns
+        subtract(m, tool_box((0, y + sy * 150, 700), 60, 60, 1400, rot=(0, 0, 45)))  # chamfer
+        box(m, (0, y, 1290), 360, 360, 70, mat=1)                 # capitals
+        box(m, (-170, y, 200), 60, 200, 900, rot=(0, -6, 0), mat=1)  # face ribs
+    box(m, (0, 0, 1360), 340, 1900, 380, mat=0, steps=2)          # header box
+    subtract(m, tool_box((0, 0, 1560), 380, 1500, 130))           # recessed band
+    box(m, (-160, 0, 1500), 30, 1100, 200, mat=3)                 # sign plate (pale)
+    for gy in (-620, -320, 320, 620):
+        box(m, (-150, gy, 1420), 24, 130, 60, mat=2)              # vents
+    box(m, (0, 0, 1740), 300, 2000, 80, mat=1)                    # cap beam
+    for sy in (-1, 1):                                            # brace struts
+        box(m, (0, sy * 620, 1140), 80, 80, 460, rot=(sy * 32, 0, 0), mat=2)
+        box(m, (-140, sy * 500, 1330), 90, 70, 60, mat=2)         # floodlight boxes
+    # battle damage: south column shoulder bitten, rebar stubs
+    subtract(m, tool_box((60, -820, 1240), 260, 220, 260, rot=(12, 0, 30)))
+    box(m, (30, -790, 1180), 8, 8, 160, rot=(20, 14, 0), mat=2)
+    box(m, (-30, -830, 1200), 8, 8, 130, rot=(-16, 22, 0), mat=2)
+    noise(m, 1.8, 0.012, seed=443)
+    return finalize("SM_Erebus_CheckpointGate_A", m, [
+        (M["MI_Erebus_Concrete_Panels"], "Concrete"),
+        (M["MI_Erebus_Steel_Dark"], "Steel"),
+        (M["MI_Erebus_Steel_Olive"], "Fittings"),
+        (M["MI_Erebus_BannerEmblem"], "Sign")])
 
 
 def build_worklight_a():
@@ -1236,6 +1477,16 @@ def run():
     build_cathedral_tower("SM_Erebus_CathedralTower_B", 11500, 307)
     build_cathedral_tower("SM_Erebus_CathedralTower_C", 8800, 311)
     build_worklight_a()
+
+    # Generation 3: reference-vocabulary large forms (Phase 4.8 gate iteration).
+    build_fortress_a()
+    build_fortress_b()
+    build_towerslab_a()
+    build_bannerdrape("SM_Erebus_BannerDrape_A", 360, 1300, 421)
+    build_bannerdrape("SM_Erebus_BannerDrape_B", 520, 1900, 431)
+    build_debrisfield("SM_Erebus_DebrisField_A", 420, 34, 433)
+    build_debrisfield("SM_Erebus_DebrisField_B", 700, 52, 439)
+    build_checkpointgate_a()
 
     # Phase 4.7 hero pieces.
     build_tankhulk_a()
