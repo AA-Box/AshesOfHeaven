@@ -13,6 +13,8 @@ class AAHManticoreVehicle;
 class AAHChapterOneDirector;
 class UAHObjectiveSubsystem;
 class UAHObjectiveHUDDelegateTestReceiver;
+class UAHGameMenuWidget;
+enum class EAHMenuMode : uint8;
 enum class EAHMobileTouchAction : uint8;
 
 UCLASS()
@@ -26,6 +28,20 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void SetupInputComponent() override;
+
+	// --- Game menu (front end at boot, pause menu on ESC) -------------------
+	void OpenGameMenu(EAHMenuMode MenuMode);
+	void CloseGameMenu();
+	void TogglePauseMenu();
+	void MenuStartNewGame();
+	void MenuExitGame();
+	bool IsGameMenuOpen() const;
+	UAHGameMenuWidget* GetGameMenu() const { return GameMenu; }
+
+	/** Console/test entry into the same menu handlers (Primary/Continue/Restart/Controls/Options/Back/Exit). */
+	UFUNCTION(Exec)
+	void MenuAction(const FString& ActionName);
 
 	UFUNCTION(Exec)
 	void SetGodMode(bool bEnabled = true);
@@ -109,9 +125,14 @@ protected:
 
 	friend class UAHObjectiveHUDDelegateTestReceiver;
 
+	void MaybeOpenFrontEndMenu();
+
 	bool bGodMode = false;
 	bool bInfiniteAmmo = false;
 	FTimerHandle DeathRestartTimer;
 	TWeakObjectPtr<UAHHUDRootWidget> BoundPresentationRoot;
 	bool bOpeningPresentationState = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAHGameMenuWidget> GameMenu;
 };

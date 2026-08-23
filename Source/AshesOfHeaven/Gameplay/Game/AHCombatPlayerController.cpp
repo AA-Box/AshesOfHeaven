@@ -16,9 +16,18 @@
 #include "Gameplay/UI/AHHUDRootWidget.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
+#include "Gameplay/UI/AHGameMenuWidget.h"
 #include "Platform/AHMobileControlsWidget.h"
+#include "Platform/AHPlatformSaveSubsystem.h"
+#include "Blueprint/UserWidget.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
+
+namespace
+{
+	// Suppresses the boot front end for the in-session reload triggered by "NEW EXPEDITION".
+	bool GAHSkipFrontEndOnce = false;
+}
 
 AAHCombatPlayerController::AAHCombatPlayerController()
 {
@@ -36,6 +45,156 @@ void AAHCombatPlayerController::BeginPlay()
 	if (UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>())
 	{
 		BindObjectiveEvents(Objectives);
+	}
+	MaybeOpenFrontEndMenu();
+}
+
+void AAHCombatPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	if (InputComponent)
+	{
+		FInputKeyBinding& EscapeBinding = InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AAHCombatPlayerController::TogglePauseMenu);
+		EscapeBinding.bExecuteWhenPaused = true;
+		EscapeBinding.bConsumeInput = true;
+		FInputKeyBinding& StartBinding = InputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &AAHCombatPlayerController::TogglePauseMenu);
+		StartBinding.bExecuteWhenPaused = true;
+	}
+}
+
+void AAHCombatPlayerController::MaybeOpenFrontEndMenu()
+{
+	// The front end is a real product surface, never a test surface: automation,
+	// commandlets and evidence captures must keep booting straight into the field.
+	if (GIsAutomationTesting || IsRunningCommandlet() || !IsLocalPlayerController())
+	{
+		return;
+	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("NoFrontEnd")) ||
+		FCString::Strifind(FCommandLine::Get(), TEXT("-ArtTarget=")) != nullptr)
+	{
+		return;
+	}
+	if (GAHSkipFrontEndOnce)
+	{
+		GAHSkipFrontEndOnce = false;
+		return;
+	}
+
+	FString MenuCapture;
+	const bool bHasCapture = FParse::Value(FCommandLine::Get(), TEXT("MenuCapture="), MenuCapture);
+	if (bHasCapture && MenuCapture.Equals(TEXT("Pause"), ESearchCase::IgnoreCase))
+	{
+		OpenGameMenu(EAHMenuMode::Pause);
+		return;
+	}
+	OpenGameMenu(EAHMenuMode::FrontEnd);
+	if (bHasCapture && GameMenu)
+	{
+		if (MenuCapture.Equals(TEXT("Controls"), ESearchCase::IgnoreCase))
+		{
+			GameMenu->ShowPage(EAHMenuPage::Controls);
+		}
+		else if (MenuCapture.Equals(TEXT("Options"), ESearchCase::IgnoreCase))
+		{
+			GameMenu->ShowPage(EAHMenuPage::Options);
+		}
+	}
+}
+
+void AAHCombatPlayerController::OpenGameMenu(EAHMenuMode MenuMode)
+{
+	if (GameMenu)
+	{
+		GameMenu->RemoveFromParent();
+		GameMenu = nullptr;
+	}
+	GameMenu = CreateWidget<UAHGameMenuWidget>(this, UAHGameMenuWidget::StaticClass(), TEXT("GameMenu"));
+	if (!GameMenu)
+	{
+		return;
+	}
+	GameMenu->InitializeMenu(MenuMode);
+	GameMenu->AddToViewport(120);
+	SetPause(true);
+	SetShowMouseCursor(true);
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(GameMenu->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Menu] opened mode=%s"),
+		MenuMode == EAHMenuMode::FrontEnd ? TEXT("FrontEnd") : TEXT("Pause"));
+}
+
+void AAHCombatPlayerController::CloseGameMenu()
+{
+	if (!GameMenu)
+	{
+		return;
+	}
+	GameMenu->RemoveFromParent();
+	GameMenu = nullptr;
+	SetPause(false);
+	SetShowMouseCursor(false);
+	SetInputMode(FInputModeGameOnly());
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Menu] closed"));
+}
+
+bool AAHCombatPlayerController::IsGameMenuOpen() const
+{
+	return GameMenu != nullptr && GameMenu->IsInViewport();
+}
+
+void AAHCombatPlayerController::TogglePauseMenu()
+{
+	if (IsGameMenuOpen())
+	{
+		// The front end never closes on ESC alone; the field starts on an explicit choice.
+		if (GameMenu->GetMode() == EAHMenuMode::Pause)
+		{
+			CloseGameMenu();
+		}
+		return;
+	}
+	OpenGameMenu(EAHMenuMode::Pause);
+}
+
+void AAHCombatPlayerController::MenuStartNewGame()
+{
+	UAHPlatformSaveSubsystem* Save = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>() : nullptr;
+	const bool bHadSave = Save && Save->HasSave();
+	if (bHadSave)
+	{
+		Save->ResetProgress();
+		GAHSkipFrontEndOnce = true;
+		CloseGameMenu();
+		UGameplayStatics::OpenLevel(this, FName(*UGameplayStatics::GetCurrentLevelName(this)));
+		return;
+	}
+	CloseGameMenu();
+}
+
+void AAHCombatPlayerController::MenuExitGame()
+{
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Menu] exit requested"));
+	ConsoleCommand(TEXT("quit"));
+}
+
+void AAHCombatPlayerController::MenuAction(const FString& ActionName)
+{
+	if (ActionName.Equals(TEXT("OpenPause"), ESearchCase::IgnoreCase))
+	{
+		OpenGameMenu(EAHMenuMode::Pause);
+		return;
+	}
+	if (ActionName.Equals(TEXT("OpenFrontEnd"), ESearchCase::IgnoreCase))
+	{
+		OpenGameMenu(EAHMenuMode::FrontEnd);
+		return;
+	}
+	if (GameMenu && !GameMenu->ActivateAction(ActionName))
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Menu] unknown action %s"), *ActionName);
 	}
 }
 

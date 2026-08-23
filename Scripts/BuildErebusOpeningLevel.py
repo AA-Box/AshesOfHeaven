@@ -142,8 +142,8 @@ def open_clean_level():
 
 def build_ground():
     # Mud base fields under everything — extra rows cover the widened vista floor.
-    for column, cx in enumerate((-1600, 600, 2800, 5000, 7200)):
-        for row, cy in enumerate((-1100, 1100, -3200, 3200)):
+    for column, cx in enumerate((-4000, -1600, 600, 2800, 5000, 7200)):
+        for row, cy in enumerate((-1100, 1100, -3200, 3200, -5400, 5400)):
             mesh("SM_Erebus_MudBase_A", (cx, cy, -24), (0, 0, (column * 2 + row) % 4 * 90),
                  label="Mud_%d_%d" % (column, row))
 
@@ -420,48 +420,64 @@ def build_midground():
 
 
 def build_background():
-    # Three skyline depth layers (visual gate §19), separated by the fog gradient.
-    # Near: damaged local architecture with readable silhouette damage.
-    near_row = [(4800, -1700, 1.2, "A"), (5520, 1850, 1.4, "B"), (6240, -1600, 1.1, "A"),
-                (6960, 1750, 1.6, "B"), (7680, -1900, 1.3, "A"), (8400, 1650, 1.2, "B")]
-    for index, (bx, by, scale, variant) in enumerate(near_row):
-        mesh("SM_Erebus_RuinBlock_" + variant, (bx, by, 0), (0, 0, (index * 37) % 20 - 10),
-             (scale, scale, scale), label="Skyline_%d" % index)
-        if index % 2 == 0:
-            mesh("SM_Erebus_RuinEdge_B", (bx, by - 260 * (1 if by < 0 else -1), 1560 * scale),
-                 (0, 0, (index * 37) % 20 - 10), (1.8, 1.8, 2.0), label="SkylineEdge_%d" % index)
-    mesh("SM_Erebus_Facade_Broken_A", (4600, 1650, 0), (0, 0, -8), (1.5, 1.5, 1.6), label="NearRuinFacade_N")
-    mesh("SM_Erebus_StructureFrame_B", (5300, -1750, 0), (0, 0, 14), (2.2, 2.2, 2.4), label="NearRuinFrame_S")
+    """A complete ruined city in every direction (gate feedback round 3: 'the world
+    must be complete'). Deterministic pseudo-random rings of ruin masses fill 360
+    degrees around the route in three depth bands, with the forward lane kept open
+    for the corridor read and the Cathedral. All far masses are cheap silhouettes:
+    no shadows, fog does the shading."""
 
-    # Mid: larger industrial blocks partially lost in haze.
-    mid_row = [(9120, -1750, 1.5, "A"), (9840, 1900, 1.3, "B"), (10560, -1650, 1.2, "A"),
-               (11280, 1800, 1.7, "B"), (12000, -1850, 1.4, "A"), (12720, 1950, 1.3, "B"),
-               (9500, 2900, 1.9, "B"), (10300, -3100, 2.3, "B"), (11280, 2900, 1.9, "B")]
-    for index, (bx, by, scale, variant) in enumerate(mid_row):
-        mesh("SM_Erebus_RuinBlock_" + variant, (bx, by, 0), (0, 0, (index * 53) % 24 - 12),
-             (scale, scale, scale), label="SkylineMid_%d" % index)
+    def ring(band_index, radius_min, radius_max, step_deg, scale_min, scale_max, jitter_deg):
+        index = 0
+        angle = 0.0
+        while angle < 360.0:
+            seed = int(angle * 7.3) + band_index * 977
+            yaw_jitter = ((seed * 13) % (2 * jitter_deg)) - jitter_deg
+            bearing = angle + yaw_jitter * 0.4
+            # Keep the forward corridor lane open: the vanishing point, the gate and
+            # the Cathedral own bearings within ~9 degrees of +X.
+            if abs(((bearing + 180.0) % 360.0) - 180.0) < 9.0:
+                angle += step_deg
+                continue
+            radius = radius_min + ((seed * 37) % 100) / 100.0 * (radius_max - radius_min)
+            import math
+            cx = 1200 + radius * math.cos(math.radians(bearing))
+            cy = radius * math.sin(math.radians(bearing))
+            scale = scale_min + ((seed * 61) % 100) / 100.0 * (scale_max - scale_min)
+            variant = "A" if (seed % 3) else "B"
+            mesh("SM_Erebus_RuinBlock_" + variant, (cx, cy, 0), (0, 0, (seed * 29) % 360),
+                 (scale, scale, scale * (0.8 + ((seed * 17) % 40) / 100.0)),
+                 label="City_%d_%d" % (band_index, index))
+            if seed % 4 == 0:
+                mesh("SM_Erebus_RuinEdge_" + ("A" if seed % 2 else "B"),
+                     (cx, cy, 1560 * scale), (0, 0, (seed * 29) % 360),
+                     (1.6 * scale, 1.6 * scale, 1.8),
+                     label="CityEdge_%d_%d" % (band_index, index))
+            index += 1
+            angle += step_deg
 
-    # Far: continuous city mass closing the vanishing point, plus flank masses.
-    far_row = [(14200, -600, 3.0, "B"), (14800, 900, 3.4, "B"), (15400, -1800, 3.2, "A"),
-               (16000, 300, 3.8, "B"), (15200, 2600, 3.0, "B"), (16600, -3000, 3.5, "A"),
-               (17200, 1800, 3.6, "B"), (14600, -3600, 2.8, "B"), (16200, 3800, 3.2, "A"),
-               (17800, -900, 4.0, "B"), (18400, 2800, 3.4, "B")]
-    for index, (bx, by, scale, variant) in enumerate(far_row):
-        mesh("SM_Erebus_RuinBlock_" + variant, (bx, by, 0), (0, 0, (index * 29) % 30 - 15),
-             (scale, scale, scale), label="SkylineFar_%d" % index)
+    # Near band: readable damaged blocks around the whole field, including behind spawn.
+    ring(0, 4300, 6400, 16.0, 1.0, 1.6, 10)
+    # Mid band: larger masses dissolving into haze.
+    ring(1, 7200, 10500, 13.0, 1.5, 2.4, 12)
+    # Far band: continuous city mass closing every horizon.
+    ring(2, 11500, 17500, 10.0, 2.6, 4.0, 14)
 
-    # Cathedral (visual gate §17): enormous, vertical, structurally unique, largely
-    # black. Gate feedback: "not visually dominant at all" — the towers were 9km out
-    # and fog-swallowed. They move to ~6km, nearly on the corridor axis, scaled up,
-    # so the main tower fills the sky gap above the transit gate from spawn and
-    # clears the volumetric fog enough to read as a hard silhouette.
+    # Broken facade fragments mixed into the near band flanks for silhouette variety.
+    for index, (bx, by, yaw, s) in enumerate([
+            (4700, -2600, 168, 1.5), (5400, 2900, 12, 1.6), (-2600, -3400, 105, 1.4),
+            (-3100, 2800, 75, 1.5), (2600, -4600, 150, 1.7), (2200, 4400, -18, 1.5),
+            (-4200, -800, 95, 1.6), (-4000, 1400, 82, 1.4)]):
+        mesh("SM_Erebus_Facade_Broken_A" if index % 2 else "SM_Erebus_StructureFrame_B",
+             (bx, by, 0), (0, 0, yaw), (s, s, s), label="CityRuin_%d" % index)
+
+    # Cathedral (visual gate section 17): enormous, vertical, structurally unique,
+    # largely black, at ~8km on the corridor axis where aerial haze shapes the
+    # fluted towers into the reference's dark landmark silhouette.
     mesh("SM_Erebus_CathedralTower_A", (8200, 400, 0), (0, 0, 20), (1.25, 1.25, 1.2), label="Cathedral_Main")
     mesh("SM_Erebus_CathedralTower_B", (7300, 1700, 0), (0, 0, -15), (1.1, 1.1, 1.0), label="Cathedral_Flank")
     mesh("SM_Erebus_CathedralTower_C", (9000, -1000, 0), (0, 0, 45), (1.15, 1.15, 1.1), label="Cathedral_Fore")
     mesh("SM_Erebus_RuinBlock_B", (7900, 1000, 0), (0, 0, 8), (2.4, 2.4, 1.2), label="CathedralBase_A")
     mesh("SM_Erebus_RuinBlock_B", (8600, -100, 0), (0, 0, -14), (2.2, 2.2, 1.0), label="CathedralBase_B")
-    # Buttress shoulders bridge the towers into one massed landmark instead of
-    # three separate needles.
     mesh("SM_Erebus_RuinBlock_B", (8250, 750, 0), (0, 0, 24), (1.6, 1.6, 2.6), label="CathedralShoulder_A")
     mesh("SM_Erebus_RuinBlock_B", (8700, -450, 0), (0, 0, -30), (1.4, 1.4, 2.2), label="CathedralShoulder_B")
 
