@@ -49,3 +49,26 @@ Durable lessons only. Each entry prevents a repeated mistake.
   deinitialization to the GC-purge destructor, which asserts (UObjectArray.h
   `Index >= 0`) once neighbouring objects are freed first — deterministic crash
   that kills the whole automation queue after the test itself passes.
+- A factory-fresh Niagara emitter exposes almost no rapid-iteration parameters,
+  so it cannot be re-authored programmatically. Duplicate Epic's UI-built
+  Fountain template emitter instead (LoadObject the template — unattended
+  commandlets never registry-scan /Niagara) and overwrite its parameters.
+  SpawnRate lives in the EMITTER update script, not the particle scripts.
+- A NiagaraSystem embeds its own INHERITED COPY of each emitter, baked at
+  creation. Editing the standalone NE_* asset afterwards never reaches the
+  runtime: author the system's emitter handles
+  (`System->GetEmitterHandle(i).GetInstance().GetEmitterData()`) directly.
+- Opaque surface masters on sprites render as solid squares (the 'floating
+  cube cloud' artifact). Sprite systems need unlit translucent/additive
+  materials that read ParticleColor and fade by a radial gradient.
+- PIE in the editor understates the packaged look (scalability can drop
+  volumetric fog and atmosphere quality). Use PIE loops for composition and
+  gross errors only; judge lighting/atmosphere from the packaged build.
+- Under auto-exposure, skylight and point fills favour up-facing ground, so
+  raising them never fixes black walls. Steer the wall:ground ratio with
+  albedo (dark wet ground like the reference) and light direction; a second
+  directional triggers an on-screen forward-shading warning in Development.
+- Accidental cruciform silhouettes come from depth-composition, not single
+  assets: a bare gate lintel plus ANY nearer vertical (pole, column, mast) on
+  the camera axis reads as a giant cross. Fill gate centers with mass and keep
+  crossarm poles off the corridor sightline.

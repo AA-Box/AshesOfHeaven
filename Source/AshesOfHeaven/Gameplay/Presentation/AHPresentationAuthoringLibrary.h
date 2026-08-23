@@ -15,4 +15,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Ashes|Presentation|Authoring")
 	static bool AuthorPhase42Niagara();
+
+	/**
+	 * Authors the near-camera Erebus effects (NS_Erebus_FireSmall / FireWreck /
+	 * EmbersNear / SmokeLocal) with deliberate sprite sizes, spawn rates, lifetimes
+	 * and velocities instead of the factory fountain defaults. The factory defaults
+	 * render as giant additive columns at any near scale; these are the authored
+	 * replacements the visual gate requires.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Ashes|Presentation|Authoring")
+	static bool AuthorErebusNearVFX();
 };

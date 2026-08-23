@@ -234,13 +234,22 @@ void AAHPresentationPropActor::OnConstruction(const FTransform& Transform)
 	}
 	else if (Style.Contains(TEXT("ExpeditionLight")))
 	{
-		// Slim work-light: pole, small box head, downward shade. The old sphere+cone head
-		// read as a floating teardrop in packaged captures.
-		PropMesh->SetStaticMesh(Cylinder);
-		PropMesh->SetRelativeScale3D(FVector(0.22f, 0.22f, 1.4f));
-		AddDetailMesh(this, DetailMeshes, TEXT("LightHousing"), Cube, FVector(0.f, 0.f, 138.f), FRotator(0.f, 0.f, 0.f), FVector(0.42f, 0.30f, 0.22f));
-		AddDetailMesh(this, DetailMeshes, TEXT("LightShade"), Cone, FVector(0.f, 0.f, 128.f), FRotator(180.f, 0.f, 0.f), FVector(0.34f, 0.34f, 0.24f));
-		AddDetailMesh(this, DetailMeshes, TEXT("LightBase"), Cube, FVector(0.f, 0.f, -58.f), FRotator::ZeroRotator, FVector(0.55f, 0.55f, 0.08f));
+		if (UStaticMesh* WorkLight = LoadKitMesh(TEXT("SM_Erebus_WorkLight_A")))
+		{
+			// Authored kit work-light: the primitive-composed version tripped the
+			// corridor debug-primitive audit (visual gate #31).
+			PropMesh->SetStaticMesh(WorkLight);
+			PropMesh->SetRelativeScale3D(FVector(1.0f));
+		}
+		else
+		{
+			// Legacy primitive fallback only.
+			PropMesh->SetStaticMesh(Cylinder);
+			PropMesh->SetRelativeScale3D(FVector(0.22f, 0.22f, 1.4f));
+			AddDetailMesh(this, DetailMeshes, TEXT("LightHousing"), Cube, FVector(0.f, 0.f, 138.f), FRotator(0.f, 0.f, 0.f), FVector(0.42f, 0.30f, 0.22f));
+			AddDetailMesh(this, DetailMeshes, TEXT("LightShade"), Cone, FVector(0.f, 0.f, 128.f), FRotator(180.f, 0.f, 0.f), FVector(0.34f, 0.34f, 0.24f));
+			AddDetailMesh(this, DetailMeshes, TEXT("LightBase"), Cube, FVector(0.f, 0.f, -58.f), FRotator::ZeroRotator, FVector(0.55f, 0.55f, 0.08f));
+		}
 	}
 	else if (Style.Contains(TEXT("BlastWall")))
 	{

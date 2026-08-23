@@ -1122,6 +1122,36 @@ bool FAHErebusAuthoredZoneTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("authored Erebus zone streamed in (%d tagged actors, expected >= 100)"), AuthoredCount), AuthoredCount >= 100);
 	TestEqual(TEXT("no visible legacy primitive presentation remains in the Erebus opening band"), LegacyErebusPrimitives, 0);
 
+	// Mesh-level primitive audit (visual gate §31): no visible component in the reviewed
+	// corridor may reference a debug primitive from /Game/Ashes/Presentation/Meshes/SM_AH_*,
+	// regardless of which actor or tag carries it. Hidden collision layers are exempt.
+	int32 VisibleDebugPrimitiveMeshes = 0;
+	for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+	{
+		if (It->IsHidden() || It->GetActorLocation().X < -2500.0f || It->GetActorLocation().X > 2900.0f)
+		{
+			continue;
+		}
+		TArray<UStaticMeshComponent*> MeshComponents;
+		It->GetComponents(MeshComponents);
+		for (const UStaticMeshComponent* MeshComponent : MeshComponents)
+		{
+			if (!MeshComponent || MeshComponent->bHiddenInGame || !MeshComponent->IsVisible()
+				|| !MeshComponent->GetStaticMesh())
+			{
+				continue;
+			}
+			if (MeshComponent->GetStaticMesh()->GetPathName().StartsWith(TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_")))
+			{
+				++VisibleDebugPrimitiveMeshes;
+				UE_LOG(LogTemp, Display, TEXT("[PrimitiveAudit] %s (%s) uses %s at %s"),
+					*It->GetName(), *It->GetClass()->GetName(),
+					*MeshComponent->GetStaticMesh()->GetName(), *It->GetActorLocation().ToCompactString());
+			}
+		}
+	}
+	TestEqual(TEXT("no visible debug primitive mesh (SM_AH_*) remains in the reviewed Erebus corridor"), VisibleDebugPrimitiveMeshes, 0);
+
 	// The objective-01 corridor keeps presentation coverage from the authored zone.
 	const FVector ObjectiveCenter(-600.0f, 0.0f, 120.0f);
 	const FVector ObjectiveExtent(280.0f, 1000.0f, 160.0f);

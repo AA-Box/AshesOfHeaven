@@ -29,6 +29,7 @@
 #include "NiagaraScript.h"
 #include "NiagaraSpriteRendererProperties.h"
 #include "NiagaraSystem.h"
+#include "NiagaraEmitterHandle.h"
 #include "NiagaraEmitterFactoryNew.h"
 #include "NiagaraSystemFactoryNew.h"
 #include "Materials/MaterialInterface.h"
@@ -526,6 +527,411 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
 	return bSuccess;
 }
 
+namespace
+{
+	// One near-camera effect recipe. Values target the packaged war gloom: small warm
+	// licks for fire, pinprick embers, soft slow smoke. Rapid-iteration parameters on
+	// the factory fountain modules are matched by name substring because the exact
+	// "Constants.<Emitter>.<Module>.<Input>" prefixes vary per engine version.
+	struct FAHNearVFXRecipe
+	{
+		const TCHAR* Name = nullptr;
+		const TCHAR* MaterialPath = nullptr;
+		bool bLocalSpace = true;
+		float Bounds = 200.0f;
+		float SpawnRate = 20.0f;
+		float LifeMin = 0.5f;
+		float LifeMax = 1.0f;
+		float SizeMin = 10.0f;
+		float SizeMax = 20.0f;
+		float VelMin = 60.0f;
+		float VelMax = 150.0f;
+		float ConeAngle = 20.0f;
+		float GravityZ = 0.0f;
+		float Drag = 1.0f;
+		float ShapeRadius = 30.0f;
+		FLinearColor Color = FLinearColor::White;
+	};
+
+	bool SetRapidIterationFloat(FNiagaraParameterStore& Store, const FNiagaraVariableBase& Var, float Value)
+	{
+		if (Var.GetType() != FNiagaraTypeDefinition::GetFloatDef())
+		{
+			return false;
+		}
+		FNiagaraVariable Param(Var.GetType(), Var.GetName());
+		Store.SetParameterData(reinterpret_cast<const uint8*>(&Value), Param, false);
+		return true;
+	}
+
+	bool SetRapidIterationVec2(FNiagaraParameterStore& Store, const FNiagaraVariableBase& Var, const FVector2f& Value)
+	{
+		if (Var.GetType() != FNiagaraTypeDefinition::GetVec2Def())
+		{
+			return false;
+		}
+		FNiagaraVariable Param(Var.GetType(), Var.GetName());
+		Store.SetParameterData(reinterpret_cast<const uint8*>(&Value), Param, false);
+		return true;
+	}
+
+	bool SetRapidIterationVec3(FNiagaraParameterStore& Store, const FNiagaraVariableBase& Var, const FVector3f& Value)
+	{
+		if (Var.GetType() != FNiagaraTypeDefinition::GetVec3Def())
+		{
+			return false;
+		}
+		FNiagaraVariable Param(Var.GetType(), Var.GetName());
+		Store.SetParameterData(reinterpret_cast<const uint8*>(&Value), Param, false);
+		return true;
+	}
+
+	bool SetRapidIterationColor(FNiagaraParameterStore& Store, const FNiagaraVariableBase& Var, const FLinearColor& Value)
+	{
+		if (Var.GetType() != FNiagaraTypeDefinition::GetColorDef())
+		{
+			return false;
+		}
+		FNiagaraVariable Param(Var.GetType(), Var.GetName());
+		Store.SetParameterData(reinterpret_cast<const uint8*>(&Value), Param, false);
+		return true;
+	}
+
+	// Applies the recipe to every rapid-iteration parameter whose name matches a known
+	// module input. Returns the number of parameters written; logs every unmatched
+	// parameter once so the recipe table can grow against real engine names.
+	int32 ApplyRecipeToScript(UNiagaraScript* Script, const FAHNearVFXRecipe& Recipe)
+	{
+		if (!Script)
+		{
+			return 0;
+		}
+		int32 Applied = 0;
+		FNiagaraParameterStore& Store = Script->RapidIterationParameters;
+		// Copy the variable list up front: SetParameterData can reallocate the store.
+		TArray<FNiagaraVariableBase> Variables;
+		for (const FNiagaraVariableWithOffset& Var : Store.ReadParameterVariables())
+		{
+			Variables.Add(FNiagaraVariableBase(Var.GetType(), Var.GetName()));
+		}
+		for (const FNiagaraVariableBase& Var : Variables)
+		{
+			// Match on the module INPUT name only (last dot segment): full paths like
+			// "Constants.Emitter.SpawnRate.Spawn Probability" contain the module name
+			// "SpawnRate" and would otherwise hijack unrelated inputs.
+			FString Input = Var.GetName().ToString();
+			int32 LastDot = INDEX_NONE;
+			if (Input.FindLastChar(TEXT('.'), LastDot))
+			{
+				Input = Input.Mid(LastDot + 1);
+			}
+			Input = Input.ToLower().Replace(TEXT(" "), TEXT("")).Replace(TEXT("/"), TEXT(""));
+
+			bool bSet = false;
+			if (Input == TEXT("spawnrate"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.SpawnRate);
+			}
+			else if (Input == TEXT("lifetimemin"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.LifeMin);
+			}
+			else if (Input == TEXT("lifetimemax"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.LifeMax);
+			}
+			else if (Input == TEXT("spritesizemin") || Input == TEXT("uniformspritesizemin"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.SizeMin)
+					|| SetRapidIterationVec2(Store, Var, FVector2f(Recipe.SizeMin, Recipe.SizeMin));
+			}
+			else if (Input == TEXT("spritesizemax") || Input == TEXT("uniformspritesizemax"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.SizeMax)
+					|| SetRapidIterationVec2(Store, Var, FVector2f(Recipe.SizeMax, Recipe.SizeMax));
+			}
+			else if (Input == TEXT("color"))
+			{
+				bSet = SetRapidIterationColor(Store, Var, Recipe.Color);
+			}
+			else if (Input == TEXT("velocity"))
+			{
+				bSet = SetRapidIterationVec3(Store, Var, FVector3f(0.0f, 0.0f, 0.5f * (Recipe.VelMin + Recipe.VelMax)))
+					|| SetRapidIterationFloat(Store, Var, 0.5f * (Recipe.VelMin + Recipe.VelMax));
+			}
+			else if (Input == TEXT("velocityspeedscale") || Input == TEXT("speedscale"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, 1.0f);
+			}
+			else if (Input == TEXT("velocitymin") || Input == TEXT("speedmin"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.VelMin);
+			}
+			else if (Input == TEXT("velocitymax") || Input == TEXT("speedmax"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.VelMax);
+			}
+			else if (Input == TEXT("coneangle"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.ConeAngle);
+			}
+			else if (Input == TEXT("innerconeangle"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.ConeAngle * 0.4f);
+			}
+			else if (Input == TEXT("gravity"))
+			{
+				bSet = SetRapidIterationVec3(Store, Var, FVector3f(0.0f, 0.0f, Recipe.GravityZ))
+					|| SetRapidIterationFloat(Store, Var, Recipe.GravityZ);
+			}
+			else if (Input == TEXT("drag"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.Drag);
+			}
+			else if (Input == TEXT("sphereradius") || Input == TEXT("radius"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.ShapeRadius);
+			}
+			if (bSet)
+			{
+				++Applied;
+				UE_LOG(LogTemp, Display, TEXT("[Phase4.6][NearVFX] %s set %s"), Recipe.Name, *Var.GetName().ToString());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Verbose, TEXT("[Phase4.6][NearVFX] untouched param %s : %s (%s)"),
+					Recipe.Name, *Var.GetName().ToString(), *Var.GetType().GetName());
+			}
+		}
+		return Applied;
+	}
+}
+
+bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
+{
+	const FString VFXPath = TEXT("/Game/Ashes/VFX");
+	const FString EmitterPath = VFXPath / TEXT("Emitters");
+
+	TArray<FAHNearVFXRecipe> Recipes;
+	{
+		FAHNearVFXRecipe Fire;
+		Fire.Name = TEXT("Erebus_FireSmall");
+		Fire.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
+		Fire.bLocalSpace = true;
+		Fire.Bounds = 160.0f;
+		Fire.SpawnRate = 34.0f;
+		Fire.LifeMin = 0.35f; Fire.LifeMax = 0.7f;
+		Fire.SizeMin = 4.0f; Fire.SizeMax = 9.0f;
+		Fire.VelMin = 40.0f; Fire.VelMax = 100.0f;
+		Fire.ConeAngle = 18.0f;
+		Fire.GravityZ = 0.0f;
+		Fire.Drag = 1.2f;
+		Fire.ShapeRadius = 22.0f;
+		Fire.Color = FLinearColor(3.8f, 1.35f, 0.32f, 1.0f);
+		Recipes.Add(Fire);
+
+		FAHNearVFXRecipe Wreck;
+		Wreck.Name = TEXT("Erebus_FireWreck");
+		Wreck.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
+		Wreck.bLocalSpace = true;
+		Wreck.Bounds = 320.0f;
+		Wreck.SpawnRate = 46.0f;
+		Wreck.LifeMin = 0.5f; Wreck.LifeMax = 1.0f;
+		Wreck.SizeMin = 12.0f; Wreck.SizeMax = 26.0f;
+		Wreck.VelMin = 70.0f; Wreck.VelMax = 170.0f;
+		Wreck.ConeAngle = 24.0f;
+		Wreck.Drag = 1.0f;
+		Wreck.ShapeRadius = 60.0f;
+		Wreck.Color = FLinearColor(3.4f, 1.05f, 0.26f, 1.0f);
+		Recipes.Add(Wreck);
+
+		FAHNearVFXRecipe Embers;
+		Embers.Name = TEXT("Erebus_EmbersNear");
+		Embers.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
+		Embers.bLocalSpace = false;
+		Embers.Bounds = 520.0f;
+		Embers.SpawnRate = 6.0f;
+		Embers.LifeMin = 1.0f; Embers.LifeMax = 2.0f;
+		Embers.SizeMin = 0.8f; Embers.SizeMax = 1.6f;
+		Embers.VelMin = 90.0f; Embers.VelMax = 200.0f;
+		Embers.ConeAngle = 30.0f;
+		Embers.GravityZ = -20.0f;
+		Embers.Drag = 0.6f;
+		Embers.ShapeRadius = 60.0f;
+		Embers.Color = FLinearColor(5.0f, 1.8f, 0.5f, 1.0f);
+		Recipes.Add(Embers);
+
+		FAHNearVFXRecipe Smoke;
+		Smoke.Name = TEXT("Erebus_SmokeLocal");
+		Smoke.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
+		Smoke.bLocalSpace = false;
+		Smoke.Bounds = 700.0f;
+		Smoke.SpawnRate = 8.0f;
+		Smoke.LifeMin = 2.2f; Smoke.LifeMax = 4.2f;
+		Smoke.SizeMin = 55.0f; Smoke.SizeMax = 130.0f;
+		Smoke.VelMin = 55.0f; Smoke.VelMax = 110.0f;
+		Smoke.ConeAngle = 14.0f;
+		Smoke.Drag = 0.8f;
+		Smoke.ShapeRadius = 45.0f;
+		Smoke.Color = FLinearColor(0.055f, 0.055f, 0.06f, 0.4f);
+		Recipes.Add(Smoke);
+
+		FAHNearVFXRecipe Column;
+		Column.Name = TEXT("Erebus_SmokeColumn");
+		Column.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
+		Column.bLocalSpace = false;
+		Column.Bounds = 5200.0f;
+		Column.SpawnRate = 7.0f;
+		Column.LifeMin = 7.0f; Column.LifeMax = 12.0f;
+		Column.SizeMin = 260.0f; Column.SizeMax = 620.0f;
+		Column.VelMin = 300.0f; Column.VelMax = 460.0f;
+		Column.ConeAngle = 9.0f;
+		Column.Drag = 0.4f;
+		Column.ShapeRadius = 220.0f;
+		Column.Color = FLinearColor(0.045f, 0.045f, 0.050f, 0.5f);
+		Recipes.Add(Column);
+
+		FAHNearVFXRecipe Ash;
+		Ash.Name = TEXT("Erebus_AshAmbient");
+		Ash.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
+		Ash.bLocalSpace = false;
+		Ash.Bounds = 1400.0f;
+		Ash.SpawnRate = 26.0f;
+		Ash.LifeMin = 4.0f; Ash.LifeMax = 8.0f;
+		Ash.SizeMin = 1.8f; Ash.SizeMax = 4.5f;
+		Ash.VelMin = 20.0f; Ash.VelMax = 50.0f;
+		Ash.ConeAngle = 70.0f;
+		Ash.GravityZ = -28.0f;
+		Ash.Drag = 0.5f;
+		Ash.ShapeRadius = 900.0f;
+		Ash.Color = FLinearColor(0.020f, 0.020f, 0.022f, 0.55f);
+		Recipes.Add(Ash);
+	}
+
+	bool bSuccess = true;
+	for (const FAHNearVFXRecipe& Recipe : Recipes)
+	{
+		const FString EmitterName = FString(TEXT("NE_")) + Recipe.Name;
+		const FString SystemName = FString(TEXT("NS_")) + Recipe.Name;
+		const FString EmitterAssetPath = EmitterPath / EmitterName;
+		const FString SystemAssetPath = VFXPath / SystemName;
+
+		// Load-or-duplicate: a factory-fresh emitter exposes almost no rapid-iteration
+		// parameters (module inputs stay at graph defaults until edited), so it cannot
+		// be re-authored programmatically. Epic's UI-built Fountain template exposes
+		// the full input set (SpawnRate, Lifetime, Sprite Size, Color, Velocity,
+		// Gravity, Drag, ShapeLocation) as rapid-iteration parameters — duplicate it
+		// and overwrite those. Delete+recreate at the same path corrupts the family in
+		// unattended sessions, so existing assets are updated in place instead.
+		UNiagaraEmitter* Emitter = LoadObject<UNiagaraEmitter>(nullptr, *(EmitterAssetPath + TEXT(".") + EmitterName));
+		const bool bEmitterExisted = Emitter != nullptr;
+		if (!Emitter)
+		{
+			// LoadObject, not the asset-registry duplicate: unattended commandlets never
+			// scan engine-plugin content, so registry-based lookups cannot see /Niagara.
+			if (UNiagaraEmitter* Template = LoadObject<UNiagaraEmitter>(nullptr, TEXT("/Niagara/DefaultAssets/Templates/Emitters/Fountain.Fountain")))
+			{
+				Emitter = Cast<UNiagaraEmitter>(FAssetToolsModule::GetModule().Get().DuplicateAsset(EmitterName, EmitterPath, Template));
+			}
+		}
+		if (!Emitter)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.6][NearVFX] failed to author emitter %s"), Recipe.Name);
+			bSuccess = false;
+			continue;
+		}
+
+		Emitter->SetUniqueEmitterName(FString(TEXT("AH_")) + Recipe.Name);
+		Emitter->Category = FText::FromString(TEXT("Ashes of Heaven / Phase 4.6"));
+
+		// Author one emitter-data view (space, bounds, renderer material, module params).
+		auto AuthorEmitterData = [&Recipe](FVersionedNiagaraEmitterData* EmitterData) -> int32
+		{
+			if (!EmitterData)
+			{
+				return 0;
+			}
+			EmitterData->bLocalSpace = Recipe.bLocalSpace;
+			EmitterData->bDeterminism = true;
+			EmitterData->CalculateBoundsMode = ENiagaraEmitterCalculateBoundMode::Fixed;
+			EmitterData->FixedBounds = FBox(FVector(-Recipe.Bounds), FVector(Recipe.Bounds));
+			EmitterData->AllocationMode = EParticleAllocationMode::ManualEstimate;
+			EmitterData->PreAllocationCount = 128;
+
+			UMaterialInterface* EffectMaterial = LoadObject<UMaterialInterface>(nullptr, Recipe.MaterialPath);
+			for (UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
+			{
+				if (UNiagaraSpriteRendererProperties* Sprite = Cast<UNiagaraSpriteRendererProperties>(Renderer))
+				{
+					if (EffectMaterial)
+					{
+						Sprite->Material = EffectMaterial;
+					}
+					Sprite->FacingMode = ENiagaraSpriteFacingMode::FaceCamera;
+					Sprite->SortMode = FString(Recipe.Name).Contains(TEXT("Smoke"))
+						? ENiagaraSortMode::ViewDepth : ENiagaraSortMode::None;
+				}
+			}
+
+			int32 Applied = 0;
+			Applied += ApplyRecipeToScript(EmitterData->SpawnScriptProps.Script, Recipe);
+			Applied += ApplyRecipeToScript(EmitterData->UpdateScriptProps.Script, Recipe);
+			// SpawnRate lives in the EMITTER update script, not the particle scripts.
+			Applied += ApplyRecipeToScript(EmitterData->EmitterSpawnScriptProps.Script, Recipe);
+			Applied += ApplyRecipeToScript(EmitterData->EmitterUpdateScriptProps.Script, Recipe);
+			return Applied;
+		};
+
+		int32 AppliedParams = AuthorEmitterData(Emitter->GetLatestEmitterData());
+		UE_LOG(LogTemp, Display, TEXT("[Phase4.6][NearVFX] %s authored: %d module parameters applied"), Recipe.Name, AppliedParams);
+		if (AppliedParams == 0)
+		{
+			// A recipe that matched nothing would ship factory-default columns again.
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.6][NearVFX] %s matched no module parameters; refusing factory defaults"), Recipe.Name);
+			bSuccess = false;
+		}
+		UEditorAssetLibrary::SaveAsset(EmitterAssetPath, false);
+
+		UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *(SystemAssetPath + TEXT(".") + SystemName));
+		if (!System)
+		{
+			UNiagaraSystemFactoryNew* SystemFactory = NewObject<UNiagaraSystemFactoryNew>();
+			SystemFactory->EmittersToAddToNewSystem.Add(FVersionedNiagaraEmitter(Emitter, Emitter->GetExposedVersion().VersionGuid));
+			System = Cast<UNiagaraSystem>(FAssetToolsModule::GetModule().Get().CreateAsset(
+				SystemName, VFXPath, UNiagaraSystem::StaticClass(), SystemFactory));
+		}
+		if (!System)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.6][NearVFX] failed to author system %s"), Recipe.Name);
+			bSuccess = false;
+			continue;
+		}
+
+		// The system holds its own INHERITED COPY of the emitter, baked at creation:
+		// editing the standalone NE_* asset afterwards never reaches the packaged
+		// runtime (this is why earlier passes still rendered factory columns).
+		// Author every emitter handle inside the system directly.
+		int32 HandleParams = 0;
+		for (int32 HandleIndex = 0; HandleIndex < System->GetNumEmitters(); ++HandleIndex)
+		{
+			FNiagaraEmitterHandle& Handle = System->GetEmitterHandle(HandleIndex);
+			HandleParams += AuthorEmitterData(Handle.GetInstance().GetEmitterData());
+		}
+		UE_LOG(LogTemp, Display, TEXT("[Phase4.6][NearVFX] %s system handles authored: %d module parameters applied"), Recipe.Name, HandleParams);
+		if (HandleParams == 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Phase4.6][NearVFX] %s system emitter copy matched nothing; factory defaults would ship"), Recipe.Name);
+			bSuccess = false;
+		}
+
+		System->SetFixedBounds(FBox(FVector(-Recipe.Bounds), FVector(Recipe.Bounds)));
+		System->RequestCompile(false);
+		UEditorAssetLibrary::SaveAsset(SystemAssetPath, false);
+	}
+
+	return bSuccess;
+}
+
 #else
 
 bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
@@ -534,6 +940,11 @@ bool UAHPresentationAuthoringLibrary::AuthorPhase42Widgets()
 }
 
 bool UAHPresentationAuthoringLibrary::AuthorPhase42Niagara()
+{
+	return false;
+}
+
+bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 {
 	return false;
 }
