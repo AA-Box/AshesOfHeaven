@@ -29,3 +29,23 @@ Durable lessons only. Each entry prevents a repeated mistake.
 - Capture evidence with a region that provably contains the full game window, and
   verify the viewmodel is in frame before drawing conclusions from its absence — a
   cropped capture region produced a false "M91 missing" finding.
+- Niagara components saved inside a streamed sublevel do not render in packaged
+  builds even when explicitly activated (verified: 19 components activated, zero
+  visible). Spawn zone VFX at runtime (SpawnSystemAtLocation) from the director
+  instead; keep authored levels mesh/light/decal only.
+- `AssetTools.create_asset` returns None in unattended commandlets when the asset
+  already exists ("CanCreateAsset cannot ask the user"), and delete+recreate of the
+  same path inside one session corrupts references. Author assets load-or-create,
+  never delete-first.
+- AutoExposureMinBrightness is a floor on the adapted scene luminance, not a floor
+  on brightness: a high min LOCKS a dark scene dark. Lower the min (0.05) and steer
+  the read with exposure bias and light intensity instead.
+- Packaged-app launches flake with a startup SIGSEGV inside LaunchServices/LLM
+  bookkeeping (engine/OS race, not project code). Capture scripts must retry the
+  launch and clear crash dialogs (`pkill -x UserNotificationCenter`) before judging
+  a run failed.
+- Test fixtures that build a standalone UGameInstance must call
+  `GameInstance->Shutdown()` in teardown. Skipping it defers subsystem
+  deinitialization to the GC-purge destructor, which asserts (UObjectArray.h
+  `Index >= 0`) once neighbouring objects are freed first — deterministic crash
+  that kills the whole automation queue after the test itself passes.

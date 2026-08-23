@@ -734,6 +734,14 @@ namespace AHObjective01TestSupport
 				World->DestroyWorld(false);
 				World = nullptr;
 			}
+			if (GameInstance)
+			{
+				// Deinitialize subsystems now, while their referenced objects are still
+				// alive. Leaving this to the GC-purge destructor path asserts
+				// (UObjectArray.h Index >= 0) once neighbouring objects are freed first.
+				GameInstance->Shutdown();
+				GameInstance = nullptr;
+			}
 		}
 
 		bool TraceGround(const FVector& From, FHitResult& OutHit) const
