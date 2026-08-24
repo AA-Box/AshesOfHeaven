@@ -2,6 +2,7 @@
 
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Platform/AHPlatformSettings.h"
+#include "Gameplay/WorldState/AHWorldStateSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 
@@ -12,16 +13,65 @@ FString UAHPlatformSaveSubsystem::GetSaveSlotName() const
 
 UAHSaveGame* UAHPlatformSaveSubsystem::LoadSaveObject() const
 {
-	return Cast<UAHSaveGame>(UGameplayStatics::LoadGameFromSlot(GetSaveSlotName(), 0));
+	UAHSaveGame* SaveObject = Cast<UAHSaveGame>(UGameplayStatics::LoadGameFromSlot(GetSaveSlotName(), 0));
+	MigrateSaveObject(SaveObject);
+	return SaveObject;
+}
+
+UAHSaveGame* UAHPlatformSaveSubsystem::GetOrCreateSaveObject() const
+{
+	if (UAHSaveGame* Existing = LoadSaveObject())
+	{
+		return Existing;
+	}
+	return Cast<UAHSaveGame>(UGameplayStatics::CreateSaveGameObject(UAHSaveGame::StaticClass()));
+}
+
+bool UAHPlatformSaveSubsystem::MigrateSaveObject(UAHSaveGame* SaveObject)
+{
+	if (!SaveObject || SaveObject->SaveVersion > AHChapterStateConstants::CurrentSaveVersion)
+	{
+		return false;
+	}
+	bool bMigrated = false;
+	if (SaveObject->SaveVersion < AHWorldStateConstants::FirstSaveVersion)
+	{
+		// Older saves had no actor-state table. Campaign/checkpoint data remains valid and
+		// every savable actor safely falls back to its authored default.
+		SaveObject->WorldState = FAHWorldStateSaveData();
+		bMigrated = true;
+	}
+	if (SaveObject->WorldState.SchemaVersion <= 0)
+	{
+		SaveObject->WorldState.SchemaVersion = AHWorldStateConstants::CurrentSchemaVersion;
+		bMigrated = true;
+	}
+	if (SaveObject->SaveVersion != AHChapterStateConstants::CurrentSaveVersion)
+	{
+		SaveObject->SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+		bMigrated = true;
+	}
+	return bMigrated;
+}
+
+void UAHPlatformSaveSubsystem::CaptureLiveWorldState(UAHSaveGame* SaveObject) const
+{
+	if (!SaveObject)
+	{
+		return;
+	}
+	if (UWorld* World = GetWorld())
+	{
+		if (UAHWorldStateSubsystem* WorldState = World->GetSubsystem<UAHWorldStateSubsystem>())
+		{
+			SaveObject->WorldState = WorldState->BuildSaveData();
+		}
+	}
 }
 
 bool UAHPlatformSaveSubsystem::SaveCheckpoint(FName CheckpointId, float CampaignProgress, const FString& MapName, int32 Difficulty)
 {
-	UAHSaveGame* SaveObject = LoadSaveObject();
-	if (!SaveObject)
-	{
-		SaveObject = Cast<UAHSaveGame>(UGameplayStatics::CreateSaveGameObject(UAHSaveGame::StaticClass()));
-	}
+	UAHSaveGame* SaveObject = GetOrCreateSaveObject();
 	if (!SaveObject)
 	{
 		return false;
@@ -32,16 +82,14 @@ bool UAHPlatformSaveSubsystem::SaveCheckpoint(FName CheckpointId, float Campaign
 	SaveObject->MapName = MapName;
 	SaveObject->Difficulty = Difficulty;
 	SaveObject->CombatState.bValid = false;
+	SaveObject->SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	CaptureLiveWorldState(SaveObject);
 	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
 }
 
 bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointState& State)
 {
-	UAHSaveGame* SaveObject = LoadSaveObject();
-	if (!SaveObject)
-	{
-		SaveObject = Cast<UAHSaveGame>(UGameplayStatics::CreateSaveGameObject(UAHSaveGame::StaticClass()));
-	}
+	UAHSaveGame* SaveObject = GetOrCreateSaveObject();
 	if (!SaveObject)
 	{
 		return false;
@@ -57,6 +105,7 @@ bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointSta
 	SaveObject->CampaignProgress = FMath::Clamp(static_cast<float>(State.ObjectiveIndex) / static_cast<float>(ObjectiveCount), 0.0f, 1.0f);
 	SaveObject->CombatState = State;
 	SaveObject->CombatState.bValid = true;
+	CaptureLiveWorldState(SaveObject);
 	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
 }
 
@@ -70,9 +119,35 @@ bool UAHPlatformSaveSubsystem::LoadCombatCheckpoint(FAHCombatCheckpointState& St
 	return false;
 }
 
+int32 UAHPlatformSaveSubsystem::GetDifficulty() const
+{
+	if (const UAHSaveGame* SaveObject = LoadSaveObject())
+	{
+		return SaveObject->Difficulty;
+	}
+	return 1;
+}
+
+bool UAHPlatformSaveSubsystem::LoadWorldState(FAHWorldStateSaveData& State) const
+{
+	if (const UAHSaveGame* SaveObject = LoadSaveObject())
+	{
+		State = SaveObject->WorldState;
+		return true;
+	}
+	return false;
+}
+
 bool UAHPlatformSaveSubsystem::ResetProgress()
 {
-	return UGameplayStatics::DeleteGameInSlot(GetSaveSlotName(), 0);
+	if (UWorld* World = GetWorld())
+	{
+		if (UAHWorldStateSubsystem* WorldState = World->GetSubsystem<UAHWorldStateSubsystem>())
+		{
+			WorldState->ResetWorldState();
+		}
+	}
+	return !HasSave() || UGameplayStatics::DeleteGameInSlot(GetSaveSlotName(), 0);
 }
 
 bool UAHPlatformSaveSubsystem::LoadCheckpoint(FName& CheckpointId, float& CampaignProgress, FString& MapName, int32& Difficulty)
@@ -102,15 +177,20 @@ void UAHPlatformSaveSubsystem::SaveSuspensionCheckpoint()
 		CurrentMap = World->GetMapName();
 	}
 
-	FName ExistingCheckpoint = NAME_None;
-	float ExistingProgress = 0.0f;
-	int32 ExistingDifficulty = 1;
-	FString ExistingMap;
-	LoadCheckpoint(ExistingCheckpoint, ExistingProgress, ExistingMap, ExistingDifficulty);
-
-	SaveCheckpoint(
-		ExistingCheckpoint == NAME_None ? FName(TEXT("AppSuspension")) : ExistingCheckpoint,
-		ExistingProgress,
-		CurrentMap == TEXT("Unknown") && !ExistingMap.IsEmpty() ? ExistingMap : CurrentMap,
-		ExistingDifficulty);
+	UAHSaveGame* SaveObject = GetOrCreateSaveObject();
+	if (!SaveObject)
+	{
+		return;
+	}
+	if (SaveObject->CheckpointId == NAME_None)
+	{
+		SaveObject->CheckpointId = FName(TEXT("AppSuspension"));
+	}
+	if (CurrentMap != TEXT("Unknown") || SaveObject->MapName.IsEmpty())
+	{
+		SaveObject->MapName = CurrentMap;
+	}
+	SaveObject->SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	CaptureLiveWorldState(SaveObject);
+	UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
 }

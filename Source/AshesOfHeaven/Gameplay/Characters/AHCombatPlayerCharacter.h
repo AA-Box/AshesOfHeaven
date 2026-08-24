@@ -26,6 +26,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement", meta=(ClampMin=100.0))
 	float CrouchSpeed = 230.0f;
 
+	/** Stride length per stance, in centimetres. Cadence is stride over current speed, so these
+	 * are the numbers that decide whether the steps match the body: 145cm at the 420cm/s walk is
+	 * 2.9 steps a second, which is a jog, which is what 420cm/s is. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=20.0))
+	float WalkStride = 145.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=20.0))
+	float SprintStride = 196.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=20.0))
+	float CrouchStride = 62.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement", meta=(ClampMin=0.0, ClampMax=1.0))
 	float MilitaryAirControl = 0.35f;
 
@@ -86,7 +98,6 @@ protected:
 	bool bSprinting = false;
 	bool bCrouched = false;
 	bool bGodMode = false;
-	float FootstepTimeRemaining = 0.0f;
 	float LookInputEnableTime = 0.0f;
 	int32 TicksSinceBeginPlay = 0;
 };

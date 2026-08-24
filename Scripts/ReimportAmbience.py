@@ -59,13 +59,23 @@ for destination in DESTINATIONS:
         # A bed played on repeat has to be marked as a looping source, or the streaming path
         # treats it as a one-shot and the seam gets a gap no crossfade can close.
         wave.set_editor_property("looping", True)
+        # A minute of real stereo recording is megabytes of decoded audio to keep resident for a
+        # bed that plays once per stage. Stream it instead - this is the property that decides
+        # whether a designer's replacement costs memory or not, and it does not follow the WAV.
+        wave.set_editor_property("loading_behavior", unreal.SoundWaveLoadingBehavior.LOAD_ON_DEMAND)
         unreal.EditorAssetLibrary.save_asset(asset_path)
         duration = wave.get_editor_property("duration")
+        # Channels and rate come from whatever WAV was on disk, so print them: a designer
+        # swapping in a real recording finds out here that it landed as mono or at 44.1k.
+        try:
+            fmt = "%dch@%dHz" % (wave.get_editor_property("num_channels"), wave.get_editor_property("sample_rate"))
+        except Exception:
+            fmt = "format unavailable"
         if duration < MINIMUM_BED_SECONDS:
             unreal.log_error("[Audio] %s is only %.2fs; the loop will still be audible" % (asset_path, duration))
             failures += 1
         else:
-            unreal.log_warning("[Audio] OK %s duration=%.2fs looping=%s" % (asset_path, duration, wave.get_editor_property("looping")))
+            unreal.log_warning("[Audio] OK %s duration=%.2fs %s looping=%s streaming=LoadOnDemand" % (asset_path, duration, fmt, wave.get_editor_property("looping")))
 
 if failures:
     unreal.log_error("[Audio] %d ambience bed(s) failed reimport" % failures)

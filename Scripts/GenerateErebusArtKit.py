@@ -265,12 +265,16 @@ INSTANCES = {
     "MI_Erebus_Steel_Olive":     ("M_ErebusSurface", (0.085, 0.095, 0.068), {"Roughness": 0.82, "Metallic": 0.30, "GrimeAmount": 0.45, "WearAmount": 0.55}, "metal"),
     "MI_Erebus_Metal_Bare":      ("M_ErebusSurface", (0.175, 0.175, 0.180), {"Roughness": 0.55, "Metallic": 0.90, "GrimeAmount": 0.32, "WearAmount": 0.55}, "metal"),
     "MI_Erebus_Steel_Scorched":  ("M_ErebusSurface", (0.034, 0.031, 0.028), {"Roughness": 0.96, "Metallic": 0.35, "GrimeAmount": 0.75, "DamageMaskStrength": 0.85}, "metal"),
-    "MI_Erebus_Mud":             ("M_ErebusSurface", (0.011, 0.009, 0.007), {"Roughness": 0.95, "GrimeAmount": 0.50, "Wetness": 0.38}, "mud"),
+    "MI_Erebus_Mud":             ("M_ErebusSurface", (0.018, 0.014, 0.011), {"Roughness": 0.95, "GrimeAmount": 0.50, "Wetness": 0.38}, "mud"),
     # Dark wet pavement for horizontal ground surfaces: the gate feedback said the
-    # foreground ground reads bright/flat vs the reference's dark wet battlefield,
-    # and bright ground also drags auto-exposure down, crushing the walls.
-    "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.018, 0.019, 0.021), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.30}, "concrete"),
-    "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.010, 0.010, 0.012), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.28}, "asphalt"),
+    # foreground ground reads bright/flat vs the reference's dark wet battlefield.
+    # Round-5 correction: the previous values (1.0-1.8% linear) were below the darkest
+    # natural material on earth (~4%) - real asphalt is 7-12%, weathered concrete 20-35%.
+    # These are still a deep wet-street read at 1.6-3.4%, but they return enough light to
+    # be a surface rather than a hole. Exposure is pinned (see the AutoExposureMinBrightness
+    # comment in AHChapterOneDirector), so this does not get metered away.
+    "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.029, 0.030, 0.034), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.30}, "concrete"),
+    "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.016, 0.016, 0.019), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.28}, "asphalt"),
     "MI_Erebus_WreckMetal":      ("M_ErebusSurface", (0.130, 0.082, 0.052), {"Roughness": 0.92, "Metallic": 0.55, "GrimeAmount": 0.65, "DamageMaskStrength": 0.85}, "metal"),
     # Phase 4.9 chroma separation: the gate feedback said every surface sat in one
     # grey-brown family. Rust for pipework/traps, faded red for signage accents,

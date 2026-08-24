@@ -1,4 +1,6 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
+#include "Gameplay/WorldState/AHPersistentIdComponent.h"
+#include "Gameplay/WorldState/AHWorldStateSubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -17,6 +19,7 @@ AAHChapterTerminal::AAHChapterTerminal()
 	TerminalWidget->SetDrawSize(FVector2D(420.0f, 240.0f));
 	TerminalWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 135.0f));
 	TerminalWidget->SetRelativeRotation(FRotator(0.0f, 180.0f, 90.0f));
+	PersistentIdComponent = CreateDefaultSubobject<UAHPersistentIdComponent>(TEXT("PersistentId"));
 }
 
 void AAHChapterTerminal::BeginPlay()
@@ -29,6 +32,10 @@ void AAHChapterTerminal::BeginPlay()
 			TerminalWidget->SetWidgetClass(WidgetClass);
 		}
 	}
+	if (UAHWorldStateSubsystem* WorldState = GetWorld()->GetSubsystem<UAHWorldStateSubsystem>())
+	{
+		WorldState->RegisterSavableActor(this);
+	}
 }
 
 void AAHChapterTerminal::Interact_Implementation(AActor* Interactor)
@@ -40,10 +47,12 @@ void AAHChapterTerminal::Interact_Implementation(AActor* Interactor)
 	if (!bInspected)
 	{
 		bInspected = true;
+		MarkWorldStateDirty();
 		return;
 	}
 
 	bConfirmed = true;
+	MarkWorldStateDirty();
 	OnConfirmed.Broadcast();
 }
 
@@ -66,4 +75,53 @@ float AAHChapterTerminal::GetInteractionPriority_Implementation() const
 float AAHChapterTerminal::GetObjectiveInteractionPriority_Implementation() const
 {
 	return bConfirmed ? 0.0f : 1.0f;
+}
+
+void AAHChapterTerminal::SetPersistentId(const FGuid& PersistentId)
+{
+	PersistentIdComponent->SetPersistentId(PersistentId);
+}
+
+FGuid AAHChapterTerminal::GetPersistentId_Implementation() const
+{
+	return PersistentIdComponent ? PersistentIdComponent->GetPersistentId() : FGuid();
+}
+
+bool AAHChapterTerminal::CaptureWorldState_Implementation(TArray<uint8>& OutPayload) const
+{
+	const uint8 Flags = (bInspected ? 1u : 0u) | (bConfirmed ? 2u : 0u);
+	OutPayload = { Flags };
+	return true;
+}
+
+bool AAHChapterTerminal::RestoreWorldState_Implementation(const TArray<uint8>& Payload, int32 SavedStateVersion)
+{
+	if (Payload.Num() != 1 || SavedStateVersion < 0 || SavedStateVersion > GetWorldStateVersion_Implementation())
+	{
+		return false;
+	}
+	if (SavedStateVersion == 0)
+	{
+		// Version 0 stored only the confirmed bit. Confirmed implies the inspection step.
+		bConfirmed = Payload[0] != 0;
+		bInspected = bConfirmed;
+	}
+	else
+	{
+		bInspected = (Payload[0] & 1u) != 0;
+		bConfirmed = (Payload[0] & 2u) != 0;
+	}
+	return true;
+}
+
+void AAHChapterTerminal::OnWorldStateRestored_Implementation()
+{
+}
+
+void AAHChapterTerminal::MarkWorldStateDirty()
+{
+	if (UAHWorldStateSubsystem* WorldState = GetWorld()->GetSubsystem<UAHWorldStateSubsystem>())
+	{
+		WorldState->MarkActorDirty(this);
+	}
 }

@@ -7,6 +7,7 @@
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
@@ -314,7 +315,7 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		const FString TestName = TEXT("AshesOfHeaven.Combat.EncounterConfiguration");
 		const int32 FailureCountBefore = FailureCount;
 		AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
-		Expect(TestName, TEXT("encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
+		Expect(TestName, TEXT("encounter defaults to the Pilgrim patrol definition"), Encounter->EncounterDefinitionId == AHEnemyAssets::EncounterId(TEXT("PilgrimPatrol")));
 		Expect(TestName, TEXT("new encounter starts incomplete and inactive"), !Encounter->IsActive() && !Encounter->IsComplete());
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;

@@ -5,7 +5,7 @@ Intermediate/
 Saved/
 Builds/
 Build/Mac/FileOpenOrder/
-Scripts/__pycache__/
+**/__pycache__/
 
 # Local PSO capture evidence can be large and is regenerated per RHI/driver run.
 *.rec.upipelinecache

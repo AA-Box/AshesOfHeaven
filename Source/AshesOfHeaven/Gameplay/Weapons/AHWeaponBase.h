@@ -11,6 +11,8 @@ class USkeletalMeshComponent;
 class UStaticMeshComponent;
 class USoundBase;
 class AAHCombatantCharacter;
+struct FStreamableHandle;
+struct FAHEnemyLoadout;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHWeaponAmmoChangedDelegate, const FAHAmmoState&, Ammo);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHWeaponEventDelegate);
@@ -111,6 +113,9 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
+	/** Applies presentation assets already made resident by the owning enemy lease. */
+	void ApplyStreamedLoadout(const FAHEnemyLoadout& Loadout);
+
 	void SetWeaponActive(bool bActive);
 	/** Hides only the local first-person mesh while retaining weapon/gameplay state. */
 	void SetLocalPresentationVisible(bool bVisible);
@@ -160,8 +165,12 @@ protected:
 	bool bUsingFirstPersonHold = false;
 	bool bUsingThirdPersonHold = false;
 	bool bLocalPresentationVisible = true;
+	bool bHasStreamedLoadout = false;
+	TSharedPtr<FStreamableHandle> LegacyPresentationHandle;
 
 	FRotator GetRestRotation() const;
+	void RequestLegacyPresentationAsync();
+	void HandleLegacyPresentationLoaded();
 
 	virtual void FireShot();
 	void FinishReload();

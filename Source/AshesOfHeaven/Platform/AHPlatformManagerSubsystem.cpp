@@ -139,6 +139,37 @@ FAHCorpseBudget UAHPlatformManagerSubsystem::SelectCorpseBudget(bool bIsMobile, 
 	return Result;
 }
 
+void UAHPlatformManagerSubsystem::ApplyEQSPerformanceBudget(
+	FAHPerformanceProfile& Profile,
+	bool bIsMobile,
+	bool bMobilePerformanceMode,
+	EAHQualityPreset QualityPreset)
+{
+	Profile.MaxConcurrentEQSQueries = 8;
+	Profile.EQSQueryUpdateInterval = 0.75f;
+	Profile.EQSQueryTimeout = 0.25f;
+	Profile.EQSMaxCandidatePoints = 64;
+	Profile.bUseSimplifiedEQSScoring = false;
+	Profile.EQSExpensiveRepositionDistance = 6500.0f;
+
+	if (QualityPreset == EAHQualityPreset::Low)
+	{
+		Profile.MaxConcurrentEQSQueries = 4;
+		Profile.EQSQueryUpdateInterval = 1.0f;
+		Profile.EQSMaxCandidatePoints = 48;
+		Profile.EQSExpensiveRepositionDistance = 5000.0f;
+	}
+	if (bIsMobile)
+	{
+		Profile.MaxConcurrentEQSQueries = bMobilePerformanceMode ? 2 : 3;
+		Profile.EQSQueryUpdateInterval = bMobilePerformanceMode ? 1.5f : 1.1f;
+		Profile.EQSQueryTimeout = bMobilePerformanceMode ? 0.12f : 0.18f;
+		Profile.EQSMaxCandidatePoints = bMobilePerformanceMode ? 24 : 32;
+		Profile.bUseSimplifiedEQSScoring = true;
+		Profile.EQSExpensiveRepositionDistance = bMobilePerformanceMode ? 3500.0f : 4500.0f;
+	}
+}
+
 EAHQualityPreset UAHPlatformManagerSubsystem::ResolveQualityPreset(EAHQualityPreset Requested) const
 {
 	if (Requested != EAHQualityPreset::Auto)
@@ -268,6 +299,7 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 		PerformanceProfile.MaxPersistentVFX = 24;
 		PerformanceProfile.MaxDynamicLights = 4;
 		PerformanceProfile.bCharacterFillLights = false;
+		PerformanceProfile.InitialProjectilePoolSize = 0;
 		PerformanceProfile.MaxProjectilePoolSize = 64;
 		PerformanceProfile.ThermalMitigationAfterMinutes = 5;
 	}
@@ -282,37 +314,6 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 	InputProfile.bSupportsGyroAiming = Capabilities.bSupportsGyro && Settings->bEnableGyroAiming;
 	InputProfile.bSupportsExternalController = Capabilities.bSupportsExternalController;
 	InputProfile.bAimAssistEnabled = Capabilities.bIsMobile && Settings->bEnableMobileAimAssist;
-}
-
-void UAHPlatformManagerSubsystem::ApplyEQSPerformanceBudget(
-	FAHPerformanceProfile& Profile,
-	bool bIsMobile,
-	bool bMobilePerformanceMode,
-	EAHQualityPreset QualityPreset)
-{
-	Profile.MaxConcurrentEQSQueries = 8;
-	Profile.EQSQueryUpdateInterval = 0.75f;
-	Profile.EQSQueryTimeout = 0.25f;
-	Profile.EQSMaxCandidatePoints = 64;
-	Profile.bUseSimplifiedEQSScoring = false;
-	Profile.EQSExpensiveRepositionDistance = 6500.0f;
-
-	if (QualityPreset == EAHQualityPreset::Low)
-	{
-		Profile.MaxConcurrentEQSQueries = 4;
-		Profile.EQSQueryUpdateInterval = 1.0f;
-		Profile.EQSMaxCandidatePoints = 48;
-		Profile.EQSExpensiveRepositionDistance = 5000.0f;
-	}
-	if (bIsMobile)
-	{
-		Profile.MaxConcurrentEQSQueries = bMobilePerformanceMode ? 2 : 3;
-		Profile.EQSQueryUpdateInterval = bMobilePerformanceMode ? 1.5f : 1.1f;
-		Profile.EQSQueryTimeout = bMobilePerformanceMode ? 0.12f : 0.18f;
-		Profile.EQSMaxCandidatePoints = bMobilePerformanceMode ? 24 : 32;
-		Profile.bUseSimplifiedEQSScoring = true;
-		Profile.EQSExpensiveRepositionDistance = bMobilePerformanceMode ? 3500.0f : 4500.0f;
-	}
 }
 
 void UAHPlatformManagerSubsystem::BuildRuntimeInputActions()
@@ -501,6 +502,7 @@ bool UAHPlatformManagerSubsystem::TryAcquireEQSQuerySlot()
 	{
 		return false;
 	}
+
 	++ActiveEQSQueries;
 	return true;
 }

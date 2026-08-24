@@ -7,7 +7,7 @@ class USoundBase;
 
 namespace AHChapterStateConstants
 {
-	constexpr int32 CurrentSaveVersion = 4;
+	constexpr int32 CurrentSaveVersion = 6;
 	constexpr int32 CurrentSpatialSchemaVersion = 2;
 	constexpr int32 ObjectiveCount = 17;
 }

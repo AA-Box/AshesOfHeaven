@@ -188,6 +188,10 @@ struct ASHESOFHEAVEN_API FAHPerformanceProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	bool bCharacterFillLights = true;
 
+	/** Kept at zero until a concrete projectile class shows measured runtime churn. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
+	int32 InitialProjectilePoolSize = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	int32 MaxProjectilePoolSize = 128;
 
@@ -198,21 +202,27 @@ struct ASHESOFHEAVEN_API FAHPerformanceProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	FAHCorpseBudget CorpseBudget;
 
+	/** Shared cap enforced before tactical AI enters Unreal's time-sliced EQS manager. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=1))
 	int32 MaxConcurrentEQSQueries = 8;
 
+	/** Minimum seconds between tactical requests from one combatant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=0.1))
 	float EQSQueryUpdateInterval = 0.75f;
 
+	/** Wall-clock budget before a temporarily overloaded query is aborted to fallback. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=0.05))
 	float EQSQueryTimeout = 0.25f;
 
+	/** Maximum navigation points emitted by a focused tactical generator. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=8, ClampMax=128))
 	int32 EQSMaxCandidatePoints = 64;
 
+	/** Omits secondary cover probes and vertical scoring on constrained devices. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI")
 	bool bUseSimplifiedEQSScoring = false;
 
+	/** Beyond this distance an AI keeps its cached goal and skips expensive repositioning. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=1000.0))
 	float EQSExpensiveRepositionDistance = 6500.0f;
 };

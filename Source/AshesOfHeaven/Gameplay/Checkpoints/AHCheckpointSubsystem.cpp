@@ -7,7 +7,9 @@
 #include "Gameplay/Combat/AHCorpseManagerSubsystem.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
+#include "Gameplay/Encounters/AHEncounterDirectorSubsystem.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
+#include "Gameplay/Pooling/AHObjectPoolSubsystem.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Engine/World.h"
@@ -62,6 +64,10 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	RuntimeState.Ammo = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetSavedAmmo() : FAHAmmoState();
 	RuntimeState.Grenades = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetGrenades() : 0;
 	RuntimeState.ObjectiveIndex = Objectives->GetCurrentObjectiveIndex();
+	if (const UAHEncounterDirectorSubsystem* EncounterDirector = GetWorld()->GetSubsystem<UAHEncounterDirectorSubsystem>())
+	{
+		RuntimeState.EncounterState = EncounterDirector->CaptureCheckpointState();
+	}
 	RuntimeState.ChapterState = Chapter->GetState();
 	RuntimeState.ChapterState.Stage = CheckpointDefinition->Stage;
 	if (AAHManticoreVehicle* Manticore = Cast<AAHManticoreVehicle>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHManticoreVehicle::StaticClass())))
@@ -194,6 +200,10 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 	{
 		CorpseManager->ResetOrdinaryCorpsesForCheckpoint();
 	}
+	if (UAHObjectPoolSubsystem* ObjectPool = GetWorld()->GetSubsystem<UAHObjectPoolSubsystem>())
+	{
+		ObjectPool->ReleaseAllActive();
+	}
 
 	Player->SetActorLocationAndRotation(RuntimeState.PlayerLocation, RuntimeState.PlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	if (Player->GetHealthComponent())
@@ -212,6 +222,10 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 	}
 	Objectives->RestoreState(RuntimeState.ObjectiveIndex);
 	Chapter->RestoreState(RuntimeState.ChapterState);
+	if (UAHEncounterDirectorSubsystem* EncounterDirector = GetWorld()->GetSubsystem<UAHEncounterDirectorSubsystem>())
+	{
+		EncounterDirector->RestoreCheckpointState(RuntimeState.EncounterState);
+	}
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Checkpoint] restore id=%s objective=%d encounters=%d ammo=%d/%d grenades=%d"), *RuntimeState.CheckpointId.ToString(), RuntimeState.ObjectiveIndex, RuntimeState.CompletedEncounters.Num(), RuntimeState.Ammo.Magazine, RuntimeState.Ammo.Reserve, RuntimeState.Grenades);
 	#endif
@@ -299,4 +313,22 @@ void UAHCheckpointSubsystem::MarkEncounterCompleted(FName EncounterId)
 			Chapter->MarkEncounterComplete(EncounterId);
 		}
 	}
+}
+
+bool UAHCheckpointSubsystem::PersistEncounterState(const FAHEncounterCheckpointState& EncounterState)
+{
+	if (!GetWorld() || !GetWorld()->GetGameInstance())
+	{
+		return false;
+	}
+	if (!RuntimeState.bValid && !LoadState())
+	{
+		return false;
+	}
+	RuntimeState.EncounterState = EncounterState;
+	if (UAHPlatformSaveSubsystem* Save = GetWorld()->GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>())
+	{
+		return Save->SaveCombatCheckpoint(RuntimeState);
+	}
+	return false;
 }

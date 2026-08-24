@@ -7,6 +7,7 @@
 
 class UAIPerceptionComponent;
 class AAHCombatantCharacter;
+struct FAHEnemyAISettings;
 
 UCLASS()
 class ASHESOFHEAVEN_API AAHCombatAIController : public AAIController
@@ -77,10 +78,17 @@ public:
 
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
+
+	/** Applies settings from an already-streamed enemy definition. */
+	void ApplyEnemySettings(const FAHEnemyAISettings& Settings);
 
 	void ReactToGrenade(const FVector& GrenadeLocation, float Radius);
 	void DebugDrawAI() const;
+
+	/** Applies encounter-level decision pressure without changing pawn health or weapon damage. */
+	void ApplyEncounterSophistication(float Sophistication);
 
 	UFUNCTION(BlueprintPure, Category="AI")
 	AActor* GetCurrentTarget() const { return CurrentTarget.Get(); }
@@ -104,7 +112,9 @@ protected:
 	void HandlePawnDeath();
 
 	void UpdateTarget();
-	void UpdateCombatBehavior(float DeltaSeconds);
+	void UpdateCombatBehavior(float DeltaSeconds, bool bPerceptionDue = true, bool bTacticalDue = true,
+		bool bMovementDue = true, bool bCombatDue = true, bool bAimDue = true);
+	void UpdateDistantBattlefieldSimulation(float SimulatedDeltaSeconds);
 	AActor* FindBestTarget() const;
 	bool HasLineOfSightTo(AActor* Target) const;
 	void MoveWithFallback(const FVector& Destination, float DeltaSeconds, bool bForceNewRequest = false);
@@ -118,7 +128,7 @@ protected:
 	void UpdateBurstFire(float Now);
 	EAHTacticalIntent ChooseRepositionIntent() const;
 	void SetTacticalIntent(EAHTacticalIntent NewIntent, float LifetimeSeconds = 0.0f);
-	void ExecuteTacticalMovement(EAHTacticalIntent Intent, AActor* Target, float DeltaSeconds);
+	void ExecuteTacticalMovement(EAHTacticalIntent Intent, AActor* Target, float DeltaSeconds, bool bAllowTacticalQuery = true);
 	void RequestTacticalPosition(EAHTacticalIntent Intent, AActor* Target);
 	void HandleTacticalQueryFinished(const FAHTacticalPositionResult& Result);
 	FVector BuildTacticalFallback(EAHTacticalIntent Intent, AActor* Target) const;
@@ -129,6 +139,7 @@ protected:
 	float GetEffectiveAccuracy() const;
 	float GetBurstPauseScale() const;
 	bool IsExpensiveTacticalQueryAllowed(AActor* Target) const;
+	bool IsCurrentAttacker() const;
 
 	TWeakObjectPtr<AAHCombatantCharacter> Combatant;
 	TWeakObjectPtr<AActor> CurrentTarget;
@@ -162,4 +173,6 @@ protected:
 	bool bHasCachedTacticalLocation = false;
 	bool bCachedTacticalFallback = false;
 	bool bTacticalQueryInFlight = false;
+	bool bCachedHasLineOfSight = false;
+	bool bAttackSlotEvaluated = false;
 };

@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -73,10 +74,10 @@ void AAHErebusCombatSliceDirector::SpawnBlock(const FVector& Location, const FVe
 
 void AAHErebusCombatSliceDirector::BuildMissionActors()
 {
-	SpawnPickup(FVector(160.0f, 0.0f, 110.0f), EAHResourcePickupType::Weapon);
-	SpawnPickup(FVector(1300.0f, -300.0f, 90.0f), EAHResourcePickupType::Ammo, 72);
-	SpawnPickup(FVector(4300.0f, 300.0f, 90.0f), EAHResourcePickupType::Grenades, 2);
-	SpawnPickup(FVector(7600.0f, 240.0f, 90.0f), EAHResourcePickupType::Ammo, 108);
+	SpawnPickup(FVector(160.0f, 0.0f, 110.0f), EAHResourcePickupType::Weapon, FGuid(0xA11E0001, 0x4C204640, 0xA8202A01, 0x00000001));
+	SpawnPickup(FVector(1300.0f, -300.0f, 90.0f), EAHResourcePickupType::Ammo, FGuid(0xA11E0002, 0x4C204640, 0xA8202A01, 0x00000002), 72);
+	SpawnPickup(FVector(4300.0f, 300.0f, 90.0f), EAHResourcePickupType::Grenades, FGuid(0xA11E0003, 0x4C204640, 0xA8202A01, 0x00000003), 2);
+	SpawnPickup(FVector(7600.0f, 240.0f, 90.0f), EAHResourcePickupType::Ammo, FGuid(0xA11E0004, 0x4C204640, 0xA8202A01, 0x00000004), 108);
 
 	SpawnObjectiveZone(FVector(1050.0f, 0.0f, 110.0f), FVector(260.0f, 900.0f, 160.0f), FName(TEXT("ReachDefensivePosition")));
 	SpawnObjectiveZone(FVector(4250.0f, 0.0f, 110.0f), FVector(220.0f, 900.0f, 160.0f), FName(TEXT("AdvanceThroughBreach")));
@@ -102,25 +103,32 @@ void AAHErebusCombatSliceDirector::BuildMissionActors()
 
 AAHCombatEncounter* AAHErebusCombatSliceDirector::SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns)
 {
-	AAHCombatEncounter* Encounter = GetWorld()->SpawnActor<AAHCombatEncounter>(AAHCombatEncounter::StaticClass(), Location, FRotator::ZeroRotator);
+	const FTransform SpawnTransform(FRotator::ZeroRotator, Location);
+	AAHCombatEncounter* Encounter = GetWorld()->SpawnActorDeferred<AAHCombatEncounter>(
+		AAHCombatEncounter::StaticClass(), SpawnTransform, this, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (Encounter)
 	{
 		Encounter->EncounterId = Id;
 		Encounter->EnemyCount = Count;
 		Encounter->ObjectiveOnComplete = ObjectiveOnComplete;
 		Encounter->SpawnLocations = Spawns;
+		UGameplayStatics::FinishSpawningActor(Encounter, SpawnTransform);
 	}
 	return Encounter;
 }
 
-void AAHErebusCombatSliceDirector::SpawnPickup(const FVector& Location, EAHResourcePickupType Type, int32 Amount)
+void AAHErebusCombatSliceDirector::SpawnPickup(const FVector& Location, EAHResourcePickupType Type, const FGuid& PersistentId, int32 Amount)
 {
-	AAHWeaponPickup* Pickup = GetWorld()->SpawnActor<AAHWeaponPickup>(AAHWeaponPickup::StaticClass(), Location, FRotator::ZeroRotator);
+	const FTransform SpawnTransform(FRotator::ZeroRotator, Location);
+	AAHWeaponPickup* Pickup = GetWorld()->SpawnActorDeferred<AAHWeaponPickup>(AAHWeaponPickup::StaticClass(), SpawnTransform);
 	if (Pickup)
 	{
 		Pickup->PickupType = Type;
 		Pickup->Amount = Amount;
+		Pickup->SetPersistentId(PersistentId);
 		Pickup->PickupMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Weapons/Rifle/Meshes/SM_Rifle.SM_Rifle")));
+		Pickup->FinishSpawning(SpawnTransform);
 	}
 }
 

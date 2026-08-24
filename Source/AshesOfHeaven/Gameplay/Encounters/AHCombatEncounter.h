@@ -1,12 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/AssetManagerTypes.h"
 #include "GameFramework/Actor.h"
 #include "AHCombatEncounter.generated.h"
 
 class UBoxComponent;
 class AAHCombatantCharacter;
-class AAHVeilPilgrimCharacter;
+class UAHEnemyDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHEncounterCompleteDelegate, FName, EncounterId);
 
@@ -24,11 +25,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
 	FName EncounterId = NAME_None;
 
+	/** Lightweight AHEncounter ID; it contains enemy IDs, never hard enemy class references. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
-	TSubclassOf<AAHCombatantCharacter> EnemyClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
-	TArray<TSubclassOf<AAHCombatantCharacter>> AdditionalEnemyClasses;
+	FPrimaryAssetId EncounterDefinitionId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
 	int32 EnemyCount = 4;
@@ -42,13 +41,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
 	bool bActivateOnPlayerOverlap = true;
 
+	/** Starts prediction at BeginPlay so first contact never owns the first heavy load. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Encounter")
+	bool bPreloadOnBeginPlay = true;
+
 	UPROPERTY(BlueprintAssignable, Category="Encounter")
 	FAHEncounterCompleteDelegate OnEncounterComplete;
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintCallable, Category="Encounter")
 	void ActivateEncounter();
+
+	UFUNCTION(BlueprintCallable, Category="Encounter")
+	void PreloadEncounterAssets();
 
 	UFUNCTION(BlueprintPure, Category="Encounter")
 	bool IsActive() const { return bActive; }
@@ -71,10 +78,20 @@ protected:
 	void OnEnemyDestroyed(AActor* DestroyedActor);
 
 	void CompleteEncounter();
+	void SpawnLoadedEnemies();
+	void HandleAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error);
+	void ReleaseAssetLease();
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AAHCombatantCharacter>> ActiveEnemies;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UAHEnemyDefinition>> LoadedEnemyDefinitions;
+
 	bool bActive = false;
 	bool bComplete = false;
+	bool bActivationRequested = false;
+	bool bPreloadStarted = false;
+	bool bAssetsReady = false;
+	FGuid AssetLease;
 };

@@ -32,6 +32,44 @@ Chapter-stage changes select and cross-fade authored environment components for 
 Manticore, and Cathedral contexts. The system supports attenuation through normal SoundCue/
 MetaSound authoring, concurrency limits, and separate world/UI submix routes.
 
+## Drop-in replacement spec
+
+Every source in the game is a synthesized placeholder from `Scripts/GeneratePhase42Audio.py`.
+Replacing one needs no code, no palette edit and no asset creation: write the WAV over the file
+of the same name in `Content/Ashes/Audio/Raw/` and reimport.
+
+| Semantic id | WAV name | Length | Notes |
+|---|---|---|---|
+| `Environment.Erebus` | `SC_Erebus_Ambience.wav` | 60s, seamless loop | battlefield distance, wind, debris |
+| `Environment.Transit` | `SC_Transit_Ambience.wav` | 60s, seamless loop | electrical decay, station tonal hum |
+| `Environment.Cathedral` | `SC_Cathedral_Ambience.wav` | 60s, seamless loop | long reverb tail, choral air |
+| `Environment.Manticore` | `SC_Manticore_Engine.wav` | 60s, seamless loop | machinery layers, load variation |
+
+Beds: 48kHz **stereo**, played through `SpawnSound2D` (no spatialization, no attenuation),
+crossfaded 0.6s out / 0.8s in on stage change. Loop the file itself — nothing at runtime hides a
+seam. One-shots (weapon, impact, footstep, UI) stay **mono** on purpose: they are spatialized
+through project attenuation, and a stereo source cannot be panned in 3D.
+
+```bash
+python3 Scripts/CheckAmbienceBeds.py
+```
+```bash
+"/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor-Cmd" AshesOfHeaven.uproject -run=pythonscript -script="Scripts/ReimportAmbience.py" -unattended -nop4 -nosplash -nullrhi -nosound
+```
+
+`CheckAmbienceBeds.py` runs on plain python before anything is imported and rejects the five
+failure modes that a waveform view hides: wrong channel count, wrong sample rate, under 55s,
+clipping, identical L/R (a mono bed in a stereo container), and a loop seam whose sample step is
+more than 8x a normal one. `ReimportAmbience.py` then replaces both the Raw and the Environment
+SoundWave copies — the palette binds Environment, so replacing one is the classic silent no-op —
+marks each looping and `LoadOnDemand` (a minute of stereo has no business resident in memory for a
+once-per-stage bed), and logs duration, channels and rate as they landed in the engine.
+
+The placeholder beds are synthesized stereo: tonal layers are identical in both channels, so hum,
+resonance and engine orders sit centred, while each channel gets its own noise stream for wind and
+machinery. Measured channel correlation is 0.80 (Erebus) to 0.96 (Manticore) — centred core, real
+width in the noise. It is placeholder sound design with production *format*, not production audio.
+
 ## What remains human/audio-authoring work
 
 The saved integration sources are not claimed as final AAA sound design. A sound designer still

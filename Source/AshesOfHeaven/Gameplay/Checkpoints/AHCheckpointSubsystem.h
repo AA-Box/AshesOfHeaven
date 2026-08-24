@@ -42,6 +42,8 @@ public:
 	bool IsEncounterCompleted(FName EncounterId) const;
 
 	void MarkEncounterCompleted(FName EncounterId);
+	/** Persists the director's deterministic phase boundary into the latest campaign checkpoint. */
+	bool PersistEncounterState(const FAHEncounterCheckpointState& EncounterState);
 	const FAHCombatCheckpointState& GetRuntimeState() const { return RuntimeState; }
 
 private:

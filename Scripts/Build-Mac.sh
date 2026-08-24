@@ -3,6 +3,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# A project path containing a space breaks the native-shader-library step of every cook.
+# FMacPlatformProcess::CreateProc splits the command line on spaces and truncates to 256 argv
+# BEFORE re-joining the quoted paths (see its own "make sure we do not lose arguments with spaces"
+# comment), so each shader path counts once per word. With "ASHES OF HEAVEN" in the path a 97-file
+# metal-pack batch counts as 305 argv, gets truncated, and metal-pack then SIGSEGVs inside
+# FMetalCompilerToolchain::ExecMetalPack:
+#     LogHAL: Warning: FMacPlatformProcess::CreateProc: too many (305) commandline arguments passed
+# The cook is fine when driven through a space-free symlink, but driving the COMPILE through one
+# too breaks UnrealBuildTool's accelerator, which writes objects under one path and links them
+# from the other ("ld: LINKEDIT content 'symbol table strings' extends beyond end of segment").
+# So compile at the real path and cook through the symlink: they share the same physical Saved/
+# and Binaries/, and no UBT runs in the cook phase. bSharedMaterialNativeLibraries=False also
+# avoids the crash, by shrinking the batches, but it changes what ships and stays True.
+SPACE_FREE_ROOT="$PROJECT_ROOT"
+if [[ "$PROJECT_ROOT" == *" "* ]]; then
+  SPACE_FREE_ROOT="$HOME/.cache/aoh"
+  mkdir -p "$(dirname "$SPACE_FREE_ROOT")"
+  ln -sfn "$PROJECT_ROOT" "$SPACE_FREE_ROOT"
+fi
+
 PROJECT_FILE="$PROJECT_ROOT/AshesOfHeaven.uproject"
 ENGINE_ROOT="${UE_ROOT:-/Users/Shared/Epic Games/UE_5.8}"
 UAT="$ENGINE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
@@ -34,13 +55,17 @@ fi
 
 mkdir -p "$OUTPUT_ROOT"
 echo "Building AshesOfHeaven Mac $CLIENT_CONFIG package..."
+# Compile both targets directly, at the real project path. BuildCookRun -build on its own only
+# built the editor here, so the cook phase happily staged a stale client binary and the capture
+# ran last build's code - which is worse than a build failure, because it looks like a result.
+UBT_BUILD=("$ENGINE_ROOT/Engine/Build/BatchFiles/Mac/Build.sh")
 UAT_ARGS=(
   BuildCookRun
-  "-project=$PROJECT_FILE"
+  "-project=$SPACE_FREE_ROOT/AshesOfHeaven.uproject"
   -noP4
   -platform=Mac
   "-clientconfig=$CLIENT_CONFIG"
-  -build -cook -stage -pak -archive -prereqs
+  -nobuild -cook -stage -pak -archive -prereqs
   "-archivedirectory=$OUTPUT_ROOT"
 )
 if [[ -n "${ADDITIONAL_COOKER_OPTIONS:-}" ]]; then
@@ -56,6 +81,8 @@ elif command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:8000 -sTCP:LISTEN -t >/de
     fi
   done
 fi
+"${UBT_BUILD[@]}" AshesOfHeavenEditor Mac Development "-project=$PROJECT_FILE" -WaitMutex
+"${UBT_BUILD[@]}" AshesOfHeaven Mac "$CLIENT_CONFIG" "-project=$PROJECT_FILE" -WaitMutex
 "$UAT" "${UAT_ARGS[@]}"
 
 echo "Mac output: $OUTPUT_ROOT"

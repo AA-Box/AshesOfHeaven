@@ -40,6 +40,8 @@ def write_wave(name: str, length: float, renderer) -> None:
         t = index / RATE
         value = max(-1.0, min(1.0, renderer(t, length, rng)))
         frames.append(struct.pack("<h", int(value * 32767.0)))
+    # One-shots stay mono on purpose: they are spatialized through project attenuation, and a
+    # stereo source cannot be panned in 3D - the engine would collapse or ignore one side.
     with wave.open(str(ROOT / f"{name}.wav"), "wb") as output:
         output.setnchannels(1)
         output.setsampwidth(2)
@@ -59,7 +61,36 @@ def write_ambience(name: str, length: float, renderer, fade: float = 3.0) -> Non
     other two by quantising their partials to the loop and scheduling events irregularly.
     """
     ROOT.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(name)
+    total = int(length * RATE)
+    # Each channel gets its own noise stream while the tonal layers, being pure functions of t,
+    # come out identical in both. That is the shape of a real bed: hum, resonance and engine
+    # orders sit centred, wind and machinery hiss spread across the field. A mono bed played
+    # through SpawnSound2D is a point in the middle of the head, which is why these were the
+    # flattest-sounding part of the palette.
+    channels = [
+        render_bed_channel(f"{name}:{side}", length, renderer, fade)
+        for side in ("L", "R")
+    ]
+
+    frames = b"".join(
+        struct.pack("<hh", clamped_pcm(left), clamped_pcm(right))
+        for left, right in zip(channels[0], channels[1])
+    )
+    with wave.open(str(ROOT / f"{name}.wav"), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(RATE)
+        output.writeframes(frames)
+    assert len(frames) == total * 4, "stereo 16-bit is four bytes a frame"
+
+
+def clamped_pcm(value: float) -> int:
+    return int(max(-1.0, min(1.0, value)) * 32767.0)
+
+
+def render_bed_channel(seed: str, length: float, renderer, fade: float) -> list[float]:
+    """One channel of a bed, seam already crossfaded."""
+    rng = random.Random(seed)
     total = int(length * RATE)
     overlap = int(fade * RATE)
     samples = [renderer(index / RATE, length, rng) for index in range(total + overlap)]
@@ -69,14 +100,7 @@ def write_ambience(name: str, length: float, renderer, fade: float = 3.0) -> Non
         theta = (index / overlap) * (math.pi / 2.0)
         samples[index] = samples[index] * math.sin(theta) + samples[total + index] * math.cos(theta)
 
-    frames = b"".join(
-        struct.pack("<h", int(max(-1.0, min(1.0, value)) * 32767.0)) for value in samples[:total]
-    )
-    with wave.open(str(ROOT / f"{name}.wav"), "wb") as output:
-        output.setnchannels(1)
-        output.setsampwidth(2)
-        output.setframerate(RATE)
-        output.writeframes(frames)
+    return samples[:total]
 
 
 def wrap_tone(hz: float, t: float, length: float, phase: float = 0.0) -> float:
@@ -197,7 +221,20 @@ def pickup_sound(t: float, length: float, rng: random.Random) -> float:
 
 
 def footstep_sound(t: float, length: float, rng: random.Random) -> float:
-    return math.exp(-t * 32.0) * (0.66 * noise(rng) + 0.26 * tone(74.0, t) + 0.12 * tone(142.0, t))
+    """A boot on rubble: strike, weight, then grit.
+
+    One exponential over broadband noise is a click, and a click repeated every third of a
+    second is a click track.  A real step has three parts arriving in order - the hard contact,
+    the mass behind it, and the grit dragged under the sole as the foot settles - and the ear
+    reads the gap between them as a boot rather than a tap.
+    """
+    strike = math.exp(-t * 96.0) * (0.50 * noise(rng) + 0.16 * tone(1720.0, t))
+    weight = math.exp(-t * 24.0) * (0.30 * tone(76.0, t) + 0.13 * tone(141.0, t))
+    grit = 0.0
+    settle = t - 0.038
+    if settle > 0.0:
+        grit = math.exp(-settle * 30.0) * 0.20 * noise(rng) * (0.6 + 0.4 * tone(330.0, settle))
+    return strike + weight + grit
 
 
 EREBUS_ARTILLERY = None
@@ -258,7 +295,7 @@ SOURCES = {
     "SC_UI_Objective": (0.72, objective_sound),
     "SC_UI_Dialogue": (0.40, dialogue_sound),
     "SC_UI_Pickup": (0.36, pickup_sound),
-    "SC_Player_Footstep": (0.22, footstep_sound),
+    "SC_Player_Footstep": (0.30, footstep_sound),
 }
 
 # Beds are played on repeat for as long as a chapter stage lasts. Eight seconds was short

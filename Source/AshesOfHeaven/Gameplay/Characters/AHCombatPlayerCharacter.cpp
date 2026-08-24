@@ -92,23 +92,10 @@ void AAHCombatPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	++TicksSinceBeginPlay;
+	// RefreshMovementSpeed publishes this stance's stride and mix; the base class walks the
+	// distance accumulator and plays the step. There is one footstep implementation, and every
+	// combatant - player and AI alike - runs it.
 	RefreshMovementSpeed();
-	if (GetCharacterMovement() && GetCharacterMovement()->IsMovingOnGround() && GetVelocity().SizeSquared2D() > FMath::Square(35.0f))
-	{
-		FootstepTimeRemaining -= DeltaSeconds;
-		if (FootstepTimeRemaining <= 0.0f)
-		{
-			if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
-			{
-				Audio->PlayWorldCue(EAHAudioCue::Footstep, GetActorLocation(), bSprinting ? 0.85f : 0.62f, bCrouched ? 0.82f : (bSprinting ? 1.08f : 1.0f));
-			}
-			FootstepTimeRemaining = bCrouched ? 0.62f : (bSprinting ? 0.28f : 0.43f);
-		}
-	}
-	else
-	{
-		FootstepTimeRemaining = 0.0f;
-	}
 	if (GetFirstPersonCameraComponent())
 	{
 		const float TargetFOV = IsAimingDownSights() ? ADSFOV : HipFOV;
@@ -310,7 +297,7 @@ void AAHCombatPlayerCharacter::SetFirstPersonPresentationVisible(bool bVisible)
 void AAHCombatPlayerCharacter::OnDeathStarted()
 {
 	bSprinting = false;
-	FootstepTimeRemaining = 0.0f;
+	FootstepDistanceRemaining = 0.0f;
 	StopFire();
 	Super::OnDeathStarted();
 }
@@ -349,4 +336,8 @@ void AAHCombatPlayerCharacter::RefreshMovementSpeed()
 	{
 		GetCharacterMovement()->MaxWalkSpeed = bCrouched ? CrouchSpeed : (bSprinting ? SprintSpeed : WalkSpeed);
 	}
+	FootstepStride = bCrouched ? CrouchStride : (bSprinting ? SprintStride : WalkStride);
+	// Crouching used to be as loud as walking; the whole point of it is not being heard.
+	FootstepVolume = bCrouched ? 0.45f : (bSprinting ? 0.85f : 0.62f);
+	FootstepPitch = bCrouched ? 0.82f : (bSprinting ? 1.08f : 1.0f);
 }

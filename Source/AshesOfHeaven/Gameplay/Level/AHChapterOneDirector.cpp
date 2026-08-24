@@ -3,7 +3,6 @@
 #include "Gameplay/Characters/AHHumanSoldierCharacter.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
-#include "Gameplay/Characters/AHVeilWardenCharacter.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
@@ -11,6 +10,8 @@
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
+#include "Gameplay/Encounters/AHEncounterDirectorSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/Vehicles/AHManticoreVehicle.h"
 #include "Gameplay/Weapons/AHWeaponPickup.h"
@@ -45,6 +46,8 @@
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
@@ -196,6 +199,7 @@ void AAHChapterOneDirector::BeginPlay()
 	Chapter = GetGameInstance()->GetSubsystem<UAHChapterSubsystem>();
 	Dialogue = GetWorld()->GetSubsystem<UAHDialogueSubsystem>();
 	Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>();
+	EncounterDirector = GetWorld()->GetSubsystem<UAHEncounterDirectorSubsystem>();
 	BuildMissionGraph();
 	BuildStageAnchors();
 	BuildGreybox();
@@ -558,6 +562,10 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	}
 	StageElapsed = 0.0f;
 	DestructionFadeAlpha = 0.0f;
+	if (EncounterDirector && EncounterDirector->IsEncounterActive() && !EncounterDirector->IsActiveEncounterForStage(Stage))
+	{
+		EncounterDirector->AbortEncounter(FName(TEXT("StoryStageChanged")));
+	}
 	#if !UE_BUILD_SHIPPING
 	const AActor* LoggedPlayer = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] start_stage=%s objective=%d player=%s"), *UEnum::GetValueAsString(Stage), Objectives ? Objectives->GetCurrentObjectiveIndex() : INDEX_NONE, LoggedPlayer ? *LoggedPlayer->GetActorLocation().ToCompactString() : TEXT("none"));
@@ -1762,15 +1770,11 @@ void AAHChapterOneDirector::BuildMissionActors()
 	Trigger = SpawnTrigger(OtherLucian.ObjectiveTargetLocation, FVector(250.0f, 650.0f, 220.0f), FName(TEXT("OtherLucian")), EAHChapterStage::Escape);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
 
-	OpeningEncounter = SpawnEncounter(FName(TEXT("Ch01_OpeningBattle")), FVector(900.0f, 0.0f, 120.0f), 5, OpeningBattleObjective,
-		{FVector(1200.0f, -520.0f, 120.0f), FVector(1500.0f, 520.0f, 120.0f), FVector(1900.0f, -600.0f, 120.0f), FVector(2250.0f, 620.0f, 120.0f), FVector(2600.0f, 0.0f, 120.0f)});
 	BattlefieldEncounter = SpawnEncounter(FName(TEXT("Ch01_Battlefield")), FVector(7600.0f, 0.0f, 120.0f), 7, NAME_None,
 		{FVector(7800.0f, -900.0f, 120.0f), FVector(8200.0f, 900.0f, 120.0f), FVector(8600.0f, -750.0f, 120.0f), FVector(9000.0f, 750.0f, 120.0f), FVector(9400.0f, -500.0f, 120.0f), FVector(9700.0f, 500.0f, 120.0f), FVector(10100.0f, 0.0f, 120.0f)});
-	BattlefieldEncounter->AdditionalEnemyClasses.Add(AAHVeilWardenCharacter::StaticClass());
 	const FVector EscapeOrigin = Escape.StageAnchor;
 	EscapeEncounter = SpawnEncounter(FName(TEXT("Ch01_Escape")), EscapeOrigin + FVector(-500.0f, 0.0f, 100.0f), 5, NAME_None,
 		{EscapeOrigin + FVector(-300.0f, -260.0f, 100.0f), EscapeOrigin + FVector(-100.0f, 260.0f, 100.0f), EscapeOrigin + FVector(400.0f, -240.0f, 100.0f), EscapeOrigin + FVector(800.0f, 240.0f, 100.0f), EscapeOrigin + FVector(1400.0f, 0.0f, 100.0f)});
-	EscapeEncounter->AdditionalEnemyClasses.Add(AAHVeilWardenCharacter::StaticClass());
 
 	for (const FAHCheckpointSpatialDefinition& Checkpoint : AHChapterSpatial::GetCheckpointDefinitions())
 	{
@@ -1783,10 +1787,9 @@ void AAHChapterOneDirector::BuildMissionActors()
 
 void AAHChapterOneDirector::SpawnOpeningBattle()
 {
-	if (OpeningEncounter && !OpeningEncounter->IsComplete() && !OpeningEncounter->IsActive())
+	if (EncounterDirector)
 	{
-		OpeningEncounter->bActivateOnPlayerOverlap = false;
-		OpeningEncounter->ActivateEncounter();
+		EncounterDirector->BeginEncounter(FName(TEXT("Erebus_DefensiveLine")));
 	}
 }
 
@@ -1819,8 +1822,266 @@ void AAHChapterOneDirector::SpawnPresentDayScene()
 	SpawnLabel(Origin + FVector(0.0f, -1000.0f, 540.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220), 105.0f);
 }
 
+void AAHChapterOneDirector::LogArtRoiProjections() const
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!PC || !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	FVector2D ViewportSize = FVector2D::ZeroVector;
+	GEngine->GameViewport->GetViewportSize(ViewportSize);
+	if (ViewportSize.X < 1.0f || ViewportSize.Y < 1.0f)
+	{
+		return;
+	}
+
+	FVector CameraLocation = FVector::ZeroVector;
+	FRotator CameraRotation = FRotator::ZeroRotator;
+	PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	// The camera is not the actor: the pose passed to -ArtCam is an actor location and the eye
+	// sits above it, so the harness must be told where the view actually is before it trusts a
+	// projected rect.
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtRoi] viewport=%.0fx%.0f camera=%s pitch=%.1f yaw=%.1f"),
+		ViewportSize.X, ViewportSize.Y, *CameraLocation.ToCompactString(), CameraRotation.Pitch, CameraRotation.Yaw);
+
+	struct FArtRoi
+	{
+		const TCHAR* Name;
+		FBox Box;
+	};
+
+	// World boxes lifted from the placements in BuildErebusOpeningLevel.py. These are the things
+	// the player has to be able to read; scoring them separately is the difference between "the
+	// road is invisible" and "a building silhouette is black, as intended".
+	TArray<FArtRoi> Regions;
+	Regions.Add({TEXT("facade_left"), FBox(FVector(-700.0f, -1300.0f, 0.0f), FVector(3000.0f, -900.0f, 900.0f))});
+	Regions.Add({TEXT("facade_right"), FBox(FVector(-200.0f, 800.0f, 0.0f), FVector(3400.0f, 1200.0f, 1000.0f))});
+	Regions.Add({TEXT("blastwall_fg"), FBox(FVector(600.0f, -800.0f, 0.0f), FVector(1150.0f, -450.0f, 700.0f))});
+	Regions.Add({TEXT("hero_wreck"), FBox(FVector(-100.0f, -1150.0f, 0.0f), FVector(900.0f, -300.0f, 450.0f))});
+	Regions.Add({TEXT("gate"), FBox(FVector(3200.0f, -800.0f, 0.0f), FVector(3520.0f, 800.0f, 1600.0f))});
+	Regions.Add({TEXT("aperture"), FBox(FVector(9000.0f, -900.0f, 500.0f), FVector(14000.0f, 900.0f, 2200.0f))});
+	Regions.Add({TEXT("cathedral"), FBox(FVector(24000.0f, 0.0f, 4500.0f), FVector(30500.0f, 5000.0f, 10000.0f))});
+	Regions.Add({TEXT("rust_pipe_near"), FBox(FVector(-1150.0f, -900.0f, 0.0f), FVector(-750.0f, -500.0f, 300.0f))});
+	Regions.Add({TEXT("rust_pipe_run"), FBox(FVector(1150.0f, 600.0f, 0.0f), FVector(3150.0f, 820.0f, 260.0f))});
+	Regions.Add({TEXT("red_sign"), FBox(FVector(-400.0f, -1550.0f, 300.0f), FVector(100.0f, -1100.0f, 800.0f))});
+
+	// The road is the one region that has to follow the camera: every pose looks down it, and a
+	// fixed world box would measure a different stretch of it in every shot.
+	const FRotator FlatRotation(0.0f, CameraRotation.Yaw, 0.0f);
+	const FVector Forward = FlatRotation.Vector();
+	const FVector Right = FRotationMatrix(FlatRotation).GetUnitAxis(EAxis::Y);
+	FBox RoadBox(ForceInit);
+	for (const float Distance : {500.0f, 2600.0f})
+	{
+		for (const float Lateral : {-320.0f, 320.0f})
+		{
+			const FVector Point = CameraLocation + Forward * Distance + Right * Lateral;
+			RoadBox += FVector(Point.X, Point.Y, 5.0f);
+			RoadBox += FVector(Point.X, Point.Y, 70.0f);
+		}
+	}
+	Regions.Add({TEXT("road"), RoadBox});
+
+	// Whichever body is closest to the camera AND actually in shot, so the -ArtTarget=Battle
+	// capture scores the character material and fill light instead of relying on someone
+	// eyeballing the frame. Nearest alone picked a body behind the camera on the first run and
+	// reported a white mannequin as p90 0.11.
+	// Largest on-screen body, not the nearest: "nearest" picked one standing behind a wall and
+	// handed the harness a rectangle full of burning barrel, which was then reported as the
+	// character's brightness. Screen area is the only thing that makes a region worth measuring.
+	const ACharacter* PlayerCharacter = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
+	const ACharacter* BestBody = nullptr;
+	FBox BestBodyBox(ForceInit);
+	float BestScreenArea = 0.0f;
+	for (TActorIterator<ACharacter> It(GetWorld()); It; ++It)
+	{
+		if (*It == PlayerCharacter)
+		{
+			continue;
+		}
+		// Mesh bounds, not actor bounds: every combatant carries an unshadowed fill light, and
+		// GetActorBounds includes that light's attenuation radius, which inflated the body box to
+		// three times the figure and handed back a rectangle of burning barrel twice running.
+		const USkeletalMeshComponent* BodyMesh = It->GetMesh();
+		if (!BodyMesh || !BodyMesh->GetSkeletalMeshAsset())
+		{
+			continue;
+		}
+		const FBox BodyBox = BodyMesh->Bounds.GetBox();
+		const FVector BodyOrigin = BodyBox.GetCenter();
+		// Ragdolled corpses settle below the floor; their box then measures road, not a soldier.
+		// Character readability is a question about bodies that are still standing up.
+		if (BodyOrigin.Z < 20.0f)
+		{
+			continue;
+		}
+		// A projected bounding box says nothing about whether the body is actually visible. The
+		// largest one in shot was standing behind the blast wall, so the harness measured wall
+		// and reported the character as 99.5% crushed. Trace before believing the rectangle.
+		FCollisionQueryParams VisibilityParams(SCENE_QUERY_STAT(ArtRoiBodyVisibility), false);
+		VisibilityParams.AddIgnoredActor(*It);
+		if (PlayerCharacter)
+		{
+			VisibilityParams.AddIgnoredActor(PlayerCharacter);
+		}
+		if (GetWorld()->LineTraceTestByChannel(CameraLocation, BodyOrigin, ECC_Visibility, VisibilityParams))
+		{
+			continue;
+		}
+
+		FVector2D Min(TNumericLimits<float>::Max(), TNumericLimits<float>::Max());
+		FVector2D Max(-TNumericLimits<float>::Max(), -TNumericLimits<float>::Max());
+		int32 BodyCorners = 0;
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			const FVector World(
+				(Corner & 1) ? BodyBox.Max.X : BodyBox.Min.X,
+				(Corner & 2) ? BodyBox.Max.Y : BodyBox.Min.Y,
+				(Corner & 4) ? BodyBox.Max.Z : BodyBox.Min.Z);
+			FVector2D Screen = FVector2D::ZeroVector;
+			if (UGameplayStatics::ProjectWorldToScreen(PC, World, Screen))
+			{
+				Min.X = FMath::Min(Min.X, Screen.X);
+				Min.Y = FMath::Min(Min.Y, Screen.Y);
+				Max.X = FMath::Max(Max.X, Screen.X);
+				Max.Y = FMath::Max(Max.Y, Screen.Y);
+				++BodyCorners;
+			}
+		}
+		if (BodyCorners == 0 || Max.X < 0.0f || Max.Y < 0.0f
+			|| Min.X > ViewportSize.X || Min.Y > ViewportSize.Y)
+		{
+			continue;
+		}
+		const float ScreenArea = (Max.X - Min.X) * (Max.Y - Min.Y);
+		// Score on the area actually inside the viewport, not the raw projected area. A body 3.4m
+		// away scored 688k px while three quarters of it sat off the left edge, so the harness
+		// measured the sliver of road beside it and called the character 97.6% crushed.
+		const float ClampedArea =
+			FMath::Max(0.0f, FMath::Min(Max.X, (float)ViewportSize.X) - FMath::Max(Min.X, 0.0f)) *
+			FMath::Max(0.0f, FMath::Min(Max.Y, (float)ViewportSize.Y) - FMath::Max(Min.Y, 0.0f));
+		// Logged per body: when no body is big enough to score, this is the evidence needed to
+		// aim the next -ArtCam at one instead of guessing.
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtRoi] body_candidate at=%s dist=%.0f screen_area_px=%.0f onscreen_px=%.0f"),
+			*BodyOrigin.ToCompactString(), FVector::Dist(BodyOrigin, CameraLocation), ScreenArea, ClampedArea);
+		if (ClampedArea < 8000.0f || ClampedArea < 0.6f * ScreenArea)
+		{
+			continue;
+		}
+		if (ClampedArea > BestScreenArea)
+		{
+			BestScreenArea = ClampedArea;
+			BestBodyBox = BodyBox;
+			BestBody = *It;
+		}
+	}
+	if (BestBody)
+	{
+		Regions.Add({TEXT("combatant"), BestBodyBox});
+	}
+	else
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4][ArtRoi] no body on screen; character readability is UNMEASURED in this capture"));
+	}
+
+	for (const FArtRoi& Region : Regions)
+	{
+		FVector2D Min(TNumericLimits<float>::Max(), TNumericLimits<float>::Max());
+		FVector2D Max(-TNumericLimits<float>::Max(), -TNumericLimits<float>::Max());
+		int32 Projected = 0;
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			const FVector World(
+				(Corner & 1) ? Region.Box.Max.X : Region.Box.Min.X,
+				(Corner & 2) ? Region.Box.Max.Y : Region.Box.Min.Y,
+				(Corner & 4) ? Region.Box.Max.Z : Region.Box.Min.Z);
+			FVector2D Screen = FVector2D::ZeroVector;
+			if (UGameplayStatics::ProjectWorldToScreen(PC, World, Screen))
+			{
+				Min.X = FMath::Min(Min.X, Screen.X);
+				Min.Y = FMath::Min(Min.Y, Screen.Y);
+				Max.X = FMath::Max(Max.X, Screen.X);
+				Max.Y = FMath::Max(Max.Y, Screen.Y);
+				++Projected;
+			}
+		}
+		// ponytail: corners behind the camera are dropped rather than clipped against the near
+		// plane, so a region straddling it reports the rect of its visible corners. Good enough to
+		// score a region; wrong only for one the camera sits inside.
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtRoi] %s corners=%d x0=%.4f y0=%.4f x1=%.4f y1=%.4f"),
+			Region.Name, Projected,
+			Projected > 0 ? Min.X / ViewportSize.X : -1.0f,
+			Projected > 0 ? Min.Y / ViewportSize.Y : -1.0f,
+			Projected > 0 ? Max.X / ViewportSize.X : -1.0f,
+			Projected > 0 ? Max.Y / ViewportSize.Y : -1.0f);
+	}
+}
+
 void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 {
+	// Every review path gets its regions logged, not just -ArtCam: the Battle target is the only
+	// one that has bodies in it, and that is the capture the character work is judged on.
+	FTimerHandle RoiHandle;
+	GetWorldTimerManager().SetTimer(RoiHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this]() { LogArtRoiProjections(); }), 12.0f, false);
+
+	// -ArtCam=X,Y,Z[,Pitch[,Yaw]] overrides the review camera for this launch. There is no
+	// synthetic input into a packaged build on this machine, so without a command-line pose the
+	// only vantages that can ever be reviewed are the five hard-coded ones - and when the level
+	// moves under one of them, as it did here, the shot becomes a wall with no way to step back.
+	FString CameraOverride;
+	// bShouldStopOnSeparator=false, or FParse::Value stops at the first comma and hands back "-1800".
+	if (FParse::Value(FCommandLine::Get(), TEXT("ArtCam="), CameraOverride, false))
+	{
+		TArray<FString> Parts;
+		CameraOverride.ParseIntoArray(Parts, TEXT(","), true);
+		if (Parts.Num() >= 3)
+		{
+			const FVector Location(FCString::Atof(*Parts[0]), FCString::Atof(*Parts[1]), FCString::Atof(*Parts[2]));
+			const float Pitch = Parts.Num() >= 4 ? FCString::Atof(*Parts[3]) : 0.0f;
+			const float Yaw = Parts.Num() >= 5 ? FCString::Atof(*Parts[4]) : 0.0f;
+			// -ArtCam used to return before the target branch ran, so "fixed pose" and "live
+			// bodies in frame" were mutually exclusive - which is exactly the capture the
+			// character material and fill light have to be judged on.
+			if (TargetName.Equals(TEXT("Battle"), ESearchCase::IgnoreCase)
+				|| TargetName.Equals(TEXT("OpeningBattle"), ESearchCase::IgnoreCase))
+			{
+				if (Dialogue && Dialogue->HasActiveDialogue())
+				{
+					Dialogue->SkipCurrentSequence();
+				}
+				DebugSkipToStage(EAHChapterStage::OpeningBattle);
+			}
+			else
+			{
+				StartStage(EAHChapterStage::ErebusOpening);
+			}
+			const FRotator Aim(Pitch, Yaw, 0.0f);
+			TeleportPlayer(Location, Aim);
+			// The spatial-recovery pass re-teleports the player to the stage spawn a fraction of a
+			// second after this runs, which silently undid the pose. Re-apply past it rather than
+			// racing it: this is a review camera, so holding the pose for a few seconds is the
+			// whole contract.
+			TSharedPtr<int32> Reapplied = MakeShared<int32>(0);
+			FTimerHandle HoldHandle;
+			GetWorldTimerManager().SetTimer(HoldHandle, FTimerDelegate::CreateWeakLambda(this,
+				[this, Location, Aim, Reapplied, HoldHandle]() mutable
+				{
+					TeleportPlayer(Location, Aim);
+					if (++(*Reapplied) >= 12)
+					{
+						GetWorldTimerManager().ClearTimer(HoldHandle);
+					}
+				}), 0.5f, true);
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] camera_override location=%s pitch=%.1f yaw=%.1f"),
+				*Location.ToCompactString(), Pitch, Yaw);
+			return;
+		}
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] -ArtCam needs at least X,Y,Z; got '%s'"), *CameraOverride);
+	}
+
 	if (TargetName.Equals(TEXT("Erebus"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Battlefield"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("M91"), ESearchCase::IgnoreCase))
 	{
 		StartStage(EAHChapterStage::ErebusOpening);
@@ -1832,7 +2093,13 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 	{
 		// Combat review camera: the only way to look at AI behaviour and character readability
 		// without playing the chapter up to the first firefight.
-		StartStage(EAHChapterStage::OpeningBattle);
+		// Finish any opening line first; its completion callback briefly advances to ErebusOpening,
+		// then the debug skip restores the matching objective before starting the encounter stage.
+		if (Dialogue && Dialogue->HasActiveDialogue())
+		{
+			Dialogue->SkipCurrentSequence();
+		}
+		DebugSkipToStage(EAHChapterStage::OpeningBattle);
 		TeleportPlayer(FVector(-400.0f, -120.0f, 150.0f), FRotator::ZeroRotator);
 	}
 	else if (TargetName.Equals(TEXT("Transit"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("TransitStation"), ESearchCase::IgnoreCase))
@@ -1871,13 +2138,16 @@ void AAHChapterOneDirector::SpawnCathedralTerminal()
 	{
 		return;
 	}
-	FailsafeTerminal = GetWorld()->SpawnActor<AAHChapterTerminal>(AAHChapterTerminal::StaticClass(), AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeTerminal).ObjectiveTargetLocation, FRotator::ZeroRotator);
+	const FTransform TerminalTransform(FRotator::ZeroRotator, AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeTerminal).ObjectiveTargetLocation);
+	FailsafeTerminal = GetWorld()->SpawnActorDeferred<AAHChapterTerminal>(AAHChapterTerminal::StaticClass(), TerminalTransform);
 	if (FailsafeTerminal)
 	{
+		FailsafeTerminal->SetPersistentId(FGuid(0xA11E1001, 0x9A3549B5, 0xB51F9901, 0x00000001));
 		FailsafeTerminal->TerminalMesh->SetStaticMesh(BlockMesh);
 		FailsafeTerminal->TerminalMesh->SetRelativeScale3D(FVector(0.7f, 0.7f, 1.6f));
 		FailsafeTerminal->TerminalMesh->SetMaterial(0, CathedralMaterial);
 		FailsafeTerminal->OnConfirmed.AddDynamic(this, &AAHChapterOneDirector::HandleTerminalConfirmed);
+		FailsafeTerminal->FinishSpawning(TerminalTransform);
 	}
 }
 
@@ -2008,7 +2278,15 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// Real-time capture sources ambient from the atmosphere; a static capture of an
 			// unlit scene would just bake black.
 			SkyComponent->SetRealTimeCapture(true);
-			SkyComponent->SetIntensity(0.75f);
+			// The only midtone knob that is nearly free on the fog aperture: a SkyLight is a
+			// lighting-only actor, so it lifts road and walls without rendering the sky the
+			// aperture is made of (that is SkyAtmosphere + VolumetricCloud, untouched). At 0.75
+			// the ground was receiving ~7 lux against surfaces returning 1% of it, which is what
+			// put 75% of the frame below V=0.08.
+			// Iteration 3 raises this alone, with FilmToe left at 0.48: 1.30 moved the frame
+			// median from 0.035 to 0.051 and moving the toe at the same time would make it
+			// impossible to say which knob did it.
+			SkyComponent->SetIntensity(1.65f);
 			// Grey uplight instead of a second directional: lifts vertical architecture
 			// without competing for the single forward-shading directional slot (the
 			// competition warning renders on screen in Development builds).
@@ -2062,14 +2340,29 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		Post->Settings.BloomIntensity = 0.42f;
 		Post->Settings.bOverride_VignetteIntensity = true;
 		Post->Settings.VignetteIntensity = 0.38f;
-		// Clamp auto-exposure so the war gloom neither crushes structures to black nor
-		// blows the fire accents out; the approved target holds a stable dark-overcast key.
-		// A high min brightness LOCKS dark scenes dark (adaptation clamps at the min), so
-		// the floor stays low and a positive bias lifts the whole key instead.
+		// AutoExposureMin/MaxBrightness are EV100 here, NOT luminance: DefaultEngine.ini sets
+		// r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange=True. 0.03 EV100 is ten stops
+		// above the engine default of -10, so the min clamp binds every frame and exposure is
+		// effectively fixed at 2^(Bias - Min) = 0.669. That is deliberate: with a pinned exposure
+		// the image is identical across the four review poses and brightening a surface actually
+		// brightens the frame instead of being metered away. Do not open the floor - the fog
+		// aperture behind the gate already sits at sRGB ~232 and would blow out.
 		Post->Settings.bOverride_AutoExposureMinBrightness = true;
 		Post->Settings.AutoExposureMinBrightness = 0.03f;
 		Post->Settings.bOverride_AutoExposureMaxBrightness = true;
 		Post->Settings.AutoExposureMaxBrightness = 3.0f;
+		// Film toe, the most highlight-safe knob in the pipeline. The engine default of 0.55 puts
+		// 0.18 middle grey on the toe segment and crushes everything under it, which is where
+		// every unlit vehicle, barricade and rubble face in this scene lives. 0.48 lifts the road
+		// roughly three sRGB stops while the aperture moves by under 10 of 255. Below 0.40 the
+		// image reads washed out - that is the flat-grey failure the gate rejects.
+		Post->Settings.bOverride_FilmToe = true;
+		// Step 2 of the lighting calibration, and the experiment that separates the two failure
+		// modes: SkyLight 1.30 -> 1.65 moved the frame median by less than one 8-bit code value,
+		// which is what auto-exposure compensating for extra light looks like. The toe is applied
+		// after exposure, so if this moves the shadows and the SkyLight did not, the lever for
+		// this scene is the tone curve and the exposure target, not more light.
+		Post->Settings.FilmToe = 0.44f;
 		Post->Settings.bOverride_AutoExposureBias = true;
 		Post->Settings.AutoExposureBias = -0.55f;
 	}
@@ -2145,14 +2438,22 @@ AAHChapterTrigger* AAHChapterOneDirector::SpawnTrigger(const FVector& Location, 
 
 AAHCombatEncounter* AAHChapterOneDirector::SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns, bool bAutoActivate)
 {
-	AAHCombatEncounter* Encounter = GetWorld()->SpawnActor<AAHCombatEncounter>(AAHCombatEncounter::StaticClass(), Location, FRotator::ZeroRotator);
+	const FTransform SpawnTransform(FRotator::ZeroRotator, Location);
+	AAHCombatEncounter* Encounter = GetWorld()->SpawnActorDeferred<AAHCombatEncounter>(
+		AAHCombatEncounter::StaticClass(), SpawnTransform, this, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (Encounter)
 	{
 		Encounter->EncounterId = Id;
+		if (Id == FName(TEXT("Ch01_Battlefield")) || Id == FName(TEXT("Ch01_Escape")))
+		{
+			Encounter->EncounterDefinitionId = AHEnemyAssets::EncounterId(TEXT("PilgrimWarden"));
+		}
 		Encounter->EnemyCount = Count;
 		Encounter->ObjectiveOnComplete = ObjectiveOnComplete;
 		Encounter->SpawnLocations = Spawns;
 		Encounter->bActivateOnPlayerOverlap = !bAutoActivate;
+		UGameplayStatics::FinishSpawningActor(Encounter, SpawnTransform);
 	}
 	return Encounter;
 }
@@ -2318,6 +2619,15 @@ void AAHChapterOneDirector::TeleportPlayer(const FVector& Location, const FRotat
 	if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
 	{
 		Player->SetActorLocationAndRotation(Location, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+		// The first person camera runs on bUsePawnControlRotation, so the view direction lives on
+		// the controller, not on the pawn. Moving the body and leaving the control rotation alone
+		// meant every art target inherited wherever the previous beat was looking - the opening
+		// looks up at the sky, so -ArtTarget=Erebus framed fog instead of the route, and the
+		// battle targets framed the pavement. A teleport aims the camera too.
+		if (AController* Controller = Player->GetController())
+		{
+			Controller->SetControlRotation(Rotation);
+		}
 	}
 }
 
@@ -2360,6 +2670,11 @@ void AAHChapterOneDirector::DebugResetChapter()
 
 void AAHChapterOneDirector::DebugCompleteCurrentEncounter()
 {
+	if (EncounterDirector && EncounterDirector->IsEncounterActive())
+	{
+		EncounterDirector->ResolveEncounter();
+		return;
+	}
 	if (AAHCombatPlayerController* Controller = Cast<AAHCombatPlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0)))
 	{
 		Controller->KillAllEnemies();

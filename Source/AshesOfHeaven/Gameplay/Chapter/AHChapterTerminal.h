@@ -3,15 +3,17 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
+#include "Gameplay/WorldState/AHSavableActor.h"
 #include "AHChapterTerminal.generated.h"
 
+class UAHPersistentIdComponent;
 class UStaticMeshComponent;
 class UWidgetComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHChapterTerminalConfirmedDelegate);
 
 UCLASS()
-class ASHESOFHEAVEN_API AAHChapterTerminal : public AActor, public IAHInteractable
+class ASHESOFHEAVEN_API AAHChapterTerminal : public AActor, public IAHInteractable, public IAHSavableActor
 {
 	GENERATED_BODY()
 
@@ -24,6 +26,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UWidgetComponent> TerminalWidget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UAHPersistentIdComponent> PersistentIdComponent;
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterTerminalConfirmedDelegate OnConfirmed;
@@ -41,8 +46,19 @@ public:
 
 	bool IsConfirmed() const { return bConfirmed; }
 	bool IsInspected() const { return bInspected; }
+	void SetPersistentId(const FGuid& PersistentId);
+
+	virtual FGuid GetPersistentId_Implementation() const override;
+	virtual int32 GetWorldStateVersion_Implementation() const override { return 1; }
+	virtual EAHWorldStateSerializationMode GetWorldStateSerializationMode_Implementation() const override { return EAHWorldStateSerializationMode::ExplicitPayload; }
+	virtual bool ShouldSaveWorldTransform_Implementation() const override { return false; }
+	virtual bool CaptureWorldState_Implementation(TArray<uint8>& OutPayload) const override;
+	virtual bool RestoreWorldState_Implementation(const TArray<uint8>& Payload, int32 SavedStateVersion) override;
+	virtual void OnWorldStateRestored_Implementation() override;
 
 private:
+	void MarkWorldStateDirty();
+
 	bool bInspected = false;
 	bool bConfirmed = false;
 };
