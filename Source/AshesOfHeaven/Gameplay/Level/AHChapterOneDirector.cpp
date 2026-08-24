@@ -7,6 +7,7 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
@@ -127,24 +128,6 @@ namespace
 			Line(TEXT("LUCIAN"), TEXT("You invaded my world."), 2.6f),
 			Line(TEXT("SAEL"), TEXT("Because the alternative is worse."), 3.0f)
 		};
-	}
-
-	TArray<FAHDialogueLine> MayaLines()
-	{
-		return {
-			Line(TEXT("MAYA"), TEXT("We need you."), 2.2f),
-			Line(TEXT("LUCIAN"), TEXT("I'm retired."), 2.2f),
-			Line(TEXT("MAYA"), TEXT("Eleven million people would disagree."), 3.0f),
-			Line(TEXT("MAYA"), TEXT("That message came from something three billion years old."), 3.2f),
-			Line(TEXT("LUCIAN"), TEXT("When?"), 1.6f),
-			Line(TEXT("MAYA"), TEXT("Six hours ago."), 2.0f),
-			Line(TEXT("LUCIAN"), TEXT("Then we're already late."), 2.8f)
-		};
-	}
-
-	TArray<FAHDialogueLine> NysaLines()
-	{
-		return {Line(TEXT("NYSA TRANSMISSION"), TEXT("LUCIAN VARR."), 2.0f), Line(TEXT("NYSA TRANSMISSION"), TEXT("Modern military identification confirmed."), 2.8f)};
 	}
 
 	TArray<FAHDialogueLine> OtherLucianLines()
@@ -635,22 +618,14 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		break;
 	case EAHChapterStage::ErebusDestruction:
 		Chapter->StopCountdown();
-		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 7.0f, false);
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, AHLevelOneNarrative::GetErebusDestructionHoldSeconds(), false);
 		break;
+	// Unreachable in FOR A WHILE: Level One ends at ErebusDestruction, so no objective
+	// advances into these stages. Kept as stage cases only for save-compatibility reads.
 	case EAHChapterStage::TenYearsLater:
 		SpawnPresentDayScene();
-		if (!bMayaSceneStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Maya"))))
-		{
-			bMayaSceneStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Maya")), MayaLines());
-		}
 		break;
 	case EAHChapterStage::MayaScene:
-		if (!bNysaSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Nysa"))))
-		{
-			bNysaSequenceStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Nysa")), NysaLines());
-		}
 		break;
 	case EAHChapterStage::NysaTransmission:
 		break;
