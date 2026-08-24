@@ -56,10 +56,11 @@ bool FAHLevelOneProgressionContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Destruction is the final Level One objective"), AHLevelOneNarrative::IsLevelOneFinalObjective(FName(TEXT("Ch01_SurviveDestruction"))));
 
 	FAHChapterState LegacyPostErebus;
+	LegacyPostErebus.SaveVersion = 6;
 	LegacyPostErebus.Stage = EAHChapterStage::TenYearsLater;
 	LegacyPostErebus.ObjectiveIndex = 12;
 	const FAHChapterState Migrated = UAHChapterSubsystem::NormalizeState(LegacyPostErebus);
-	TestEqual(TEXT("Old post-Erebus save migrates to complete"), Migrated.Stage, EAHChapterStage::ChapterComplete);
+	TestEqual(TEXT("v6 post-Erebus save migrates to complete"), Migrated.Stage, EAHChapterStage::ChapterComplete);
 	TestTrue(TEXT("Migrated save is complete"), Migrated.bChapterComplete);
 	return true;
 }
