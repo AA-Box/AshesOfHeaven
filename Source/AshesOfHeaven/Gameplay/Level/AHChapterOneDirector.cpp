@@ -811,10 +811,24 @@ void AAHChapterOneDirector::HandleMissionComplete()
 
 void AAHChapterOneDirector::FinishDestructionSequence()
 {
-	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
+	if (GetCurrentStage() != EAHChapterStage::ErebusDestruction)
 	{
-		CompleteCurrentObjective();
+		return;
 	}
+	// The hold covers the finale sequence, but the finale can still start late if another
+	// sequence owned the dialogue channel when the stage began. Wait for the closing
+	// transmission rather than completing the objective over it. Bounded at twice the hold so
+	// a wedged dialogue channel cannot strand the player at the end of the level.
+	const float HoldSeconds = AHLevelOneNarrative::GetErebusDestructionHoldSeconds();
+	if (Dialogue && Dialogue->HasActiveDialogue() && StageElapsed < HoldSeconds * 2.0f)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] destruction_wait sequence=%s elapsed=%0.1f"), *Dialogue->GetCurrentSequence().ToString(), StageElapsed);
+		#endif
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 0.5f, false);
+		return;
+	}
+	CompleteCurrentObjective();
 }
 
 void AAHChapterOneDirector::BuildGreybox()
