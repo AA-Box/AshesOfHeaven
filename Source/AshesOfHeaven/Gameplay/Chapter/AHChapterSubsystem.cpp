@@ -24,11 +24,6 @@ EAHChapterStage UAHChapterSubsystem::StageForObjectiveIndex(int32 ObjectiveIndex
 	case 9: return EAHChapterStage::FailsafeTerminal;
 	case 10: return EAHChapterStage::Escape;
 	case 11: return EAHChapterStage::ErebusDestruction;
-	case 12: return EAHChapterStage::TenYearsLater;
-	case 13: return EAHChapterStage::MayaScene;
-	case 14: return EAHChapterStage::NysaTransmission;
-	case 15: return EAHChapterStage::FleetDeparture;
-	case 16: return EAHChapterStage::StarsDisappearing;
 	default: return EAHChapterStage::ChapterComplete;
 	}
 }
@@ -52,11 +47,11 @@ int32 UAHChapterSubsystem::ObjectiveIndexForStage(EAHChapterStage Stage)
 	case EAHChapterStage::Escape:
 	case EAHChapterStage::OtherLucian: return 10;
 	case EAHChapterStage::ErebusDestruction: return 11;
-	case EAHChapterStage::TenYearsLater: return 12;
-	case EAHChapterStage::MayaScene: return 13;
-	case EAHChapterStage::NysaTransmission: return 14;
-	case EAHChapterStage::FleetDeparture: return 15;
-	case EAHChapterStage::StarsDisappearing: return 16;
+	case EAHChapterStage::TenYearsLater:
+	case EAHChapterStage::MayaScene:
+	case EAHChapterStage::NysaTransmission:
+	case EAHChapterStage::FleetDeparture:
+	case EAHChapterStage::StarsDisappearing:
 	case EAHChapterStage::ChapterComplete: return AHChapterStateConstants::ObjectiveCount;
 	default: return INDEX_NONE;
 	}
@@ -71,14 +66,18 @@ FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candi
 	const int32 StageObjectiveIndex = ObjectiveIndexForStage(Candidate.Stage);
 	const bool bObjectiveIsFinal = Normalized.ObjectiveIndex >= AHChapterStateConstants::ObjectiveCount;
 	const bool bStageIsFinal = Candidate.Stage == EAHChapterStage::ChapterComplete;
-	if (bObjectiveIsFinal)
+	const bool bLegacyPostErebusStage = Candidate.Stage >= EAHChapterStage::TenYearsLater && Candidate.Stage <= EAHChapterStage::StarsDisappearing;
+	if (bObjectiveIsFinal || bLegacyPostErebusStage)
 	{
+		// v7 moves the old PresentDay epilogue out of Level One. Saves that had already
+		// reached those compatibility stages migrate to a completed FOR A WHILE state.
 		Normalized.Stage = EAHChapterStage::ChapterComplete;
+		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
 	}
 	else if (bStageIsFinal || (StageObjectiveIndex != INDEX_NONE && StageObjectiveIndex != Normalized.ObjectiveIndex))
 	{
 		// Objective progress is the canonical progression value. This repairs saves such as
-		// Stage=ErebusOpening/Objectives=5 and old completion overlays at a mid-chapter index.
+		// Stage=ErebusOpening/Objectives=5 and old completion overlays at a mid-level index.
 		Normalized.Stage = StageForObjectiveIndex(Normalized.ObjectiveIndex);
 	}
 
@@ -154,7 +153,7 @@ void UAHChapterSubsystem::SetCheckpoint(FName CheckpointId)
 
 void UAHChapterSubsystem::SetObjectiveIndex(int32 NewIndex)
 {
-	State.ObjectiveIndex = FMath::Max(0, NewIndex);
+	State.ObjectiveIndex = FMath::Clamp(NewIndex, 0, AHChapterStateConstants::ObjectiveCount);
 }
 
 void UAHChapterSubsystem::StartCountdown(float DurationSeconds)
