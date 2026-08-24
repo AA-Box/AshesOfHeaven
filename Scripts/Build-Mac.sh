@@ -10,11 +10,16 @@ UAT="$ENGINE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
 # observability logs are guarded by #if !UE_BUILD_SHIPPING, and the installed engine
 # ships Core with NO_LOGGING for Shipping, so only non-Shipping writes a playtest log.
 CLIENT_CONFIG="${CLIENT_CONFIG:-Shipping}"
+if [[ "$CLIENT_CONFIG" != "Development" && "$CLIENT_CONFIG" != "Shipping" ]]; then
+  echo "ERROR: CLIENT_CONFIG must be Development or Shipping." >&2
+  exit 2
+fi
 if [[ "$CLIENT_CONFIG" == "Shipping" ]]; then
   OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/Builds/macOS}"
 else
   OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/Builds/macOS-$CLIENT_CONFIG}"
 fi
+PSO_VALIDATOR=(python3 "$SCRIPT_DIR/Validate-PSO.py")
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "ERROR: macOS packaging must run on macOS with Apple's toolchain." >&2
@@ -24,6 +29,8 @@ if [[ ! -x "$UAT" ]]; then
   echo "ERROR: RunUAT.sh not found at $UAT. Set UE_ROOT to the installed Unreal Engine root." >&2
   exit 2
 fi
+
+"${PSO_VALIDATOR[@]}" config --platform mac
 
 mkdir -p "$OUTPUT_ROOT"
 echo "Building AshesOfHeaven Mac $CLIENT_CONFIG package..."
@@ -69,4 +76,7 @@ fi
 # Replace rather than ditto-merge, so removed files never survive into the next package.
 rm -rf "$FINAL_APP" "$OUTPUT_ROOT/AshesOfHeaven-Mac-$CLIENT_CONFIG.app"
 ditto "$STAGED_APP" "$FINAL_APP"
+"${PSO_VALIDATOR[@]}" package --platform mac \
+  --staged-root "$PROJECT_ROOT/Saved/StagedBuilds/Mac" \
+  --archive-root "$OUTPUT_ROOT"
 find "$OUTPUT_ROOT" -maxdepth 3 -name 'AshesOfHeaven.app' -print

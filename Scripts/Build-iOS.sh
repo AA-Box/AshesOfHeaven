@@ -6,7 +6,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_FILE="$PROJECT_ROOT/AshesOfHeaven.uproject"
 ENGINE_ROOT="${UE_ROOT:-/Users/Shared/Epic Games/UE_5.8}"
 UAT="$ENGINE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
-OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/Builds/iOS}"
+CLIENT_CONFIG="${CLIENT_CONFIG:-Shipping}"
+if [[ "$CLIENT_CONFIG" != "Development" && "$CLIENT_CONFIG" != "Shipping" ]]; then
+  echo "ERROR: CLIENT_CONFIG must be Development or Shipping." >&2
+  exit 2
+fi
+if [[ "$CLIENT_CONFIG" == "Shipping" ]]; then
+  OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/Builds/iOS}"
+else
+  OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/Builds/iOS-$CLIENT_CONFIG}"
+fi
+PSO_VALIDATOR=(python3 "$SCRIPT_DIR/Validate-PSO.py")
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "ERROR: iOS/iPadOS packaging requires macOS and Xcode." >&2
@@ -21,7 +31,13 @@ if [[ ! -x "$UAT" ]]; then
   exit 2
 fi
 
+"${PSO_VALIDATOR[@]}" config --platform ios
+
 if [[ "${AH_IOS_DISTRIBUTION:-0}" == "1" ]]; then
+  if [[ "$CLIENT_CONFIG" != "Shipping" ]]; then
+    echo "ERROR: AH_IOS_DISTRIBUTION=1 requires CLIENT_CONFIG=Shipping." >&2
+    exit 2
+  fi
   : "${AH_IOS_TEAM_ID:?ERROR: AH_IOS_TEAM_ID is required for distribution packaging}"
   : "${AH_IOS_PROVISIONING_PROFILE:?ERROR: AH_IOS_PROVISIONING_PROFILE is required for distribution packaging}"
   echo "Distribution signing is enabled through the external Apple credential environment."
@@ -35,10 +51,14 @@ if [[ "${AH_IOS_DISTRIBUTION:-0}" == "1" ]]; then
   PACKAGE_ARGS+=("-distribution")
 fi
 "$UAT" BuildCookRun \
-  -project="$PROJECT_FILE" -noP4 -platform=IOS -clientconfig=Shipping \
+  -project="$PROJECT_FILE" -noP4 -platform=IOS -clientconfig="$CLIENT_CONFIG" \
   -build -cook -stage -pak -package -archive \
   "${PACKAGE_ARGS[@]}" \
   -prereqs -archivedirectory="$OUTPUT_ROOT"
+
+"${PSO_VALIDATOR[@]}" package --platform ios \
+  --staged-root "$PROJECT_ROOT/Saved/StagedBuilds/IOS" \
+  --archive-root "$OUTPUT_ROOT"
 
 echo "iOS/iPadOS output: $OUTPUT_ROOT"
 find "$OUTPUT_ROOT" -maxdepth 5 \( -name '*.ipa' -o -name '*.app' \) -print
