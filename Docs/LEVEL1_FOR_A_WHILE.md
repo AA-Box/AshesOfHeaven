@@ -1,0 +1,88 @@
+# Level One — FOR A WHILE
+
+`FOR A WHILE` is the complete first campaign level of *Ashes of Heaven*. It begins on Erebus during the opening attack and ends when Lucian authorizes the planetary failsafe, escapes the Cathedral, watches Erebus burn, and receives the impossible one-word Nysa transmission: `Lucian.`
+
+The old `TenYearsLater` / `MayaScene` / `NysaTransmission` / `FleetDeparture` / `StarsDisappearing` enum values are retained only for save compatibility and later campaign migration. They are no longer Level One objectives.
+
+## Runtime progression
+
+1. `OpeningBlack` — black-screen cold open: CHILD `Did we win?` / LUCIAN `For a while.`
+2. `ErebusOpening` — Maya rejoins Lucian; Sael orders Mourner Actual to the District Nine defensive line.
+3. `OpeningBattle` — hold the line against the first Veil assault.
+4. `TransitStation` — abandoned civilian transit station, broken evacuation announcements, Ivo radio banter.
+5. `VeilRevelation` — a civilian says `It remembers us`; Maya realizes the Veil are converting people rather than simply invading.
+6. `OpenBattlefield` — battlefield scale reveal and route toward the Manticore.
+7. `ManticoreSection` — Ivo delivers Manticore Four-Seven and the Cathedral becomes the destination landmark.
+8. `CathedralApproach` — the vehicle fails as the Cathedral responds to it.
+9. `FailsafeOrder` — 08:42 until Erebus establishes an outbound carrier; Sael explains the signal and orders Planetary Failsafe.
+10. `CathedralInterior` / `SaelTransmission` — the impossible duplicate Lucian appears and tells Lucian he has already seen him, just not yet.
+11. `FailsafeTerminal` — casualty count `11,407,231`; Maya opposes the decision; Sael explains the interstellar risk; the player inspects and confirms the terminal.
+12. `Escape` / `OtherLucian` — escape encounter, second silent Other Lucian sighting, Maya pulls Lucian forward.
+13. `ErebusDestruction` — Erebus is destroyed, Sael reports containment, Nysa transmits `Lucian.`
+14. `ChapterComplete` — Level One ends. No ten-years-later epilogue is entered from this level.
+
+## Characters used by Level One
+
+- **Lucian Vale** — playable character; restrained, competent, and increasingly burdened by the failsafe decision.
+- **Maya Serrin** — squadmate / combat engineer / intelligence officer. Her dialogue is present from the opening route through the terminal and escape.
+- **Admiral Sael Varek** — defense-fleet commander on radio. He is the source of the containment and failsafe order.
+- **Ivo Ren** — Manticore pilot on radio, providing limited warmth and military banter before the Cathedral sequence.
+- **Other Lucian** — impossible duplicate encountered inside the Cathedral and glimpsed again during escape.
+- **Nysa** — unknown final transmission. Only one word is revealed in Level One.
+- **Veil Pilgrim / Warden** — existing combat classes remain the core Level One enemies. The encounter architecture remains unchanged by this narrative pass.
+
+## Environment contract
+
+The existing authored zones remain authoritative:
+
+- Erebus battlefield presentation level and authored Erebus mesh kit.
+- Transit Station presentation layer.
+- Open Battlefield / Manticore route.
+- Cathedral Approach and Cathedral Interior presentation layer.
+- Cathedral Escape route.
+
+This change deliberately does **not** reintroduce visible greybox geometry or create a second environment pipeline.
+
+## Unreal Engine material-only rule
+
+All Level One environment and character-surface presentation must use Unreal Engine material assets (`UMaterialInterface`, Material, Material Instance, Material Instance Dynamic) already authored/cooked under `/Game/Ashes/...` or new Unreal-authored material assets created later.
+
+Representative required material families are validated by automation:
+
+- `MI_Concrete_Wet`
+- `MI_HumanMetal_Dark`
+- `MI_CathedralMatter_Dark`
+- `MI_VeilObsidian_Black`
+- `MI_EmissiveGlyph_Cyan`
+- `MI_Erebus_BannerCloth`
+- `MI_Erebus_BannerEmblem`
+- `MI_Erebus_CathedralSilhouette`
+
+Do not add a parallel runtime shader/material format, baked flat-color replacement, external renderer material system, or screenshot-derived surface treatment. Textures may feed Unreal materials, but the runtime surface authority is Unreal's material graph/material-instance pipeline.
+
+## Narrative implementation
+
+`AHLevelOneNarrative` owns the canonical dialogue text and stage-entry beats. `UAHDialogueSubsystem` resolves the legacy director sequence IDs through that canonical data and also starts one-shot stage-entry dialogue for stages that previously had no narrative sequence.
+
+This avoids duplicating progression logic in a second director while letting the current Chapter One gameplay graph keep its tested triggers, encounters, checkpoints, Manticore, terminal, spatial recovery, HUD, and save integration.
+
+## Save migration
+
+Level One now has 12 gameplay objectives. Save version 7 migrates any old Level One state already in `TenYearsLater` through `StarsDisappearing` to `ChapterComplete` rather than replaying those deprecated epilogue stages.
+
+## Acceptance criteria
+
+A Level One implementation is not considered complete unless all of these hold in a packaged Development build:
+
+- cold open displays/plays `Did we win?` → `For a while.` with gameplay HUD hidden;
+- Maya/Sael opening briefing plays after control returns;
+- objective progression reaches the defensive line, Transit, battlefield, Manticore, Cathedral, terminal, escape, and destruction without contradictory objective/completion UI;
+- failsafe countdown starts at 08:42;
+- terminal displays casualty count `11,407,231` and requires inspect + confirmation before activation;
+- Other Lucian dialogue occurs in the Cathedral and the second escape sighting does not deliver the old `No more time` line;
+- the Erebus destruction sequence includes the Nysa `Lucian.` transmission before completion;
+- final mission completion does not teleport into `TenYearsLater`;
+- save/checkpoint restore cannot resurrect the removed post-Erebus Level One epilogue;
+- required Unreal materials resolve in editor/commandlet automation;
+- no visible Engine cube/checker material is used as normal runtime presentation;
+- Mac packaged build and automated Level One narrative/progression/material tests pass before merge.
