@@ -70,7 +70,7 @@ Three rules keep that integration from failing silently:
 
 - **Binding happens at `OnWorldBeginPlay`.** `UAHDialogueSubsystem` is a world subsystem and `UAHChapterSubsystem` lives on the game instance, which is not guaranteed to be attached when world subsystems initialize. `UWorld::BeginPlay` runs world-subsystem begin-play before any actor's `BeginPlay`, so the stage delegate is always bound before the director starts its first stage.
 - **Stage-entry beats queue, they are never dropped.** A stage change that lands while a director sequence is talking is held in `PendingStageEntries` and played when the channel frees. The one-shot guard still prevents a replay.
-- **The destruction hold is derived, not hand-fitted.** `AHLevelOneNarrative::GetErebusDestructionHoldSeconds()` is the finale sequence's own length plus reading margin (7 s floor), and the director's `FinishDestructionSequence` timer uses it. Lengthening a finale line can no longer cut the closing Nysa transmission.
+- **The destruction hold is derived, not hand-fitted.** `AHLevelOneNarrative::GetErebusDestructionHoldSeconds()` is the finale sequence's own length plus reading margin (7 s floor), and the director's `FinishDestructionSequence` timer uses it. If the finale started late because another sequence held the channel, `FinishDestructionSequence` waits for it (bounded at twice the hold) instead of completing the objective over the closing Nysa transmission.
 
 ## Save migration
 
