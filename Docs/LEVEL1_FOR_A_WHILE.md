@@ -97,6 +97,9 @@ A Level One implementation is not considered complete unless all of these hold i
 
 `Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than four `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
 
+Two tests inherited from the enemy-asset-streaming change fail on `main` as well:
+`AshesOfHeaven.Combat.CombatantIsShootable` and `AshesOfHeaven.Combat.CorpseIsLootable`. Both spawn a combatant into a bare `UWorld` with no game instance, so `AAHCombatantCharacter::BeginPlay` cannot reach `UAHEnemyAssetSubsystem` and the body never receives its mesh or loadout. They are listed in `AH_KNOWN_FAILURES` so the gate is usable, and the runner fails if a listed test starts passing, which forces the list to shrink. Fixing them means porting both onto a latent game-instance fixture of the kind `AHEnemyAssetTests` already uses.
+
 `.github/workflows/cross-platform.yml` runs `source-validation`, `automation-tests` and `macos-shipping` on every pull request; the Windows/Android/iOS packages stay `workflow_dispatch`. `automation-tests` and `macos-shipping` need the self-hosted UE5 macOS runner and the `UNREAL_ENGINE_MAC_ROOT` repository variable, so treat them as required status checks — a repository without that runner configured skips them, and a skipped job is not a passing gate.
 
 The Level One contract tests are:
