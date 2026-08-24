@@ -40,6 +40,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Platform")
 	const FAHPerformanceProfile& GetPerformanceProfile() const { return PerformanceProfile; }
 
+	/** Applies the centralized desktop/mobile tactical-query budget to a performance profile. */
+	static void ApplyEQSPerformanceBudget(FAHPerformanceProfile& Profile, bool bIsMobile, bool bMobilePerformanceMode, EAHQualityPreset QualityPreset);
+
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Platform")
 	const FAHInputProfile& GetInputProfile() const { return InputProfile; }
 
@@ -91,6 +94,9 @@ public:
 	bool TryRegisterActiveCombatant();
 	void UnregisterActiveCombatant();
 	int32 GetActiveCombatantCount() const { return ActiveCombatants; }
+	bool TryAcquireEQSQuerySlot();
+	void ReleaseEQSQuerySlot();
+	int32 GetActiveEQSQueryCount() const { return ActiveEQSQueries; }
 
 	FPlatformLifecycleEvent OnApplicationSuspended;
 	FPlatformLifecycleEvent OnApplicationResumed;
@@ -117,6 +123,7 @@ private:
 	bool bRuntimeQualityOverride = false;
 	bool bRuntimeMobilePerformanceOverride = false;
 	int32 ActiveCombatants = 0;
+	int32 ActiveEQSQueries = 0;
 	bool bApplicationSuspended = false;
 
 	UPROPERTY(Transient)

@@ -197,6 +197,24 @@ struct ASHESOFHEAVEN_API FAHPerformanceProfile
 	/** Lifecycle and population data consumed by the world corpse manager. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	FAHCorpseBudget CorpseBudget;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=1))
+	int32 MaxConcurrentEQSQueries = 8;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=0.1))
+	float EQSQueryUpdateInterval = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=0.05))
+	float EQSQueryTimeout = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=8, ClampMax=128))
+	int32 EQSMaxCandidatePoints = 64;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI")
+	bool bUseSimplifiedEQSScoring = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance|AI", meta=(ClampMin=1000.0))
+	float EQSExpensiveRepositionDistance = 6500.0f;
 };
 
 USTRUCT(BlueprintType)
