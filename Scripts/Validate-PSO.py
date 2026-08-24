@@ -227,10 +227,14 @@ def numeric(value: str) -> float | None:
         return None
 
 
-def parse_ue_csv(path: Path, frame_threshold_ms: float = 50.0) -> dict[str, float]:
+def parse_ue_csv(path: Path, frame_threshold_ms: float = 50.0) -> dict[str, float | bool]:
     lines = read_text(path).splitlines()
     header_index = next((i for i, line in enumerate(lines) if "," in line and "frametime" in line.lower()), None)
-    result = {"misses": 0.0, "untracked": 0.0, "too_late": 0.0, "hitches": 0.0, "max_hitch_ms": 0.0, "max_frame_ms": 0.0, "frame_spikes": 0.0, "frames": 0.0}
+    result: dict[str, float | bool] = {
+        "misses": 0.0, "untracked": 0.0, "too_late": 0.0, "hitches": 0.0,
+        "max_hitch_ms": 0.0, "max_frame_ms": 0.0, "frame_spikes": 0.0,
+        "frames": 0.0, "has_pso_counters": False,
+    }
     if header_index is None:
         return result
     for row in csv.DictReader(lines[header_index:]):
@@ -238,10 +242,12 @@ def parse_ue_csv(path: Path, frame_threshold_ms: float = 50.0) -> dict[str, floa
         for name, value in row.items():
             if name is None or value is None:
                 continue
+            normalized = re.sub(r"[^a-z0-9]", "", name.lower())
+            if "psoprecache" in normalized and normalized.endswith(("miss", "untracked", "toolate")):
+                result["has_pso_counters"] = True
             number = numeric(value)
             if number is None:
                 continue
-            normalized = re.sub(r"[^a-z0-9]", "", name.lower())
             if (normalized.startswith("frametime") or normalized.endswith("frametime")) and "hitch" not in normalized:
                 result["max_frame_ms"] = max(result["max_frame_ms"], number)
                 if number > frame_threshold_ms:
@@ -274,7 +280,11 @@ def analyze_evidence(log_paths: Sequence[Path], csv_paths: Sequence[Path], frame
         r"Runtime (?:graphics|compute) PSO creation hitch \(([0-9.]+) msec\)", log_text, re.IGNORECASE
     )]
 
-    csv_totals = {"misses": 0.0, "untracked": 0.0, "too_late": 0.0, "hitches": 0.0, "max_hitch_ms": 0.0, "max_frame_ms": 0.0, "frame_spikes": 0.0, "frames": 0.0}
+    csv_totals: dict[str, float | bool] = {
+        "misses": 0.0, "untracked": 0.0, "too_late": 0.0, "hitches": 0.0,
+        "max_hitch_ms": 0.0, "max_frame_ms": 0.0, "frame_spikes": 0.0,
+        "frames": 0.0, "has_pso_counters": False,
+    }
     for path in csv_paths:
         if not path.is_file():
             continue
@@ -283,6 +293,7 @@ def analyze_evidence(log_paths: Sequence[Path], csv_paths: Sequence[Path], frame
             csv_totals[key] += parsed[key]
         for key in ("max_hitch_ms", "max_frame_ms"):
             csv_totals[key] = max(csv_totals[key], parsed[key])
+        csv_totals["has_pso_counters"] = bool(csv_totals["has_pso_counters"]) or bool(parsed["has_pso_counters"])
 
     return {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
@@ -290,6 +301,9 @@ def analyze_evidence(log_paths: Sequence[Path], csv_paths: Sequence[Path], frame
             "logs": [str(path) for path in log_paths if path.is_file()],
             "csv": [str(path) for path in csv_paths if path.is_file()],
             "csv_frames": round(csv_totals["frames"]),
+            "log_validation_events": len(states),
+            "csv_pso_counters_present": bool(csv_totals["has_pso_counters"]),
+            "miss_classification_complete": bool(csv_totals["has_pso_counters"]),
         },
         "pso": {
             "misses": max(log_missed, round(csv_totals["misses"])),
@@ -327,6 +341,10 @@ def write_and_check_report(args: argparse.Namespace, log_paths: Sequence[Path], 
     failures: list[str] = []
     if args.strict and not evidence["csv"]:
         failures.append("strict mode requires real CSV evidence for frame-time and PSO counters")
+    if args.strict and evidence["csv"] and not evidence["csv_frames"]:
+        failures.append("strict mode requires parsed frame-time samples in CSV evidence")
+    if args.strict and evidence["csv"] and not evidence["csv_pso_counters_present"]:
+        failures.append("strict mode requires PSOPrecache miss/untracked/too-late counter columns")
     if args.strict and pso["misses"] > args.max_misses:
         failures.append(f"PSO misses {pso['misses']} exceed {args.max_misses}")
     if args.strict and pso["untracked"] > args.max_untracked:

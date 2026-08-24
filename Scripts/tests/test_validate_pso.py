@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +34,7 @@ class ValidatePSOTests(unittest.TestCase):
             self.assertEqual(1, report["pso"]["too_late"])
             self.assertEqual(1, report["pso"]["runtime_compile_hitches"])
             self.assertEqual(24.5, report["pso"]["max_runtime_compile_hitch_ms"])
+            self.assertFalse(report["evidence"]["miss_classification_complete"])
 
     def test_csv_analysis_reports_frame_and_pso_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -51,6 +54,27 @@ class ValidatePSOTests(unittest.TestCase):
             self.assertEqual(63.0, report["frame_time"]["max_ms"])
             self.assertEqual(1, report["frame_time"]["spikes_over_threshold"])
             self.assertTrue(report["frame_time"]["threshold_exceeded"])
+            self.assertTrue(report["evidence"]["miss_classification_complete"])
+
+    def test_strict_analysis_rejects_csv_without_pso_counters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            capture = Path(directory) / "capture.csv"
+            capture.write_text("FrameTime (ms),GameThread\n16.6,8.0\n", encoding="utf-8")
+            args = SimpleNamespace(
+                report=None,
+                strict=True,
+                max_misses=0,
+                max_untracked=0,
+                max_too_late=0,
+                max_hitches=0,
+                max_frame_time_ms=50.0,
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = VALIDATE_PSO.write_and_check_report(args, [], [capture])
+            self.assertEqual(1, result)
+            self.assertIn("requires PSOPrecache", stderr.getvalue())
 
     def test_mobile_package_requires_application_and_shader_payload(self):
         with tempfile.TemporaryDirectory() as directory:

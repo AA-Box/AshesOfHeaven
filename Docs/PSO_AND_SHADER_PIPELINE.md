@@ -208,7 +208,7 @@ python3 Scripts/Validate-PSO.py analyze \
   --report Saved/PSOValidation/mac-cold/strict-report.json
 ```
 
-Strict mode fails if evidence is missing or any configured threshold is exceeded. A non-strict run always reports the measurements without turning incomplete coverage into a false success.
+Strict mode fails if evidence is missing, the CSV contains no parsed frames or `PSOPrecache` counter columns, or any configured threshold is exceeded. Reports explicitly state whether miss classification is complete. A non-strict run always reports the available measurements without turning incomplete coverage into a false success.
 
 For Android, build with `CLIENT_CONFIG=Development`, launch/install through the normal device pipeline, capture `adb logcat`, and pull the game CSV/profile directory before using `analyze`. Test Vulkan and GLES separately on devices that actually select each RHI. For iOS, use a Development package and collect the Xcode device console plus the app's CSV/profile container. Mobile collection does not enable a desktop `.spc` workflow.
 
@@ -244,7 +244,12 @@ As of the implementation on 2026-08-24:
 - The package validator finds the application and `AshesOfHeaven-Mac.utoc` in the previously staged Mac build. That package predates this implementation, so it validates the inspection path only and is not runtime performance evidence.
 - No generated stable cache is committed; Windows reports the optional cache as not present.
 - The new settings and warmup translation units compile successfully with UE 5.8.1 for Mac arm64. The full target remains blocked by unrelated pre-existing worktree errors, including the enemy validation commandlet and a corrupted/project-specific projectile header; earlier attempts also exposed pooling, encounter, and world-state errors.
-- Because an updated Development package could not be produced from the current worktree, the representative gameplay route has not been run. PSO misses, shader-compilation hitches, and frame-time spikes therefore remain **not measured**, not zero.
+- A live UE 5.8.1 MacEditor MCP probe verified the active policy: `r.PSOPrecaching=1`, component precaching enabled, resource precaching disabled, proxy creation strategy `1`, `r.ShaderPipelineCache.Enabled=1`, startup mode `2`, and Mac `ExcludePrecachePSO=0`. The Editor build did not register `r.PSOPrecache.Validation`, so this probe cannot classify PSO misses or too-late precaches.
+- The Asset Registry loaded all 15 configured warmup assets. PIE entered `/Game/ChapterOne/L_ChapterOne_Greybox` at the Erebus opening battle, opened the front-end/HUD path, reported 174 presentation assets with no missing presentation assets or failed mesh/VFX loads, and completed the bounded preload for 15 assets. The logged `pipeline precompiles remaining=0` is the pipeline-cache queue state at that instant, not proof that every automatic PSO was ready.
+- PIE startup took 0.462 seconds. On the first rendered frames, the process-wide hitch counter reached 150 graphics and 0 compute PSO creation hitches, with 0 reported as precached. Eighteen verbose hitch records ranged from 25.13 ms to 77.10 ms and primarily identified Bloom, Local Exposure, Lumen card capture, and non-Nanite Virtual Shadow Map work. Each record had precache status `Unknown`; they are evidence of residual editor hitches, not a valid miss count.
+- This was not a clean packaged benchmark: the same editor process had earlier Zen DDC `507 Insufficient Storage` failures, no CSV or Unreal Insights trace was captured, the counter is process-wide, and the firefight/grenade/death/Manticore route was not driven. An updated Development package still cannot be produced from the current unrelated dirty-worktree compile failures. Packaged PSO misses and representative frame-time spikes therefore remain **not measured**, not zero.
+
+Before release sign-off, restart with a writable DDC and enough disk space, build an updated Development package, and run the complete representative route through `Validate-PSO.py run`. Archive its JSON, CSV, trace, and log evidence, then repeat the run warm to distinguish unavoidable driver-cache cold work from repeatable misses. Do not add a Mac, Vulkan, GLES, or Metal bundle solely from this Editor probe.
 
 Update this section (or attach the generated JSON reports to the release evidence) after each target's representative capture.
 
