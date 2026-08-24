@@ -1046,9 +1046,10 @@ bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
 void AAHChapterOneDirector::BuildErebusZoneEffects()
 {
 	// Every sprite system here is an authored NS_Erebus_* (Fountain-template
-	// duplicate with re-authored module parameters and soft unlit sprite
-	// materials). The factory NS_AshField/NS_SmokeColumn/NS_FireLarge fountains
-	// rendered as giant opaque square-sprite clouds and are no longer spawned.
+	// duplicate with re-authored module parameters and soft age-driven sprite
+	// materials: additive unlit fire, lit translucent smoke). The factory
+	// NS_AshField/NS_SmokeColumn/NS_FireLarge fountains rendered as giant opaque
+	// square-sprite clouds and are no longer spawned.
 	// Ambient airborne ash over the corridor (SpawnVisualDust spawned the factory
 	// NS_DustSheet fountain — giant opaque square sprites — and is gone for good).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_AshAmbient.NS_Erebus_AshAmbient"), FVector(-400.0f, 0.0f, 420.0f), FVector(1.0f));
@@ -1057,6 +1058,9 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	// Near fires, each on an authored visible source (barrel, crater, wreck, pipe).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-1120.0f, -560.0f, 30.0f), FVector(1.0f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-1120.0f, -560.0f, 50.0f), FVector(1.0f));
+	// Every fire gets its own smoke: a flame with no column above it reads as a
+	// decal, not combustion. These two were the only fires without one.
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-1120.0f, -560.0f, 60.0f), FVector(0.9f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-650.0f, -560.0f, -42.0f), FVector(0.9f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-650.0f, -560.0f, -28.0f), FVector(1.1f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-650.0f, -560.0f, -18.0f), FVector(1.0f));
@@ -1069,6 +1073,7 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	// route destination carries its own light pool (visible source: GateBarrel).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(3300.0f, 620.0f, 90.0f), FVector(1.2f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(3300.0f, 620.0f, 110.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(3300.0f, 620.0f, 120.0f), FVector(1.0f));
 
 	// Phase 4.7 hero wrecks: the crashed gunship burns, the tank and truck smolder.
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(2120.0f, -520.0f, 40.0f), FVector(1.1f));

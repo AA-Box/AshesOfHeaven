@@ -124,3 +124,33 @@ Durable lessons only. Each entry prevents a repeated mistake.
   editor's CrashReportClient inherits BOTH the MCP port 8000 AND UDP 6766 —
   pkill it before every relaunch, and approve the macOS firewall prompt for
   the listening python binary once.
+- A sprite whose look does not change over its own life cannot read as fire or
+  smoke, no matter how the emitter is tuned. Drive the sprite master from
+  `ParticleRelativeTime`: an erosion threshold that climbs with age (the puff
+  burns away from its edges), a falloff radius that shrinks for flame and grows
+  for smoke (size-over-life without adding a Niagara module), a colour ramp, and
+  an alpha fade-in/out. Erosion must FADE IN with age too — eroding from birth
+  gives a swarm of identical flakes instead of a flame with a dense core.
+- Fire density is spawn rate, not sprite size. 70 sprites/s against half-second
+  lives leaves ~35 particles spread over 1.5m, which reads as orange popcorn with
+  gaps; ~260/s is where the licks join into one body.
+- One isotropic fbm can only make round puffs. Bake purpose-built channels
+  instead (`T_AH_VFXNoise`: R = vertically stretched flame noise, G = two-scale
+  Worley billows for smoke, B = fine breakup) and squash the sprite's distance
+  metric in X so each flame sprite is a vertical lick rather than a disc.
+- Unlit smoke is a flat cutout. Smoke sprites want DefaultLit translucent with
+  `TLM_VolumetricNonDirectional` so the plume takes the fires and the sky — but
+  its ALBEDO has to stay low (~0.08 soot to ~0.26 ash). Under this scene's bright
+  inscattering a 0.5 albedo turns a distant column into a white egg brighter than
+  the sky behind it.
+- Overlapping translucent sprites accumulate alpha: 40 spawns/s of 2000uu smoke
+  over a 13s life is 520 stacked quads on one column and reads as a solid mass.
+  Plumes need particle depth (fewer, longer-lived, lower alpha), not opacity.
+- `DepthFade` on every sprite master. The razor line where a billboard
+  intersects the ground or a wreck is the loudest "these are particles" tell,
+  and it costs one node.
+- `MaterialEditingLibrary.connect_material_expressions` matches the DESTINATION
+  pin by name; single-input nodes (`Saturate`, `OneMinus`) expose an UNNAMED
+  input, so pass `""`, not `"Input"`. Math nodes' `ConstA`/`ConstB`/
+  `ConstExponent`/`ConstAlpha` defaults remove most constant nodes from an
+  authored graph.

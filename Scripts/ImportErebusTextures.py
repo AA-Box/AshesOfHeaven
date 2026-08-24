@@ -43,5 +43,5 @@ for filename in sorted(os.listdir(SRC)):
     imported.append(name)
 
 unreal.log("[ErebusTex] imported %d textures: %s" % (len(imported), ", ".join(imported)))
-if len(imported) != 14:
-    unreal.log_error("[ErebusTex] expected 14 textures, got %d" % len(imported))
+if len(imported) != 15:
+    unreal.log_error("[ErebusTex] expected 15 textures, got %d" % len(imported))

@@ -9,7 +9,9 @@ import numpy as np
 import zlib, struct, os, sys
 
 S = 1024
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "textures")
+# Write straight into the directory ImportErebusTextures.py reads, so a re-bake is
+# immediately importable instead of needing a hand copy.
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Saved", "ErebusTextureSource")
 os.makedirs(OUT, exist_ok=True)
 rng = np.random.default_rng(46)
 
@@ -54,6 +56,33 @@ def fbm(base_freq, octaves, seed, gain=0.5, lac=2.0):
         total += amp * tile_noise(int(freq), seed + o * 101)
         norm += amp
         amp *= gain; freq *= lac
+    return total / norm
+
+
+def tile_noise_xy(fx, fy, seed):
+    """Tileable value noise on a NON-square grid: fewer cells on one axis stretches
+    the features along it. Vertically stretched noise is what turns a round popcorn
+    puff into a flame tongue."""
+    r = np.random.default_rng(seed)
+    grid = r.random((fy, fx)).astype(np.float32)
+    ys = np.linspace(0, fy, S, endpoint=False)
+    xs = np.linspace(0, fx, S, endpoint=False)
+    y0 = np.floor(ys).astype(int); x0 = np.floor(xs).astype(int)
+    ty = (ys - y0)[:, None]; tx = (xs - x0)[None, :]
+    ty = ty * ty * (3 - 2 * ty); tx = tx * tx * (3 - 2 * tx)
+    y1 = (y0 + 1) % fy; x1 = (x0 + 1) % fx
+    g00 = grid[np.ix_(y0, x0)]; g01 = grid[np.ix_(y0, x1)]
+    g10 = grid[np.ix_(y1, x0)]; g11 = grid[np.ix_(y1, x1)]
+    return g00 * (1 - ty) * (1 - tx) + g01 * (1 - ty) * tx + g10 * ty * (1 - tx) + g11 * ty * tx
+
+
+def fbm_xy(fx, fy, octaves, seed, gain=0.5):
+    total = np.zeros((S, S), np.float32)
+    amp, norm = 1.0, 0.0
+    for o in range(octaves):
+        total += amp * tile_noise_xy(fx * 2 ** o, fy * 2 ** o, seed + o * 101)
+        norm += amp
+        amp *= gain
     return total / norm
 
 
@@ -201,12 +230,40 @@ def bake_masks():
     write_png(f"{OUT}/T_Erebus_Erosion.png", to_u8(ero))
 
 
+# --- fire/smoke sprite noise: three purpose-built channels in one texture ------
+def bake_vfx_noise():
+    """T_AH_VFXNoise: R = flame, G = smoke billow, B = fine breakup.
+
+    One isotropic soft fbm (the old T_Erebus_Erosion) can only ever produce round
+    popcorn blobs, which is exactly what the flames read as. Fire needs noise
+    stretched along the rise axis; smoke needs clumped cellular billows.
+    """
+    # R — flame: stretched 10:3 so features are tall licks, warped so they curl,
+    # then hard contrast so the sprite erodes into separated tongues, not a haze.
+    flame = fbm_xy(13, 4, 5, 610, gain=0.55)
+    flame = warp(flame, 26, 615)
+    flame = np.clip((flame - 0.34) * 2.6, 0, 1) ** 0.85
+
+    # G — billow: two Worley scales so puffs are not one uniform bubble grid, warped
+    # hard so the cell lattice never reads through, fbm to soften.
+    cell = 0.62 * (1.0 - np.clip(worley(5, 620) * 1.10, 0, 1)) \
+         + 0.38 * (1.0 - np.clip(worley(11, 622) * 1.25, 0, 1))
+    billow = 0.62 * warp(cell, 70, 624) + 0.38 * fbm(5, 4, 625, gain=0.6)
+    billow = np.clip((warp(billow, 40, 630) - 0.18) * 1.65, 0, 1)
+
+    # B — detail: high frequency, sampled on the second faster-panning UV set.
+    detail = np.clip((fbm(18, 4, 640, gain=0.55) - 0.30) * 1.9, 0, 1)
+
+    rgb = np.stack([to_u8(flame), to_u8(billow), to_u8(detail)], axis=-1)
+    write_png(f"{OUT}/T_AH_VFXNoise.png", rgb)
+
+
 if __name__ == "__main__":
-    bake_concrete(); bake_metal(); bake_mud(); bake_asphalt(); bake_masks()
+    bake_concrete(); bake_metal(); bake_mud(); bake_asphalt(); bake_masks(); bake_vfx_noise()
     # self-check: every output exists, is tileable-sized, non-degenerate
     import glob
     files = sorted(glob.glob(OUT + "/*.png"))
-    assert len(files) == 14, files
+    assert len(files) == 15, files
     for f in files:
         assert os.path.getsize(f) > 20000, (f, os.path.getsize(f))
     print("OK", len(files), "textures")
