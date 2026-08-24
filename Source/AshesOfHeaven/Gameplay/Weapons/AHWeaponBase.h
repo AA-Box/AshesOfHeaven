@@ -35,6 +35,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon")
 	FText DisplayName = FText::FromString(TEXT("M91 REVENANT"));
 
+	/** Prevents the carrying corpse from cleanup until this authored pickup is looted. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon")
+	bool bImportantCorpseLoot = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weapon", meta=(ClampMin=1))
 	int32 MagazineCapacity = 36;
 

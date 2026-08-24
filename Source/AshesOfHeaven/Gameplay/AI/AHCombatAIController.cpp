@@ -26,6 +26,8 @@ AAHCombatAIController::AAHCombatAIController()
 void AAHCombatAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	SetActorTickEnabled(true);
+	AIPerception->Activate();
 	Combatant = Cast<AAHCombatantCharacter>(InPawn);
 	if (Combatant.IsValid())
 	{
@@ -37,6 +39,8 @@ void AAHCombatAIController::OnPossess(APawn* InPawn)
 void AAHCombatAIController::HandlePawnDeath()
 {
 	StopMovement();
+	SetActorTickEnabled(false);
+	AIPerception->Deactivate();
 	if (Combatant.IsValid() && Combatant->GetCombatComponent())
 	{
 		Combatant->GetCombatComponent()->StopFire();

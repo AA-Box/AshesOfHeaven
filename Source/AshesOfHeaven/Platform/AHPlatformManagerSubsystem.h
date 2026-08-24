@@ -46,6 +46,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Platform")
 	const FAHDeviceProfile& GetDeviceProfile() const { return DeviceProfile; }
 
+	/** Resolves the configured corpse profile without platform macro checks. */
+	static FAHCorpseBudget SelectCorpseBudget(bool bIsMobile, bool bHighEnd);
+
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Platform")
 	EAHQualityPreset GetActiveQualityPreset() const { return ActiveQualityPreset; }
 

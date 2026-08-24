@@ -13,6 +13,7 @@
 #include "Engine/GameInstance.h"
 #include "GameFramework/GameUserSettings.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformMemory.h"
 #include "HAL/PlatformProperties.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CoreDelegates.h"
@@ -51,13 +52,15 @@ void UAHPlatformManagerSubsystem::Initialize(FSubsystemCollectionBase& Collectio
 	const UAHPlatformSettings* Settings = UAHPlatformSettings::Get();
 	if (Settings->bLogPlatformProfileAtStartup)
 	{
-		UE_LOG(LogAshesOfHeaven, Log, TEXT("Platform profile: %s | device=%s %s | quality=%s | target=%0.f FPS | active combatants=%d"),
+		UE_LOG(LogAshesOfHeaven, Log, TEXT("Platform profile: %s | device=%s %s | quality=%s | target=%0.f FPS | active combatants=%d | corpses=%d/%d"),
 			*Capabilities.PlatformName,
 			*DeviceProfile.DeviceMake,
 			*DeviceProfile.DeviceModel,
 			*UEnum::GetValueAsString(ActiveQualityPreset),
 			PerformanceProfile.TargetFrameRate,
-			PerformanceProfile.MaxActiveCombatants);
+			PerformanceProfile.MaxActiveCombatants,
+			PerformanceProfile.CorpseBudget.SoftLimit,
+			PerformanceProfile.CorpseBudget.HardLimit);
 	}
 }
 
@@ -117,7 +120,22 @@ void UAHPlatformManagerSubsystem::DetectPlatform()
 	DeviceProfile.DeviceProfileName = Capabilities.bIsMobile ? TEXT("Mobile") : TEXT("Desktop");
 	DeviceProfile.DeviceMake = FPlatformMisc::GetDeviceMakeAndModel();
 	DeviceProfile.DeviceModel = TEXT("See device make/model");
-	DeviceProfile.bHighEnd = !Capabilities.bIsMobile;
+	const uint64 TotalPhysicalBytes = FPlatformMemory::GetStats().TotalPhysical;
+	DeviceProfile.ApproximateMemoryGB = TotalPhysicalBytes > 0
+		? FMath::Max(1, FMath::RoundToInt(static_cast<double>(TotalPhysicalBytes) / (1024.0 * 1024.0 * 1024.0)))
+		: 0;
+	DeviceProfile.bHighEnd = !Capabilities.bIsMobile
+		|| DeviceProfile.ApproximateMemoryGB >= Settings->HighEndMobileMemoryThresholdGB;
+}
+
+FAHCorpseBudget UAHPlatformManagerSubsystem::SelectCorpseBudget(bool bIsMobile, bool bHighEnd)
+{
+	const UAHPlatformSettings* Settings = UAHPlatformSettings::Get();
+	FAHCorpseBudget Result = !bIsMobile
+		? Settings->DesktopCorpseBudget
+		: (bHighEnd ? Settings->HighEndMobileCorpseBudget : Settings->BaselineMobileCorpseBudget);
+	Result.Sanitize();
+	return Result;
 }
 
 EAHQualityPreset UAHPlatformManagerSubsystem::ResolveQualityPreset(EAHQualityPreset Requested) const
@@ -237,6 +255,7 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 	}
 
 	PerformanceProfile = FAHPerformanceProfile();
+	PerformanceProfile.CorpseBudget = SelectCorpseBudget(Capabilities.bIsMobile, DeviceProfile.bHighEnd);
 	if (Capabilities.bIsMobile)
 	{
 		PerformanceProfile.TargetFrameRate = ActiveMobilePerformanceMode == EAHMobilePerformanceMode::Performance ? 30.0f : 60.0f;

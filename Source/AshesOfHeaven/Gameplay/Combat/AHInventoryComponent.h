@@ -48,6 +48,7 @@ public:
 
 	void SetSavedAmmo(const FAHAmmoState& Ammo);
 	FAHAmmoState GetSavedAmmo() const;
+	void DestroyWeaponsForCorpseCleanup();
 
 private:
 	UPROPERTY(Transient)

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Gameplay/Combat/AHCorpseLifecycleTypes.h"
 #include "AHPlatformTypes.generated.h"
 
 /** The platform families that share the Ashes of Heaven gameplay code. */
@@ -192,6 +193,10 @@ struct ASHESOFHEAVEN_API FAHPerformanceProfile
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	int32 ThermalMitigationAfterMinutes = 10;
+
+	/** Lifecycle and population data consumed by the world corpse manager. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
+	FAHCorpseBudget CorpseBudget;
 };
 
 USTRUCT(BlueprintType)

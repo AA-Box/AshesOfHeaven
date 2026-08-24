@@ -15,6 +15,7 @@ class AAHWeaponBase;
 class USoundBase;
 class UMaterialInterface;
 class UPointLightComponent;
+class UAHCorpseManagerSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FAHCombatDamageFeedbackDelegate, float, Damage, bool, bHeadshot, bool, bArmorHit, bool, bArmorBroken, float, DirectionAngle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHCombatantDeathDelegate);
@@ -71,6 +72,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	bool bDestroyOnDeath = true;
 
+	/** Ordinary combat bodies can be removed under platform-budget pressure. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bAllowCorpseCleanup = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bPersistentCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bNarrativeCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bObjectiveCriticalCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bScriptedCivilianCorpse = false;
+
+	/** Higher values make an otherwise ordinary body a later cleanup choice. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse", meta=(ClampMin=0.0, ClampMax=1.0))
+	float CorpseImportance = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TObjectPtr<USoundBase> HurtSound;
 
@@ -102,6 +123,26 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Combat")
 	bool IsCombatantDead() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool AllowsCorpseCleanup() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsPersistentCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsNarrativeCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsObjectiveCriticalCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsScriptedCivilianCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool HasUnlootedImportantWeapon() const;
+
+	float GetCorpseImportance() const { return FMath::Clamp(CorpseImportance, 0.0f, 1.0f); }
 
 	FVector GetWeaponTraceOrigin() const;
 	virtual FVector GetWeaponTargetLocation() const;
@@ -150,6 +191,11 @@ protected:
 
 	void ApplyFactionAppearance();
 	void StartRagdoll();
+	bool ShouldManageCorpseLifecycle() const;
+	void PrepareForCorpseManagement();
+	void SettleCorpsePhysics();
+	void ApplyReducedCorpseCost();
+	void PrepareForCorpseRemoval();
 
 	UFUNCTION()
 	void HandleHealthDeath();
@@ -160,4 +206,6 @@ protected:
 	TWeakObjectPtr<AActor> CombatTarget;
 	bool bAimingDownSights = false;
 	float AimSpreadPenaltyDegrees = 0.0f;
+
+	friend class UAHCorpseManagerSubsystem;
 };

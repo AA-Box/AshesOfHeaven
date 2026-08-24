@@ -3,6 +3,7 @@
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
+#include "Gameplay/Combat/AHCorpseManagerSubsystem.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
@@ -20,6 +21,7 @@
 #include "Engine/DamageEvents.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "TimerManager.h"
 
 AAHCombatantCharacter::AAHCombatantCharacter()
 {
@@ -169,6 +171,141 @@ void AAHCombatantCharacter::StartRagdoll()
 	Body->SetAllBodiesBelowSimulatePhysics(TEXT("pelvis"), true, true);
 	Body->SetSimulatePhysics(true);
 	Body->WakeAllRigidBodies();
+}
+
+bool AAHCombatantCharacter::AllowsCorpseCleanup() const
+{
+	return (bDestroyOnDeath && bAllowCorpseCleanup) || ActorHasTag(FAHCorpseTags::AllowCleanup);
+}
+
+bool AAHCombatantCharacter::IsPersistentCorpse() const
+{
+	return bPersistentCorpse || ActorHasTag(FAHCorpseTags::Persistent);
+}
+
+bool AAHCombatantCharacter::IsNarrativeCorpse() const
+{
+	return bNarrativeCorpse || ActorHasTag(FAHCorpseTags::Narrative);
+}
+
+bool AAHCombatantCharacter::IsObjectiveCriticalCorpse() const
+{
+	return bObjectiveCriticalCorpse || ActorHasTag(FAHCorpseTags::ObjectiveCritical);
+}
+
+bool AAHCombatantCharacter::IsScriptedCivilianCorpse() const
+{
+	return bScriptedCivilianCorpse || ActorHasTag(FAHCorpseTags::ScriptedCivilian);
+}
+
+bool AAHCombatantCharacter::HasUnlootedImportantWeapon() const
+{
+	const AAHWeaponBase* Weapon = GetLootableWeapon();
+	return Weapon && (Weapon->bImportantCorpseLoot || ActorHasTag(FAHCorpseTags::Lootable));
+}
+
+bool AAHCombatantCharacter::ShouldManageCorpseLifecycle() const
+{
+	return bDestroyOnDeath
+		|| bPersistentCorpse
+		|| bNarrativeCorpse
+		|| bObjectiveCriticalCorpse
+		|| bScriptedCivilianCorpse
+		|| ActorHasTag(FAHCorpseTags::Persistent)
+		|| ActorHasTag(FAHCorpseTags::Narrative)
+		|| ActorHasTag(FAHCorpseTags::ObjectiveCritical)
+		|| ActorHasTag(FAHCorpseTags::ScriptedCivilian)
+		|| ActorHasTag(FAHCorpseTags::AllowCleanup);
+}
+
+void AAHCombatantCharacter::PrepareForCorpseManagement()
+{
+	SetActorTickEnabled(false);
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->Deactivate();
+		Movement->SetComponentTickEnabled(false);
+	}
+	auto DisableComponentTick = [](UActorComponent* Component)
+	{
+		if (Component)
+		{
+			Component->SetComponentTickEnabled(false);
+		}
+	};
+	DisableComponentTick(HealthComponent.Get());
+	DisableComponentTick(ArmorComponent.Get());
+	DisableComponentTick(CombatComponent.Get());
+	DisableComponentTick(InteractionComponent.Get());
+	DisableComponentTick(InventoryComponent.Get());
+	DisableComponentTick(BodyFillLight.Get());
+	if (BodyFillLight)
+	{
+		BodyFillLight->SetVisibility(false);
+	}
+	if (InventoryComponent)
+	{
+		for (AAHWeaponBase* Weapon : InventoryComponent->GetWeapons())
+		{
+			if (IsValid(Weapon))
+			{
+				Weapon->StopFire();
+				Weapon->SetActorTickEnabled(false);
+			}
+		}
+	}
+}
+
+void AAHCombatantCharacter::SettleCorpsePhysics()
+{
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->PutAllRigidBodiesToSleep();
+	}
+}
+
+void AAHCombatantCharacter::ApplyReducedCorpseCost()
+{
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body)
+	{
+		return;
+	}
+
+	// Pause the last physics-authored component-space pose before removing it from the solver.
+	// The mesh remains visibility-queryable for targeting and loot, but no longer animates or
+	// maintains a set of simulated rigid bodies.
+	Body->PutAllRigidBodiesToSleep();
+	Body->bPauseAnims = true;
+	Body->SetEnableGravity(false);
+	Body->SetAllBodiesSimulatePhysics(false);
+	Body->SetSimulatePhysics(false);
+	Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	Body->SetComponentTickEnabled(false);
+}
+
+void AAHCombatantCharacter::PrepareForCorpseRemoval()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->PutAllRigidBodiesToSleep();
+		Body->SetAllBodiesSimulatePhysics(false);
+		Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (InventoryComponent)
+	{
+		InventoryComponent->DestroyWeaponsForCorpseCleanup();
+	}
+	OnDamageFeedback.Clear();
+	OnCombatantDeath.Clear();
+	OnWeaponShot.Clear();
 }
 
 AAHWeaponBase* AAHCombatantCharacter::GetLootableWeapon() const
@@ -384,11 +521,6 @@ void AAHCombatantCharacter::OnDeathStarted()
 	// Without this the body keeps standing in its idle loop and a kill reads as a bug.
 	StartRagdoll();
 	OnCombatantDeath.Broadcast();
-	if (bDestroyOnDeath)
-	{
-		// Three seconds cut the corpse away before it finished falling.
-		SetLifeSpan(CorpseLifeSpan);
-	}
 	if (DeathSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
@@ -398,6 +530,19 @@ void AAHCombatantCharacter::OnDeathStarted()
 		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
 		{
 			Audio->PlayWorldCue(EAHAudioCue::Death, GetActorLocation(), 0.8f);
+		}
+	}
+
+	if (ShouldManageCorpseLifecycle())
+	{
+		if (UAHCorpseManagerSubsystem* CorpseManager = GetWorld() ? GetWorld()->GetSubsystem<UAHCorpseManagerSubsystem>() : nullptr)
+		{
+			CorpseManager->RegisterCorpse(this);
+		}
+		else if (bDestroyOnDeath)
+		{
+			// Safe fallback for an unsupported world type; normal gameplay always uses the manager.
+			SetLifeSpan(CorpseLifeSpan);
 		}
 	}
 }

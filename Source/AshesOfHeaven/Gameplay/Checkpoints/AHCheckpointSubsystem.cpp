@@ -4,6 +4,7 @@
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Combat/AHCorpseManagerSubsystem.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
@@ -188,6 +189,10 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 	if (!Player || !Objectives || !Chapter)
 	{
 		return false;
+	}
+	if (UAHCorpseManagerSubsystem* CorpseManager = GetWorld()->GetSubsystem<UAHCorpseManagerSubsystem>())
+	{
+		CorpseManager->ResetOrdinaryCorpsesForCheckpoint();
 	}
 
 	Player->SetActorLocationAndRotation(RuntimeState.PlayerLocation, RuntimeState.PlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
