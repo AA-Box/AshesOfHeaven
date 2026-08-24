@@ -86,7 +86,7 @@ FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candi
 		// Compatibility-only state used by old editor/commandlet invariants. It is not a
 		// reachable Level One runtime state, but preserving it avoids rewriting historical
 		// tests just because the campaign boundary moved.
-		Normalized.ObjectiveIndex = Candidate.ObjectiveIndex;
+		Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
 		Normalized.bChapterComplete = false;
 		return Normalized;
 	}

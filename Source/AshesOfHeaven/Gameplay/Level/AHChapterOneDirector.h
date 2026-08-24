@@ -261,8 +261,6 @@ protected:
 	bool bOpeningSequenceStarted = false;
 	bool bOrderSequenceStarted = false;
 	bool bSaelSequenceStarted = false;
-	bool bMayaSceneStarted = false;
-	bool bNysaSequenceStarted = false;
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;

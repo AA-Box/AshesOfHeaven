@@ -66,6 +66,12 @@ Do not add a parallel runtime shader/material format, baked flat-color replaceme
 
 This avoids duplicating progression logic in a second director while letting the current Chapter One gameplay graph keep its tested triggers, encounters, checkpoints, Manticore, terminal, spatial recovery, HUD, and save integration.
 
+Three rules keep that integration from failing silently:
+
+- **Binding happens at `OnWorldBeginPlay`.** `UAHDialogueSubsystem` is a world subsystem and `UAHChapterSubsystem` lives on the game instance, which is not guaranteed to be attached when world subsystems initialize. `UWorld::BeginPlay` runs world-subsystem begin-play before any actor's `BeginPlay`, so the stage delegate is always bound before the director starts its first stage.
+- **Stage-entry beats queue, they are never dropped.** A stage change that lands while a director sequence is talking is held in `PendingStageEntries` and played when the channel frees. The one-shot guard still prevents a replay.
+- **The destruction hold is derived, not hand-fitted.** `AHLevelOneNarrative::GetErebusDestructionHoldSeconds()` is the finale sequence's own length plus reading margin (7 s floor), and the director's `FinishDestructionSequence` timer uses it. Lengthening a finale line can no longer cut the closing Nysa transmission.
+
 ## Save migration
 
 Level One now has 12 gameplay objectives. Save version 7 migrates any old Level One state already in `TenYearsLater` through `StarsDisappearing` to `ChapterComplete` rather than replaying those deprecated epilogue stages.
@@ -86,3 +92,16 @@ A Level One implementation is not considered complete unless all of these hold i
 - required Unreal materials resolve in editor/commandlet automation;
 - no visible Engine cube/checker material is used as normal runtime presentation;
 - Mac packaged build and automated Level One narrative/progression/material tests pass before merge.
+
+## Verification
+
+`Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than four `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
+
+`.github/workflows/cross-platform.yml` runs `source-validation`, `automation-tests` and `macos-shipping` on every pull request; the Windows/Android/iOS packages stay `workflow_dispatch`. `automation-tests` and `macos-shipping` need the self-hosted UE5 macOS runner and the `UNREAL_ENGINE_MAC_ROOT` repository variable, so treat them as required status checks — a repository without that runner configured skips them, and a skipped job is not a passing gate.
+
+The Level One contract tests are:
+
+- `AshesOfHeaven.LevelOne.NarrativeContract` — canonical lines, the exact casualty count, the Nysa closer, and the destruction-hold-covers-the-finale invariant.
+- `AshesOfHeaven.LevelOne.ProgressionContract` — 12 objectives, stage/objective mapping, pre-v7 epilogue migration, and objective-index clamping.
+- `AshesOfHeaven.LevelOne.StageDialogueQueue` — a stage change landing mid-sequence queues its beat and plays it when the channel frees.
+- `AshesOfHeaven.LevelOne.UnrealMaterialContract` — the eight required material instances resolve. `Scripts/Validate-CrossPlatform.sh` also asserts those files exist, so a deletion is caught on any runner.
