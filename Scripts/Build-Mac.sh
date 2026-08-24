@@ -85,6 +85,25 @@ fi
 "${UBT_BUILD[@]}" AshesOfHeaven Mac "$CLIENT_CONFIG" "-project=$PROJECT_FILE" -WaitMutex
 "$UAT" "${UAT_ARGS[@]}"
 
+# Stale-client guard. BuildCookRun -build on its own built only the editor, so the cook happily
+# staged a client binary from a previous run and the acceptance capture measured the previous
+# build's code - which is worse than a failed build, because it looks like a result. The compiled
+# client must be newer than the newest source file it was built from.
+CLIENT_BINARY="$PROJECT_ROOT/Binaries/Mac/AshesOfHeaven"
+if [[ ! -f "$CLIENT_BINARY" ]]; then
+  echo "ERROR: client binary missing at $CLIENT_BINARY; the build phase did not produce a client." >&2
+  exit 2
+fi
+NEWEST_SOURCE_TIME="$(find "$PROJECT_ROOT/Source" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.cs' \) -exec stat -f '%m' {} + | sort -rn | head -1)"
+CLIENT_BUILD_TIME="$(stat -f '%m' "$CLIENT_BINARY")"
+if (( CLIENT_BUILD_TIME < NEWEST_SOURCE_TIME )); then
+  echo "ERROR: client binary is older than the newest source file." >&2
+  echo "       binary  $(date -r "$CLIENT_BUILD_TIME")" >&2
+  echo "       source  $(date -r "$NEWEST_SOURCE_TIME")" >&2
+  echo "       The cook would stage a stale client. Rebuild before packaging." >&2
+  exit 2
+fi
+
 echo "Mac output: $OUTPUT_ROOT"
 # Take the app from the staging directory, not from -archive: UAT's Mac archive step
 # copies Binaries/Mac/<Target>.app, whose Contents/UE can hold cooked content from an
@@ -103,6 +122,10 @@ fi
 # Replace rather than ditto-merge, so removed files never survive into the next package.
 rm -rf "$FINAL_APP" "$OUTPUT_ROOT/AshesOfHeaven-Mac-$CLIENT_CONFIG.app"
 ditto "$STAGED_APP" "$FINAL_APP"
+if ! cmp -s "$STAGED_APP/Contents/MacOS/AshesOfHeaven" "$FINAL_APP/Contents/MacOS/AshesOfHeaven"; then
+  echo "ERROR: archived client differs from the staged client; the archive is not this cook." >&2
+  exit 2
+fi
 "${PSO_VALIDATOR[@]}" package --platform mac \
   --staged-root "$PROJECT_ROOT/Saved/StagedBuilds/Mac" \
   --archive-root "$OUTPUT_ROOT"
