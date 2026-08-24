@@ -66,8 +66,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UPointLightComponent> BodyFillLight;
 
+	/** Candelas. Derived from the scene key rather than picked: the fill sits ~0.5m off the body,
+	 *  so E = I/d^2 means 110cd delivered ~440 lux to a body standing in a street lit by a 32 lux
+	 *  sun - ten to thirty times its surroundings, which is why bodies read as white cut-outs at
+	 *  any albedo. Dropping the body's albedo from 0.42 to 0.12 barely moved it (bench p90 0.76 ->
+	 *  0.62), which is what proved the light and not the material was the dominant term.
+	 *  15cd puts the fill in the same order as the scene key. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance", meta=(ClampMin=0.0))
-	float BodyFillIntensity = 110.0f;
+	float BodyFillIntensity = 15.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	EAHFaction Faction = EAHFaction::Neutral;
@@ -200,6 +206,14 @@ public:
 	UAHInteractionComponent* GetInteractionComponent() const { return InteractionComponent; }
 	UAHInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
+#if !UE_BUILD_SHIPPING
+	/** Development only. Resolves the body presentation synchronously and runs the normal faction
+	 *  material path, for the -ArtTarget=Combatant bench. Combatants normally receive their mesh
+	 *  from the enemy-asset streaming subsystem when their encounter activates, so a body spawned
+	 *  outside an encounter never gets one and cannot be scored. Not used by gameplay. */
+	void DebugForcePresentationSync();
+#endif
+
 protected:
 	/** Per-slot faction skin, applied in BeginPlay once the subclass has set Faction.
 	 * These are lit character materials on purpose: the environment materials that were here
@@ -207,14 +221,14 @@ protected:
 	 * one is a flat silhouette with no face, no armour and no readable pose. */
 	UPROPERTY(EditDefaultsOnly, Category="Appearance")
 	TArray<TSoftObjectPtr<UMaterialInterface>> HumanBodyMaterials {
-		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"))),
-		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_02_New.MI_Manny_02_New")))
+		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"))),
+		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal")))
 	};
 
 	UPROPERTY(EditDefaultsOnly, Category="Appearance")
 	TArray<TSoftObjectPtr<UMaterialInterface>> VeilBodyMaterials {
-		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Materials/Quinn/MI_Quinn_01.MI_Quinn_01"))),
-		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Materials/Quinn/MI_Quinn_02.MI_Quinn_02")))
+		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"))),
+		TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian")))
 	};
 
 	/** Seconds a ragdolled corpse stays in the world before cleanup. Long enough to read as a kill. */

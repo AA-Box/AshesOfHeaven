@@ -65,7 +65,9 @@ POSES = {
     "shot1_route_entry": (-1800, -120, 300, -3, 0),
     "shot2_defensive_line": (600, -120, 290, -2, 0),
     "shot3_mid_route": (2600, -120, 320, -1, 0),
-    "shot4_elevated": (-1000, -120, 1400, -16, 0),
+    # shot4_elevated was dropped: its pose asks for Z=1400 but the character falls, so the camera
+    # landed at 436 one run and 685 the next. A vantage that moves between passes cannot be a
+    # comparison shot.
     # The Cathedral check has to be a NORMAL viewpoint, not an art camera: this is the actual
     # Objective 01 spawn (X=-1400) at standing eye height with the camera level, which is what a
     # player sees on the first frame they get control.
@@ -83,6 +85,9 @@ EXTRA_TARGETS = {
     # sees only edge-on. This pose stands on that line and looks straight down it, so there is a
     # lit body large enough in frame to actually score the material and the fill.
     "shot7_battle_closeup": ("Battle", (500, -480, 290, 0, 0)),
+    # Deterministic character bench: one body, fixed spot, fixed camera, clear sight line, real
+    # Erebus lighting. The target sets its own camera, so no -ArtCam.
+    "shot8_combatant_bench": ("Combatant", None),
 }
 # Narrow window on purpose. Too short and the bodies have not reached the pose; at 30s the
 # firefight is over and every candidate is a corpse lying under the floor at Z=-32, which measures
@@ -99,6 +104,9 @@ SETTLE_SECONDS = 16
 LEGACY_REGION_POINTS = (95, 95, 1300, 800)
 
 CRUSHED_V = 0.08
+# "Blown" in 8-bit terms: V >= 250/255. The white-mannequin complaint is about this number, not
+# about the median.
+CLIP_V = 250.0 / 255.0
 # MI_Erebus_Rust sits at hue 16.4 and MI_Erebus_PaintRed at 3.0; the fire VFX are yellower. A 15
 # degree split filed the rust material itself under "fire" and is why rust% read 0.000 for three
 # passes while the material was in frame and saturated.
@@ -198,13 +206,15 @@ def hsv_metrics(image, color_v: float) -> dict:
     if total == 0:
         return {}
     values, sats = [], []
-    crushed = rust = fire = other_hue = 0
+    crushed = clipped = rust = fire = other_hue = 0
     for index in range(0, total * 3, 3):
         hue, sat, val = colorsys.rgb_to_hsv(raw[index] / 255, raw[index + 1] / 255, raw[index + 2] / 255)
         values.append(val)
         sats.append(sat)
         if val < CRUSHED_V:
             crushed += 1
+        if val >= CLIP_V:
+            clipped += 1
         if sat > COLOR_S and val > color_v:
             degrees = hue * 360.0
             if degrees < RUST_HUE_MAX or degrees >= 340.0:
@@ -218,6 +228,7 @@ def hsv_metrics(image, color_v: float) -> dict:
         "median_v": round(statistics.median(values), 4),
         "p90_v": round(sorted(values)[int(total * 0.90)], 4),
         "crushed_pct": round(100.0 * crushed / total, 2),
+        "clip250_pct": round(100.0 * clipped / total, 3),
         "mean_s": round(statistics.mean(sats), 4),
         "rust_pct": round(100.0 * rust / total, 3),
         "fire_pct": round(100.0 * fire / total, 3),
@@ -282,6 +293,16 @@ def measure(png: Path, log_path: Path) -> dict:
         roi_metrics["onscreen"] = True
         roi_metrics["rect"] = [round(v, 4) for v in roi["rect"]]
         result["rois"][roi_name] = roi_metrics
+
+    body = result["rois"].get("combatant", {})
+    road = result["rois"].get("road", {})
+    if body.get("onscreen") and road.get("onscreen") and road.get("median_v"):
+        # The white-mannequin failure was a ratio, not a level: a 92% suit beside a 2% road reads
+        # as an emissive cutout however the exposure is set. Under 2.5 was the target.
+        result["body_to_road_ratio"] = round(body["median_v"] / road["median_v"], 2)
+        # The body box necessarily contains background between the limbs and around the silhouette,
+        # so the median understates the body itself. p90 is the lit body.
+        result["body_to_road_p90"] = round(body["p90_v"] / road["median_v"], 2)
     return result
 
 
@@ -349,7 +370,11 @@ def main() -> int:
                 continue
             saturated = roi["rust_pct"] + roi["fire_pct"] + roi["other_hue_pct"]
             print(f"    {roi_name:<16} medV {roi['median_v']:.4f}  p90 {roi['p90_v']:.4f}"
-                  f"  clip {roi['crushed_pct']:5.1f}%  sat {saturated:5.2f}%  rust {roi['rust_pct']:5.2f}%")
+                  f"  shadow {roi['crushed_pct']:5.1f}%  blown {roi['clip250_pct']:5.2f}%"
+                  f"  meanS {roi['mean_s']:.3f}  sat {saturated:5.2f}%  rust {roi['rust_pct']:5.2f}%")
+        if "body_to_road_ratio" in m:
+            print(f"    {'body:road':<16} median {m['body_to_road_ratio']:.2f}x   p90 "
+                  f"{m.get('body_to_road_p90', float('nan')):.2f}x  (target < 2.5)")
 
     print("\nbrightness histogram, percent of frame per V decile (0.0-0.1 first):")
     for name, m in metrics.items():

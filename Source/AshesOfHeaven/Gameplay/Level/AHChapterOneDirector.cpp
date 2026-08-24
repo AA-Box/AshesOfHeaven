@@ -49,6 +49,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/Parse.h"
@@ -1094,6 +1095,21 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	// Distant fire glows under the far columns (large authored wreck fire, scaled).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(6100.0f, -1900.0f, -46.0f), FVector(3.4f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(8400.0f, 2300.0f, -46.0f), FVector(3.8f));
+	// Defensive-line pocket fill. shot2 measures facade_left at 0.043 and the tank hulk at 0.051
+	// while the same hulk reads 0.078 from shot1 - the same object under the same sky, so the
+	// darkness is local occlusion by BigBlastWall at (760,-620) scale 1.5 and the fortification
+	// row on Y=-540, not global exposure. Three cool sky-bounce fills sit inside that pocket at a
+	// fraction of a fire's intensity; the authored defensive line is untouched.
+	// These sit on the CORRIDOR side of the fortification, at Y -420 to -760, not behind it. The
+	// first attempt put them at Y -820/-880, south of the wall line: with no shadow casting the
+	// only thing that decides which surfaces they reach is N.L, so they lit the south faces that
+	// only shot1 can see (its hero wreck went 50.4% -> 38.2% shadow) and did nothing at all for
+	// shot2, which looks at the north faces (facade_left 0.0431 -> 0.0431).
+	const FLinearColor SkyBounce(0.58f, 0.64f, 0.76f);
+	SpawnBounceFill(FVector(700.0f, -420.0f, 300.0f), SkyBounce, 20.0f, 1500.0f);
+	SpawnBounceFill(FVector(1450.0f, -440.0f, 320.0f), SkyBounce, 18.0f, 1500.0f);
+	SpawnBounceFill(FVector(350.0f, -520.0f, 260.0f), SkyBounce, 17.0f, 1200.0f);
+	SpawnBounceFill(FVector(600.0f, -760.0f, 340.0f), SkyBounce, 15.0f, 1600.0f);
 }
 
 void AAHChapterOneDirector::BuildErebusArtTarget()
@@ -1528,6 +1544,41 @@ void AAHChapterOneDirector::SpawnVisualLight(const FVector& Location, const FLin
 	}
 }
 
+void AAHChapterOneDirector::SpawnBounceFill(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius)
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (APointLight* PointLight = GetWorld()->SpawnActor<APointLight>(APointLight::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams))
+	{
+		PointLight->SetMobility(EComponentMobility::Movable);
+		if (UPointLightComponent* Light = Cast<UPointLightComponent>(PointLight->GetLightComponent()))
+		{
+			Light->SetLightColor(Color);
+			// Explicit units so the value means something. Sized from the measurement, not from a
+			// standoff estimate: at 450cd these fills took shot2's facade from V 0.043 to 0.345
+			// and the whole frame from 0.082 to 0.329 - the flat grey this pass exists to avoid,
+			// because the nearest surfaces sit ~0.3m from the light, not the ~3m assumed. Working
+			// back through the tone curve, 450cd delivered about 100x the ambient on that wall, so
+			// a lift to V~0.09 wants roughly a fortieth of it.
+			Light->SetIntensityUnits(ELightUnits::Candelas);
+			Light->SetIntensity(Intensity);
+			Light->SetAttenuationRadius(Radius);
+			Light->SetCastShadows(false);
+			// A bounce fill that feeds Lumen would raise the whole street's indirect and undo the
+			// point of fixing this locally.
+			Light->bAffectGlobalIllumination = false;
+			// And one that lights the smoke would lift the fog aperture, which is the strongest
+			// thing in the composition and is explicitly not for trading away.
+			Light->SetVolumetricScatteringIntensity(0.0f);
+			Light->bAffectTranslucentLighting = false;
+		}
+	}
+}
+
 void AAHChapterOneDirector::SpawnVisualDust(const FVector& Location, float Scale)
 {
 	UNiagaraSystem* DustSystem = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Ashes/VFX/NS_DustSheet.NS_DustSheet"));
@@ -1822,6 +1873,24 @@ void AAHChapterOneDirector::SpawnPresentDayScene()
 	SpawnLabel(Origin + FVector(0.0f, -1000.0f, 540.0f), TEXT("CAPTAIN MAYA SOL\nNYSA TRANSMISSION"), FColor(220, 220, 220), 105.0f);
 }
 
+void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotator& Rotation)
+{
+	TeleportPlayer(Location, Rotation);
+	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding
+	// the pose for a few seconds is the whole contract.
+	TSharedPtr<int32> Reapplied = MakeShared<int32>(0);
+	FTimerHandle HoldHandle;
+	GetWorldTimerManager().SetTimer(HoldHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this, Location, Rotation, Reapplied, HoldHandle]() mutable
+		{
+			TeleportPlayer(Location, Rotation);
+			if (++(*Reapplied) >= 12)
+			{
+				GetWorldTimerManager().ClearTimer(HoldHandle);
+			}
+		}), 0.5f, true);
+}
+
 void AAHChapterOneDirector::LogArtRoiProjections() const
 {
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
@@ -1888,6 +1957,18 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 	// capture scores the character material and fill light instead of relying on someone
 	// eyeballing the frame. Nearest alone picked a body behind the camera on the first run and
 	// reported a white mannequin as p90 0.11.
+	if (ArtBenchSubject.IsValid())
+	{
+		const USkeletalMeshComponent* BenchMesh = ArtBenchSubject->GetMesh();
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtRoi] bench_subject alive at=%s mesh=%s"),
+			*ArtBenchSubject->GetActorLocation().ToCompactString(),
+			(BenchMesh && BenchMesh->GetSkeletalMeshAsset()) ? TEXT("loaded") : TEXT("MISSING"));
+	}
+	else if (ArtBenchSubject.IsExplicitlyNull() == false)
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtRoi] bench_subject was DESTROYED before the capture"));
+	}
+
 	// Largest on-screen body, not the nearest: "nearest" picked one standing behind a wall and
 	// handed the harness a rectangle full of burning barrel, which was then reported as the
 	// character's brightness. Screen area is the only thing that makes a region worth measuring.
@@ -1907,6 +1988,8 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 		const USkeletalMeshComponent* BodyMesh = It->GetMesh();
 		if (!BodyMesh || !BodyMesh->GetSkeletalMeshAsset())
 		{
+			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4][ArtRoi] body_skipped at=%s reason=no_mesh_asset"),
+				*It->GetActorLocation().ToCompactString());
 			continue;
 		}
 		const FBox BodyBox = BodyMesh->Bounds.GetBox();
@@ -1953,6 +2036,8 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 		if (BodyCorners == 0 || Max.X < 0.0f || Max.Y < 0.0f
 			|| Min.X > ViewportSize.X || Min.Y > ViewportSize.Y)
 		{
+			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4][ArtRoi] body_skipped at=%s corners=%d reason=off_screen"),
+				*BodyOrigin.ToCompactString(), BodyCorners);
 			continue;
 		}
 		const float ScreenArea = (Max.X - Min.X) * (Max.Y - Min.Y);
@@ -1968,6 +2053,8 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 			*BodyOrigin.ToCompactString(), FVector::Dist(BodyOrigin, CameraLocation), ScreenArea, ClampedArea);
 		if (ClampedArea < 8000.0f || ClampedArea < 0.6f * ScreenArea)
 		{
+			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4][ArtRoi] body_skipped at=%s reason=too_small_or_clipped onscreen_px=%.0f of %.0f"),
+				*BodyOrigin.ToCompactString(), ClampedArea, ScreenArea);
 			continue;
 		}
 		if (ClampedArea > BestScreenArea)
@@ -2059,22 +2146,7 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 				StartStage(EAHChapterStage::ErebusOpening);
 			}
 			const FRotator Aim(Pitch, Yaw, 0.0f);
-			TeleportPlayer(Location, Aim);
-			// The spatial-recovery pass re-teleports the player to the stage spawn a fraction of a
-			// second after this runs, which silently undid the pose. Re-apply past it rather than
-			// racing it: this is a review camera, so holding the pose for a few seconds is the
-			// whole contract.
-			TSharedPtr<int32> Reapplied = MakeShared<int32>(0);
-			FTimerHandle HoldHandle;
-			GetWorldTimerManager().SetTimer(HoldHandle, FTimerDelegate::CreateWeakLambda(this,
-				[this, Location, Aim, Reapplied, HoldHandle]() mutable
-				{
-					TeleportPlayer(Location, Aim);
-					if (++(*Reapplied) >= 12)
-					{
-						GetWorldTimerManager().ClearTimer(HoldHandle);
-					}
-				}), 0.5f, true);
+			HoldReviewPose(Location, Aim);
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] camera_override location=%s pitch=%.1f yaw=%.1f"),
 				*Location.ToCompactString(), Pitch, Yaw);
 			return;
@@ -2116,6 +2188,52 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 	{
 		StartStage(EAHChapterStage::TenYearsLater);
 		TeleportPlayer(FVector(29200.0f, 0.0f, 150.0f), FRotator::ZeroRotator);
+	}
+	else if (TargetName.Equals(TEXT("Combatant"), ESearchCase::IgnoreCase))
+	{
+#if !UE_BUILD_SHIPPING
+		// Deterministic character test bench. Three passes tried to score the body material out of
+		// a live firefight and measured a blast wall, a burning barrel and a corpse lying under the
+		// floor instead - projected bounds cannot tell what is in front of what, and the art kit is
+		// authored with collision off so no visibility trace can either. So: one body, fixed spot,
+		// fixed camera, clear line of sight, real Erebus lighting, nothing else in the stage.
+		// ErebusOpening is the pre-battle stage and spawns no combatants of its own, so this is
+		// the only body in the world.
+		StartStage(EAHChapterStage::ErebusOpening);
+
+		// The spawn corridor, which is the one stretch guaranteed to have greybox floor under it.
+		// X=2400 was not a clear sight line (the gunship wreck at (2120,-520) fills it) and X=4200
+		// is past the gate, where the authored kit has collision disabled and the greybox may not
+		// reach - a body with no floor falls to KillZ and is destroyed before the capture. Here the
+		// truck wreck at (-1520,-620) and the pipes from X=-1010 are all off the Y=-120 axis.
+		const FTransform SubjectTransform(FRotator(0.0f, 180.0f, 0.0f), FVector(-1400.0f, -120.0f, 100.0f));
+		if (AAHHumanSoldierCharacter* Subject = GetWorld()->SpawnActorDeferred<AAHHumanSoldierCharacter>(
+			AAHHumanSoldierCharacter::StaticClass(), SubjectTransform))
+		{
+			// Before FinishSpawningActor, or BeginPlay has already possessed it and the body walks
+			// out of frame between the capture and the next one.
+			Subject->AutoPossessAI = EAutoPossessAI::Disabled;
+			UGameplayStatics::FinishSpawningActor(Subject, SubjectTransform);
+			if (UCharacterMovementComponent* Movement = Subject->GetCharacterMovement())
+			{
+				Movement->DisableMovement();
+				Movement->StopMovementImmediately();
+			}
+			// Without this the body has no mesh at all: streaming only primes combatants when an
+			// encounter activates, and this bench deliberately has no encounter.
+			Subject->DebugForcePresentationSync();
+			ArtBenchSubject = Subject;
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] combatant_bench subject=%s"),
+				*Subject->GetActorLocation().ToCompactString());
+		}
+		else
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] combatant_bench FAILED to spawn subject"));
+		}
+		// 350uu back and a hair down, so the body sits against road and mid-ground rather than
+		// against the fog aperture, and the body-to-road ratio has road in the same frame.
+		HoldReviewPose(FVector(-1750.0f, -120.0f, 150.0f), FRotator(-3.0f, 0.0f, 0.0f));
+#endif
 	}
 	else if (TargetName.Equals(TEXT("UI"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Audio"), ESearchCase::IgnoreCase))
 	{
@@ -2283,10 +2401,12 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			// aperture is made of (that is SkyAtmosphere + VolumetricCloud, untouched). At 0.75
 			// the ground was receiving ~7 lux against surfaces returning 1% of it, which is what
 			// put 75% of the frame below V=0.08.
-			// Iteration 3 raises this alone, with FilmToe left at 0.48: 1.30 moved the frame
-			// median from 0.035 to 0.051 and moving the toe at the same time would make it
-			// impossible to say which knob did it.
-			SkyComponent->SetIntensity(1.65f);
+			// Back to 1.30, and it stays there. 1.30 -> 1.65 was measured in isolation and moved
+			// the frame median by less than one 8-bit code value: auto-exposure is free to adapt
+			// between 0.03 and 3.0 EV100, so it meters away whatever extra light is added. Adding
+			// SkyLight is a dead lever for tone here; it only costs Lumen. The exposure target and
+			// the tone curve are the levers that survive metering.
+			SkyComponent->SetIntensity(1.30f);
 			// Grey uplight instead of a second directional: lifts vertical architecture
 			// without competing for the single forward-shading directional slot (the
 			// competition warning renders on screen in Development builds).
@@ -2364,7 +2484,10 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		// this scene is the tone curve and the exposure target, not more light.
 		Post->Settings.FilmToe = 0.44f;
 		Post->Settings.bOverride_AutoExposureBias = true;
-		Post->Settings.AutoExposureBias = -0.55f;
+		// The one global tonal lever that auto-exposure cannot cancel: bias is applied to the
+		// metered result, so unlike SkyLight it moves the image one-for-one. One moderate step
+		// this pass, +0.5 EV, with FilmToe held at 0.44 so the measurement attributes cleanly.
+		Post->Settings.AutoExposureBias = -0.05f;
 	}
 
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] lighting profile=ErebusWar clouds=volumetric fog=volumetric post=graded"));

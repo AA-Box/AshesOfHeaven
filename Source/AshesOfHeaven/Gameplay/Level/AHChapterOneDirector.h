@@ -134,6 +134,9 @@ protected:
 	void SpawnPuddle(const FVector& Center, const FVector2D& Extent, float YawDegrees);
 	void SpawnHangingChain(const FVector& Top, const FVector& Bottom);
 	void SpawnVisualLight(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
+	/** Local sky-bounce fill: no shadows, no GI, no volumetric contribution, so it lifts one
+	 *  occluded pocket without touching the global exposure or the fog aperture. */
+	void SpawnBounceFill(const FVector& Location, const FLinearColor& Color, float Intensity, float Radius);
 	void SpawnVisualDust(const FVector& Location, float Scale = 1.0f);
 	AActor* SpawnPresentationProp(const TCHAR* BlueprintPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
 	FName ResolvePresentationZone(const FVector& Location) const;
@@ -150,6 +153,13 @@ protected:
 	// acceptance harness can score "is the road readable" instead of scoring the whole frame and
 	// counting a deliberately black building silhouette as a failure.
 	void LogArtRoiProjections() const;
+	// Places a review camera and keeps it there. The spatial-recovery pass re-teleports the player
+	// to the stage spawn a fraction of a second after a plain TeleportPlayer, which silently undid
+	// every review pose that did not re-apply past it.
+	void HoldReviewPose(const FVector& Location, const FRotator& Rotation);
+	/** The -ArtTarget=Combatant test subject, tracked so a capture can say "it was destroyed"
+	 *  instead of silently reporting the character as unmeasured. */
+	TWeakObjectPtr<ACharacter> ArtBenchSubject;
 	bool ValidateStageSpatialDefinition(const FAHStageSpatialDefinition& Definition, bool bLogDetails) const;
 	bool ValidateStageSpatialState(EAHChapterStage Stage, bool bLogDetails) const;
 	void EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason);

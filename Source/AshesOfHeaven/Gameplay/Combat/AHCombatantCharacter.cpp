@@ -409,19 +409,98 @@ void AAHCombatantCharacter::ApplyBodyPaint(USkeletalMeshComponent* Body, int32 S
 	// from T_Manny_01_D. So: open the mask, then tint. Soldiers wear issue fabric and painted
 	// plate - warm olive-brown for human, cold slate for Veil, both in the 24-42% range where
 	// the fill reads as a lit body instead of an emissive silhouette.
+	// Measured on the -ArtTarget=Combatant bench: at 0.42 the body renders near-white against this
+	// street. Erebus road albedo is 0.016-0.029, so a 42% body is four stops brighter before a
+	// single lumen is added, and the fill light sits ~50uu off the chest on top of that. The
+	// "24-42% is field kit" reasoning was right about real fabric and wrong about this scene.
 	const FLinearColor BodyTint = Faction == EAHFaction::Veil
-		? FLinearColor(0.24f, 0.31f, 0.42f)
-		: FLinearColor(0.42f, 0.34f, 0.24f);
-	// ponytail: three parameter names for one job, because a SetParameter on a name the master
-	// does not expose is a silent no-op and M_Mannequin exposes all three. Narrow this to
-	// whichever one moves the capture rather than guessing which is authoritative.
-	Paint->SetScalarParameterValue(TEXT("Masking Paint"), 1.0f);
+		? FLinearColor(0.075f, 0.095f, 0.130f)
+		: FLinearColor(0.120f, 0.100f, 0.075f);
+	// M_HumanMetal / M_VeilObsidian expose BaseTint, which is the actual albedo. The mannequin
+	// master does not expose one at all: its parameters are exactly
+	//   scalar  MetalPaintMetallic, MetalPaintRoughness, LogoPosX/Y/Scale, EmissivePower, Scale, Head Cutout
+	//   vector  Paint Tint, LogoTint, Blend Offset
+	//   texture BNormal, Base Texture, MRA
+	// so the body's white comes from the Base Texture and no parameter darkens it. "Masking Paint"
+	// and "Base Color" do not exist on it - both of those earlier writes were silent no-ops, which
+	// is why the bench still rendered a white mannequin after they were added.
+	Paint->SetVectorParameterValue(TEXT("BaseTint"), BodyTint);
+	Paint->SetScalarParameterValue(TEXT("Roughness"), 0.55f);
+	Paint->SetScalarParameterValue(TEXT("Metallic"), 0.10f);
+	// Procedural surface break-up, so a single flat tint does not read as a paper cut-out.
+	Paint->SetScalarParameterValue(TEXT("GrimeAmount"), 0.45f);
+	Paint->SetScalarParameterValue(TEXT("WearAmount"), 0.40f);
+	Paint->SetScalarParameterValue(TEXT("EdgeVariation"), 0.35f);
+	// Kept for any body still wearing the mannequin master: a no-op on the faction materials.
 	Paint->SetVectorParameterValue(TEXT("Paint Tint"), BodyTint);
-	Paint->SetVectorParameterValue(TEXT("Base Color"), BodyTint);
-	// The stock suit is a polished 0.10 roughness, so the fill also lands a mirror highlight on
-	// the shoulders and helmet. Field kit is matte.
 	Paint->SetScalarParameterValue(TEXT("MetalPaintRoughness"), 0.55f);
 }
+
+#if !UE_BUILD_SHIPPING
+void AAHCombatantCharacter::DebugForcePresentationSync()
+{
+	// Preferred: the same enemy definition the streaming subsystem would have applied, resolved
+	// synchronously. This is the real final presentation path, which is the whole point of the
+	// bench - a body dressed by some other route would not be evidence about the shipping look.
+	if (!EnemyDefinition)
+	{
+		if (const FPrimaryAssetId DefaultEnemyId = GetDefaultEnemyDefinitionId(); DefaultEnemyId.IsValid())
+		{
+			if (UAssetManager* Assets = UAssetManager::GetIfInitialized())
+			{
+				const FSoftObjectPath DefinitionPath = Assets->GetPrimaryAssetPath(DefaultEnemyId);
+				if (UAHEnemyDefinition* Definition = Cast<UAHEnemyDefinition>(DefinitionPath.TryLoad()))
+				{
+					ApplyEnemyDefinition(Definition);
+				}
+				UE_LOG(LogAshesOfHeaven, Display, TEXT("[Bench] definition id=%s path=%s resolved=%s"),
+					*DefaultEnemyId.ToString(), *DefinitionPath.ToString(),
+					EnemyDefinition ? TEXT("yes") : TEXT("NO"));
+			}
+		}
+	}
+
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		if (!Body->GetSkeletalMeshAsset())
+		{
+			USkeletalMesh* Legacy = LoadObject<USkeletalMesh>(nullptr,
+				TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+			UClass* LegacyAnim = LoadObject<UClass>(nullptr,
+				TEXT("/Game/Variant_Shooter/Anims/ABP_TP_Rifle.ABP_TP_Rifle_C"));
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Bench] legacy mesh=%s anim=%s"),
+				Legacy ? TEXT("loaded") : TEXT("NULL"), LegacyAnim ? TEXT("loaded") : TEXT("NULL"));
+			Body->SetSkeletalMesh(Legacy);
+			Body->SetAnimInstanceClass(LegacyAnim);
+		}
+	}
+	// The skin arrays are soft pointers and ApplyFactionAppearance uses .Get(), which is null
+	// unless something already loaded them - so resolve them first and let the real path run.
+	for (TSoftObjectPtr<UMaterialInterface>& Material : HumanBodyMaterials)
+	{
+		Material.LoadSynchronous();
+	}
+	for (TSoftObjectPtr<UMaterialInterface>& Material : VeilBodyMaterials)
+	{
+		Material.LoadSynchronous();
+	}
+	ApplyFactionAppearance();
+	if (USkeletalMeshComponent* Result = GetMesh())
+	{
+		// The base class hides the body from its owner, because the player looks out through their
+		// own head. A bench subject is not the player, so that flag has to come off or the capture
+		// measures the corridor behind an invisible soldier - which is exactly what it did.
+		Result->SetOwnerNoSee(false);
+		Result->SetVisibility(true, true);
+		Result->SetHiddenInGame(false, true);
+		UE_LOG(LogAshesOfHeaven, Display,
+			TEXT("[Bench] final mesh=%s visible=%d ownerNoSee=%d owner=%s materials=%d"),
+			Result->GetSkeletalMeshAsset() ? *Result->GetSkeletalMeshAsset()->GetName() : TEXT("MISSING"),
+			Result->IsVisible() ? 1 : 0, Result->bOwnerNoSee ? 1 : 0,
+			GetOwner() ? *GetOwner()->GetName() : TEXT("none"), Result->GetNumMaterials());
+	}
+}
+#endif
 
 void AAHCombatantCharacter::ApplyFactionAppearance()
 {
