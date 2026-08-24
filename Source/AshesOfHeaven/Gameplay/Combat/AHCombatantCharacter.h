@@ -31,6 +31,7 @@ public:
 	/** A body can be stripped for the weapon it was still holding. Live combatants offer nothing. */
 	virtual void Interact_Implementation(AActor* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual float GetInteractionPriority_Implementation() const override;
 
 	UFUNCTION(BlueprintPure, Category="Combat")
 	AAHWeaponBase* GetLootableWeapon() const;

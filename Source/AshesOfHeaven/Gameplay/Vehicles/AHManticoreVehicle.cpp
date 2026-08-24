@@ -158,9 +158,16 @@ FText AAHManticoreVehicle::GetInteractionPrompt_Implementation() const
 {
 	if (bDestroyed)
 	{
-		return FText::FromString(TEXT("MANTICORE DESTROYED"));
+		return FText::GetEmpty();
 	}
-	return Driver.IsValid() ? FText::FromString(TEXT("INTERACT  EXIT MANTICORE")) : FText::FromString(TEXT("INTERACT  ENTER MANTICORE"));
+	return Driver.IsValid()
+		? NSLOCTEXT("AshesOfHeaven", "ExitManticorePrompt", "E — EXIT MANTICORE")
+		: NSLOCTEXT("AshesOfHeaven", "EnterManticorePrompt", "E — ENTER MANTICORE");
+}
+
+float AAHManticoreVehicle::GetInteractionPriority_Implementation() const
+{
+	return bDestroyed ? 0.0f : 0.55f;
 }
 
 bool AAHManticoreVehicle::EnterVehicle(AAHCombatPlayerCharacter* Player)

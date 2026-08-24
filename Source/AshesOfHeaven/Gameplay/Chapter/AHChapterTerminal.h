@@ -36,6 +36,8 @@ public:
 
 	virtual void Interact_Implementation(AActor* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual float GetInteractionPriority_Implementation() const override;
+	virtual float GetObjectiveInteractionPriority_Implementation() const override;
 
 	bool IsConfirmed() const { return bConfirmed; }
 	bool IsInspected() const { return bInspected; }

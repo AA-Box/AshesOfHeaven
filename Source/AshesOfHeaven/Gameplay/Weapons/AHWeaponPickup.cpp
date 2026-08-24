@@ -74,12 +74,31 @@ FText AAHWeaponPickup::GetInteractionPrompt_Implementation() const
 	switch (PickupType)
 	{
 	case EAHResourcePickupType::Weapon:
-		return FText::FromString(TEXT("INTERACT  M91 REVENANT"));
+		if (const AAHWeaponBase* WeaponDefaults = WeaponClass ? WeaponClass->GetDefaultObject<AAHWeaponBase>() : nullptr)
+		{
+			return FText::Format(NSLOCTEXT("AshesOfHeaven", "PickupWeaponPrompt", "E — PICK UP {0}"), WeaponDefaults->DisplayName);
+		}
+		return FText::GetEmpty();
 	case EAHResourcePickupType::Ammo:
-		return FText::FromString(TEXT("INTERACT  AMMUNITION"));
+		return Amount > 0 ? NSLOCTEXT("AshesOfHeaven", "TakeAmmoPrompt", "E — TAKE AMMO") : FText::GetEmpty();
 	case EAHResourcePickupType::Grenades:
-		return FText::FromString(TEXT("INTERACT  FRAG GRENADES"));
+		return Amount > 0 ? NSLOCTEXT("AshesOfHeaven", "TakeGrenadePrompt", "E — TAKE FRAG GRENADES") : FText::GetEmpty();
 	default:
-		return FText::FromString(TEXT("INTERACT"));
+		return FText::GetEmpty();
+	}
+}
+
+float AAHWeaponPickup::GetInteractionPriority_Implementation() const
+{
+	switch (PickupType)
+	{
+	case EAHResourcePickupType::Weapon:
+		return 0.50f;
+	case EAHResourcePickupType::Grenades:
+		return 0.20f;
+	case EAHResourcePickupType::Ammo:
+		return 0.10f;
+	default:
+		return 0.0f;
 	}
 }

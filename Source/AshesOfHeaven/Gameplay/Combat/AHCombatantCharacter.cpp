@@ -190,7 +190,14 @@ FText AAHCombatantCharacter::GetInteractionPrompt_Implementation() const
 		// treats it as no target, so a living enemy never offers to be looted.
 		return FText::GetEmpty();
 	}
-	return FText::Format(NSLOCTEXT("AshesOfHeaven", "TakeWeaponPrompt", "INTERACT  TAKE {0}"), Weapon->DisplayName);
+	return FText::Format(NSLOCTEXT("AshesOfHeaven", "TakeWeaponPrompt", "E — TAKE {0}"), Weapon->DisplayName);
+}
+
+float AAHCombatantCharacter::GetInteractionPriority_Implementation() const
+{
+	// Lootable bodies remain selectable, but a deliberately dropped weapon should win when the
+	// two occupy the same screen space. This value belongs to the actor, not the selector.
+	return GetLootableWeapon() ? 0.20f : 0.0f;
 }
 
 void AAHCombatantCharacter::Interact_Implementation(AActor* Interactor)

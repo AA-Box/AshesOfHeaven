@@ -51,7 +51,19 @@ FText AAHChapterTerminal::GetInteractionPrompt_Implementation() const
 {
 	if (bConfirmed)
 	{
-		return ConfirmationText;
+		return FText::GetEmpty();
 	}
-	return bInspected ? FText::FromString(TEXT("INTERACT  CONFIRM FAILSAFE")) : FText::FromString(TEXT("INTERACT  INSPECT TERMINAL"));
+	return bInspected
+		? NSLOCTEXT("AshesOfHeaven", "ConfirmFailsafePrompt", "E — CONFIRM FAILSAFE")
+		: NSLOCTEXT("AshesOfHeaven", "InspectTerminalPrompt", "E — INSPECT TERMINAL");
+}
+
+float AAHChapterTerminal::GetInteractionPriority_Implementation() const
+{
+	return bConfirmed ? 0.0f : 0.60f;
+}
+
+float AAHChapterTerminal::GetObjectiveInteractionPriority_Implementation() const
+{
+	return bConfirmed ? 0.0f : 1.0f;
 }

@@ -39,4 +39,5 @@ public:
 
 	virtual void Interact_Implementation(AActor* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual float GetInteractionPriority_Implementation() const override;
 };
