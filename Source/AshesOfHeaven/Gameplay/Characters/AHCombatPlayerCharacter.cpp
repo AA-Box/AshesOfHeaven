@@ -20,6 +20,14 @@ AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 	Faction = EAHFaction::Player;
 	bDestroyOnDeath = false;
 	HealthComponent->MaxHealth = 100.0f;
+	// 200 effective health against two attackers at roughly 60 damage a second is a few seconds
+	// of exposure, and armour was the only part that came back - health was a one-way clock, so
+	// a long fight killed the player however well it was played. Armour recharges after 4s at
+	// 18/s; health now follows it 5s later at 20/s, so about ten seconds out of contact is a
+	// full reset and only staying in the open is lethal. These two are the survivability knobs:
+	// raise RegenerationPerSecond or drop RegenerationDelay to soften the opening.
+	HealthComponent->RegenerationDelay = 5.0f;
+	HealthComponent->RegenerationPerSecond = 20.0f;
 	ArmorComponent->MaxArmor = 100.0f;
 	GetCharacterMovement()->AirControl = MilitaryAirControl;
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;

@@ -1,15 +1,19 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Platform/AHPlatformManagerSubsystem.h"
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Engine/StaticMesh.h"
+#include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -26,12 +30,90 @@ AAHCombatantCharacter::AAHCombatantCharacter()
 	InventoryComponent = CreateDefaultSubobject<UAHInventoryComponent>(TEXT("Inventory"));
 
 	GetCharacterMovement()->MaxWalkSpeed = 460.0f;
+
+	// A combatant with no skeletal mesh has nothing that blocks ECC_Visibility: the capsule's
+	// Pawn profile ignores that channel and the old greybox blocks were NoCollision, so every
+	// rifle trace passed straight through everyone and no shot could ever land. The body is
+	// what makes a combatant hittable, animated and visible - it is not decoration.
+	USkeletalMeshComponent* Body = GetMesh();
+	if (USkeletalMesh* BodyMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")))
+	{
+		Body->SetSkeletalMesh(BodyMesh);
+	}
+	// Skeletons are authored facing +Y with the origin at the feet; the capsule's origin is its
+	// centre, so the mesh drops by the half height.
+	Body->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, -96.0f), FRotator(0.0f, -90.0f, 0.0f));
+	if (UClass* BodyAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Variant_Shooter/Anims/ABP_TP_Rifle.ABP_TP_Rifle_C")))
+	{
+		// This graph drives itself from the pawn's velocity and movement component and casts to
+		// no particular character class, so it runs a full idle/walk/run blend plus jump, fall
+		// and rifle aim offset on any ACharacter.
+		Body->SetAnimInstanceClass(BodyAnimClass);
+	}
+	// Query only: movement and melee stay on the capsule (ECC_Pawn). The body exists for weapon
+	// traces, and SKM_Manny_Simple ships PA_Mannequin, so a hit resolves to a bone name and the
+	// headshot multiplier in TakeDamage finally has something to read.
+	Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Body->SetCollisionObjectType(ECC_Pawn);
+	Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	Body->SetGenerateOverlapEvents(false);
+	Body->SetCanEverAffectNavigation(false);
+	Body->bReceivesDecals = false;
+	// The owner sees the world down the first person camera; their own body would fill it.
+	// It still casts a shadow, which is the only part of it they should see.
+	Body->SetOwnerNoSee(true);
+	Body->bCastHiddenShadow = true;
+
+	// Channel 1 is the character-only lighting channel; channel 0 keeps world lights on them.
+	Body->LightingChannels.bChannel0 = true;
+	Body->LightingChannels.bChannel1 = true;
+
+	BodyFillLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("BodyFill"));
+	BodyFillLight->SetupAttachment(GetCapsuleComponent());
+	// Overhead and slightly forward. A light in front of the chest only lit the side the
+	// combatant happened to be facing, which is rarely the side the player is looking at; a
+	// top-down key shapes the head, shoulders and weapon arm from every viewing angle.
+	BodyFillLight->SetRelativeLocation(FVector(45.0f, 0.0f, 125.0f));
+	BodyFillLight->SetAttenuationRadius(500.0f);
+	BodyFillLight->SetIntensityUnits(ELightUnits::Candelas);
+	BodyFillLight->SetIntensity(BodyFillIntensity);
+	BodyFillLight->SetCastShadows(false);
+	BodyFillLight->SetVolumetricScatteringIntensity(0.0f);
+	BodyFillLight->bAffectTranslucentLighting = false;
+	// One light per body times MaxActiveCombatants (24) is four times the 16-light scene budget,
+	// and a 500uu radius covers a few pixels at range anyway. The fade starts at 45m, which is
+	// past the far soldier of the Transit line-up (36m) and well past PreferredEngagementRange,
+	// so nothing the player is actually reading loses its fill.
+	BodyFillLight->MaxDrawDistance = 6000.0f;
+	BodyFillLight->MaxDistanceFadeRange = 1500.0f;
+	// Lumen ignores lighting channels, so leaving this in the indirect pass is both a cost and
+	// the exact street-level bounce this light exists to avoid.
+	BodyFillLight->bAffectGlobalIllumination = false;
+	// Channel 0 off is what keeps this off the street. Only bodies are on channel 1.
+	BodyFillLight->LightingChannels.bChannel0 = false;
+	BodyFillLight->LightingChannels.bChannel1 = true;
+
+	// AI-driven combatants aim by control rotation, which is what the rifle aim offset reads.
+	bUseControllerRotationYaw = true;
 }
 
 void AAHCombatantCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	EnsureGreyboxBody();
+	// Faction is assigned by the subclass constructor, which runs after this class's, so the
+	// skin cannot be picked until the object is fully constructed.
+	ApplyFactionAppearance();
+	if (BodyFillLight)
+	{
+		// The fill is one unshadowed point light per body. Mobile budgets four dynamic lights for
+		// the whole scene and fields 8-16 combatants, so it does not get them.
+		// ponytail: whole-platform switch, not a per-frame nearest-N budget. Add the budget only
+		// if mobile art wants fills back on the two or three bodies nearest the camera.
+		const UGameInstance* GI = GetGameInstance();
+		const UAHPlatformManagerSubsystem* Platform = GI ? GI->GetSubsystem<UAHPlatformManagerSubsystem>() : nullptr;
+		BodyFillLight->SetVisibility(!Platform || Platform->GetPerformanceProfile().bCharacterFillLights);
+	}
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeath.AddDynamic(this, &AAHCombatantCharacter::HandleHealthDeath);
@@ -42,88 +124,124 @@ void AAHCombatantCharacter::BeginPlay()
 	}
 }
 
-void AAHCombatantCharacter::EnsureGreyboxBody()
+void AAHCombatantCharacter::ApplyFactionAppearance()
 {
-	// Greybox characters have no skeletal mesh, so a soldier is invisible while the weapon
-	// attached to them still renders - the level reads as rifles gliding around on their own.
-	// Stand in a block body until real meshes exist; with a mesh assigned this does nothing.
-	if (!GetMesh() || GetMesh()->GetSkeletalMeshAsset() || GreyboxBodyMesh)
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body || !Body->GetSkeletalMeshAsset())
 	{
 		return;
 	}
 
-	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"));
-	if (!BlockMesh)
+	if (BodyFillLight)
 	{
-		return;
+		// Faction reads off the fill colour: human issue lighting is warm, Veil is cold.
+		BodyFillLight->SetLightColor(Faction == EAHFaction::Veil ? FLinearColor(0.62f, 0.82f, 1.0f) : FLinearColor(1.0f, 0.94f, 0.84f));
+		BodyFillLight->SetIntensity(BodyFillIntensity);
 	}
 
-	GreyboxBodyMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxBody"));
-	if (!GreyboxBodyMesh)
+	const TArray<TSoftObjectPtr<UMaterialInterface>>& Skin = Faction == EAHFaction::Veil ? VeilBodyMaterials : HumanBodyMaterials;
+	for (int32 SlotIndex = 0; SlotIndex < Body->GetNumMaterials(); ++SlotIndex)
 	{
-		return;
-	}
-	GreyboxBodyMesh->SetStaticMesh(BlockMesh);
-	GreyboxBodyMesh->SetupAttachment(GetCapsuleComponent());
-	GreyboxBodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-	const bool bWardenSilhouette = GetClass()->GetName().Contains(TEXT("Warden"), ESearchCase::IgnoreCase);
-	GreyboxBodyMesh->SetRelativeScale3D(bWardenSilhouette ? FVector(0.68f, 0.64f, 1.92f) : FVector(0.48f, 0.48f, 1.75f));
-	GreyboxBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GreyboxBodyMesh->SetCanEverAffectNavigation(false);
-	const TCHAR* BodyMaterialPath = Faction == EAHFaction::Veil
-		? TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian")
-		: TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal");
-	if (UMaterialInterface* BodyMaterial = LoadObject<UMaterialInterface>(nullptr, BodyMaterialPath))
-	{
-		GreyboxBodyMesh->SetMaterial(0, BodyMaterial);
-	}
-	// The owner is looking out of this body, so keep it out of their own view.
-	GreyboxBodyMesh->SetOwnerNoSee(true);
-	GreyboxBodyMesh->SetVisibility(true);
-	AddInstanceComponent(GreyboxBodyMesh);
-	GreyboxBodyMesh->RegisterComponent();
-
-	if (UStaticMesh* HeadMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Sphere.SM_AH_Sphere")))
-	{
-		GreyboxHeadMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxHead"));
-		if (GreyboxHeadMesh)
+		if (!Skin.IsValidIndex(SlotIndex))
 		{
-			GreyboxHeadMesh->SetStaticMesh(HeadMesh);
-			GreyboxHeadMesh->SetupAttachment(GetCapsuleComponent());
-			GreyboxHeadMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 112.0f));
-			GreyboxHeadMesh->SetRelativeScale3D(FVector(0.34f));
-			GreyboxHeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			GreyboxHeadMesh->SetCanEverAffectNavigation(false);
-			if (UMaterialInterface* HeadMaterial = LoadObject<UMaterialInterface>(nullptr, BodyMaterialPath))
-			{
-				GreyboxHeadMesh->SetMaterial(0, HeadMaterial);
-			}
-			GreyboxHeadMesh->SetOwnerNoSee(true);
-			GreyboxHeadMesh->SetVisibility(true);
-			AddInstanceComponent(GreyboxHeadMesh);
-			GreyboxHeadMesh->RegisterComponent();
+			// Fewer skins than slots: leave the remaining slots on the mesh's own materials
+			// rather than smearing the last one over parts it was not authored for.
+			break;
+		}
+		if (UMaterialInterface* SkinMaterial = Skin[SlotIndex].LoadSynchronous())
+		{
+			Body->SetMaterial(SlotIndex, SkinMaterial);
+		}
+	}
+}
+
+void AAHCombatantCharacter::StartRagdoll()
+{
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body || !Body->GetSkeletalMeshAsset() || !Body->GetPhysicsAsset() || Body->IsSimulatingPhysics())
+	{
+		return;
+	}
+
+	// The Ragdoll profile keeps blocking ECC_Visibility, which is what lets the interaction
+	// trace find the body afterwards - a corpse you cannot look at is a corpse you cannot loot.
+	Body->SetCollisionProfileName(TEXT("Ragdoll"));
+	Body->SetAllBodiesBelowSimulatePhysics(TEXT("pelvis"), true, true);
+	Body->SetSimulatePhysics(true);
+	Body->WakeAllRigidBodies();
+}
+
+AAHWeaponBase* AAHCombatantCharacter::GetLootableWeapon() const
+{
+	if (!IsCombatantDead() || !InventoryComponent)
+	{
+		return nullptr;
+	}
+	AAHWeaponBase* Weapon = InventoryComponent->GetCurrentWeapon();
+	return IsValid(Weapon) ? Weapon : nullptr;
+}
+
+FText AAHCombatantCharacter::GetInteractionPrompt_Implementation() const
+{
+	const AAHWeaponBase* Weapon = GetLootableWeapon();
+	if (!Weapon)
+	{
+		// An empty prompt is how an interactable says "not right now"; the interaction component
+		// treats it as no target, so a living enemy never offers to be looted.
+		return FText::GetEmpty();
+	}
+	return FText::Format(NSLOCTEXT("AshesOfHeaven", "TakeWeaponPrompt", "INTERACT  TAKE {0}"), Weapon->DisplayName);
+}
+
+void AAHCombatantCharacter::Interact_Implementation(AActor* Interactor)
+{
+	AAHCombatantCharacter* Looter = Cast<AAHCombatantCharacter>(Interactor);
+	AAHWeaponBase* Weapon = GetLootableWeapon();
+	if (!Looter || !Looter->GetInventoryComponent() || !Weapon)
+	{
+		return;
+	}
+
+	// What the dead soldier had left, not a fresh magazine.
+	const FAHAmmoState LootedAmmo = Weapon->GetAmmoState();
+	UAHInventoryComponent* LooterInventory = Looter->GetInventoryComponent();
+
+	AAHWeaponBase* AlreadyCarried = nullptr;
+	for (AAHWeaponBase* Carried : LooterInventory->GetWeapons())
+	{
+		if (IsValid(Carried) && Carried->GetClass() == Weapon->GetClass())
+		{
+			AlreadyCarried = Carried;
+			break;
 		}
 	}
 
-	if (bWardenSilhouette)
+	if (AlreadyCarried)
 	{
-		GreyboxShoulderMesh = NewObject<UStaticMeshComponent>(this, TEXT("GreyboxShoulderArmor"));
-		if (GreyboxShoulderMesh)
-		{
-			GreyboxShoulderMesh->SetStaticMesh(BlockMesh);
-			GreyboxShoulderMesh->SetupAttachment(GetCapsuleComponent());
-			GreyboxShoulderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 78.0f));
-			GreyboxShoulderMesh->SetRelativeScale3D(FVector(0.88f, 0.74f, 0.24f));
-			GreyboxShoulderMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			GreyboxShoulderMesh->SetCanEverAffectNavigation(false);
-			if (UMaterialInterface* ShoulderMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")))
-			{
-				GreyboxShoulderMesh->SetMaterial(0, ShoulderMaterial);
-			}
-			GreyboxShoulderMesh->SetOwnerNoSee(true);
-			AddInstanceComponent(GreyboxShoulderMesh);
-			GreyboxShoulderMesh->RegisterComponent();
-		}
+		// Carrying this weapon already, so the body is worth its ammunition rather than a duplicate.
+		AlreadyCarried->AddReserveAmmo(LootedAmmo.Magazine + LootedAmmo.Reserve);
+	}
+	else if (AAHWeaponBase* Taken = LooterInventory->AddWeaponClass(Weapon->GetClass()))
+	{
+		Taken->SetAmmoState(LootedAmmo);
+	}
+	else
+	{
+		return;
+	}
+
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] looted weapon=%s from=%s ammo=%d/%d"),
+		*Weapon->WeaponId.ToString(), *GetName(), LootedAmmo.Magazine, LootedAmmo.Reserve);
+	#endif
+
+	// Strip the body: the rifle leaves its hands and it stops offering a prompt.
+	InventoryComponent->DiscardWeapon(Weapon);
+	Weapon->Destroy();
+
+	if (UAHAudioSubsystem* Audio = GetWorld() ? GetWorld()->GetSubsystem<UAHAudioSubsystem>() : nullptr)
+	{
+		Audio->PlayWorldCue(EAHAudioCue::Pickup, GetActorLocation(), 0.7f);
 	}
 }
 
@@ -247,16 +365,22 @@ void AAHCombatantCharacter::NotifyWeaponShot(const FHitResult& Hit, bool bHit)
 
 void AAHCombatantCharacter::OnDeathStarted()
 {
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Combat] death actor=%s faction=%s"), *GetName(), *GetFactionName().ToString());
+	#endif
 	GetCharacterMovement()->DisableMovement();
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	if (CombatComponent)
 	{
 		CombatComponent->DisableCombat();
 	}
+	// Without this the body keeps standing in its idle loop and a kill reads as a bug.
+	StartRagdoll();
 	OnCombatantDeath.Broadcast();
 	if (bDestroyOnDeath)
 	{
-		SetLifeSpan(3.0f);
+		// Three seconds cut the corpse away before it finished falling.
+		SetLifeSpan(CorpseLifeSpan);
 	}
 	if (DeathSound)
 	{

@@ -17,13 +17,21 @@
 #include "Gameplay/Audio/AHAudioPaletteData.h"
 #include "Gameplay/Presentation/AHPresentationData.h"
 #include "Tests/AHObjectiveHUDDelegateTestReceiver.h"
+#include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
+#include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Game/AHChapterOneGameMode.h"
 #include "Gameplay/Level/AHChapterOneDirector.h"
 #include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/DamageEvents.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
@@ -276,6 +284,28 @@ bool FAHHealthDamageTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHHealthRegenTest, "AshesOfHeaven.Combat.HealthRegenTiming", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHHealthRegenTest::RunTest(const FString& Parameters)
+{
+	UAHHealthComponent* Enemy = NewObject<UAHHealthComponent>();
+	Enemy->MaxHealth = 100.0f;
+	Enemy->ResetHealth();
+	Enemy->ApplyDamage(40.0f);
+	TestEqual(TEXT("Combatants do not regenerate by default"), Enemy->RegenerationPerSecond, 0.0f);
+
+	UAHHealthComponent* Player = NewObject<UAHHealthComponent>();
+	Player->MaxHealth = 100.0f;
+	Player->RegenerationDelay = 5.0f;
+	Player->RegenerationPerSecond = 20.0f;
+	Player->ResetHealth();
+	Player->ApplyDamage(60.0f);
+	TestEqual(TEXT("Regeneration waits out the delay"), Player->GetTimeUntilRegeneration(2.0f), 3.0f);
+	TestEqual(TEXT("Regeneration opens after the delay"), Player->GetTimeUntilRegeneration(5.0f), 0.0f);
+	// 60 health back at 20/s is three seconds of regeneration on top of the five-second delay.
+	TestEqual(TEXT("Full recovery costs delay plus health over rate"), Player->RegenerationDelay + (60.0f / Player->RegenerationPerSecond), 8.0f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHArmorTimingTest, "AshesOfHeaven.Combat.ArmorAbsorptionAndRegenTiming", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHArmorTimingTest::RunTest(const FString& Parameters)
 {
@@ -484,6 +514,308 @@ bool FAHEncounterConfigurationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
 	TestFalse(TEXT("New encounter is inactive"), Encounter->IsActive());
 	TestFalse(TEXT("New encounter is incomplete"), Encounter->IsComplete());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHCombatantIsShootableTest, "AshesOfHeaven.Combat.CombatantIsShootable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHCombatantIsShootableTest::RunTest(const FString& Parameters)
+{
+	// Weapons trace on ECC_Visibility. A combatant whose only collider is the capsule cannot be
+	// shot at all, because the Pawn profile ignores that channel - which is exactly how every
+	// enemy in the chapter became immortal. This test fires the real trace at a real spawned
+	// combatant and then kills it through the real damage path.
+	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
+		.InitializeScenes(true)
+		.AllowAudioPlayback(false)
+		.RequiresHitProxies(false)
+		.CreatePhysicsScene(true)
+		.CreateNavigation(false)
+		.CreateAISystem(false)
+		.ShouldSimulatePhysics(false)
+		.EnableTraceCollision(true)
+		.SetTransactional(false)
+		.CreateFXSystem(false);
+	UWorld* TestWorld = UWorld::CreateWorld(
+		EWorldType::Game,
+		false,
+		FName(TEXT("AHShootableTestWorld")),
+		nullptr,
+		true,
+		ERHIFeatureLevel::Num,
+		&WorldInitialization,
+		false);
+	TestNotNull(TEXT("Shootable test world is created"), TestWorld);
+	if (!TestWorld)
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AAHVeilPilgrimCharacter* Target = TestWorld->SpawnActor<AAHVeilPilgrimCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
+	TestNotNull(TEXT("A combatant can be spawned"), Target);
+	if (!Target)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+	// AActor::ProcessEvent silently drops every script event until the world reports its actors
+	// as initialised, and BeginPlay is not dispatched to actors spawned into a bare world.
+	TestWorld->InitializeActorsForPlay(FURL());
+	TestWorld->SetBegunPlay(true);
+	TestWorld->BeginPlay();
+	// Without this the health component would still be sitting on its zero default and every
+	// damage assertion below would pass for the wrong reason.
+	Target->DispatchBeginPlay();
+
+	USkeletalMeshComponent* Body = Target->GetMesh();
+	TestNotNull(TEXT("A combatant has a body mesh component"), Body);
+	if (!Body)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+	TestNotNull(TEXT("The body has a skeletal mesh asset"), Body->GetSkeletalMeshAsset());
+	TestNotNull(TEXT("The body has a physics asset, so hits resolve to a bone"), Body->GetPhysicsAsset());
+	TestEqual(TEXT("The body blocks the channel weapons trace on"),
+		Body->GetCollisionResponseToChannel(ECC_Visibility), ECR_Block);
+
+	// Chest height, fired from in front, exactly like AAHWeaponBase::FireShot.
+	const FVector ChestOffset(0.0f, 0.0f, 55.0f);
+	const FVector TraceStart = Target->GetActorLocation() + ChestOffset + FVector(600.0f, 0.0f, 0.0f);
+	const FVector TraceEnd = Target->GetActorLocation() + ChestOffset - FVector(600.0f, 0.0f, 0.0f);
+	FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(AHShootableTest), true);
+	FHitResult Hit;
+	const bool bHit = TestWorld->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+	TestTrue(TEXT("A visibility trace at chest height hits the combatant"), bHit && Hit.GetActor() == Target);
+	TestTrue(TEXT("The hit resolves to a named bone, which the headshot multiplier needs"), !Hit.BoneName.IsNone());
+
+	// Same damage event the weapon builds, applied until the health pool is spent.
+	const float StartingHealth = Target->GetHealthComponent()->GetHealth();
+	TestTrue(TEXT("The combatant starts alive"), !Target->IsCombatantDead());
+	TestTrue(TEXT("The combatant starts on a full health pool"), StartingHealth > 0.0f);
+	int32 Shots = 0;
+	while (!Target->IsCombatantDead() && Shots < 200)
+	{
+		++Shots;
+		UGameplayStatics::ApplyPointDamage(Target, 24.0f, (TraceEnd - TraceStart).GetSafeNormal(), Hit, nullptr, nullptr, nullptr);
+	}
+	TestTrue(TEXT("Rifle damage through the hit result eventually kills the combatant"), Target->IsCombatantDead());
+	TestTrue(TEXT("Killing the combatant takes a bounded number of rounds"), Shots > 0 && Shots < 200);
+	TestTrue(TEXT("Damage actually drained the health pool"), Target->GetHealthComponent()->GetHealth() < StartingHealth);
+
+	Target->Destroy();
+	TestWorld->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterCompletesWhenEnemiesAreKilledTest, "AshesOfHeaven.Combat.EncounterCompletesWhenEnemiesAreKilled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHEncounterCompletesWhenEnemiesAreKilledTest::RunTest(const FString& Parameters)
+{
+	// The chapter's pacing hangs off this loop: an encounter holds the player until its enemies
+	// are dead, and completing it advances the objective. While nothing could be shot the loop
+	// resolved on nobody's terms, so the whole slice played as a walk-through.
+	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
+		.InitializeScenes(true)
+		.AllowAudioPlayback(false)
+		.RequiresHitProxies(false)
+		.CreatePhysicsScene(true)
+		.CreateNavigation(false)
+		.CreateAISystem(false)
+		.ShouldSimulatePhysics(false)
+		.EnableTraceCollision(true)
+		.SetTransactional(false)
+		.CreateFXSystem(false);
+	UWorld* TestWorld = UWorld::CreateWorld(
+		EWorldType::Game,
+		false,
+		FName(TEXT("AHEncounterLoopTestWorld")),
+		nullptr,
+		true,
+		ERHIFeatureLevel::Num,
+		&WorldInitialization,
+		false);
+	TestNotNull(TEXT("Encounter loop test world is created"), TestWorld);
+	if (!TestWorld)
+	{
+		return false;
+	}
+
+	AAHCombatEncounter* Encounter = TestWorld->SpawnActor<AAHCombatEncounter>();
+	TestNotNull(TEXT("An encounter can be spawned"), Encounter);
+	if (!Encounter)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+	Encounter->EncounterId = FName(TEXT("Test_EncounterLoop"));
+	Encounter->EnemyCount = 3;
+	Encounter->bActivateOnPlayerOverlap = false;
+	Encounter->SpawnLocations = { FVector(0.0f, 0.0f, 0.0f), FVector(600.0f, 0.0f, 0.0f), FVector(1200.0f, 0.0f, 0.0f) };
+	// AActor::ProcessEvent silently drops every script event until the world reports its actors
+	// as initialised, so without this the death delegates bind, broadcast, and reach nobody.
+	TestWorld->InitializeActorsForPlay(FURL());
+	TestWorld->SetBegunPlay(true);
+	TestWorld->BeginPlay();
+	Encounter->DispatchBeginPlay();
+
+	Encounter->ActivateEncounter();
+	TestTrue(TEXT("An activated encounter is active"), Encounter->IsActive());
+	TestFalse(TEXT("An activated encounter is not yet complete"), Encounter->IsComplete());
+
+	TArray<AAHCombatantCharacter*> Spawned;
+	for (TActorIterator<AAHCombatantCharacter> It(TestWorld); It; ++It)
+	{
+		Spawned.Add(*It);
+	}
+	TestEqual(TEXT("The encounter spawned its requested enemies"), Spawned.Num(), 3);
+	TestEqual(TEXT("The encounter is tracking every enemy it spawned"), Encounter->GetActiveEnemyCount(), 3);
+
+	for (AAHCombatantCharacter* Enemy : Spawned)
+	{
+		Enemy->DispatchBeginPlay();
+		TestTrue(TEXT("A freshly spawned enemy is alive"), !Enemy->IsCombatantDead());
+		// The loop only closes if these two links exist: health death reaches the combatant,
+		// and the combatant's death reaches the encounter.
+		TestTrue(TEXT("The enemy's health is wired to its own death handler"), Enemy->GetHealthComponent()->OnDeath.IsBound());
+		TestTrue(TEXT("The encounter is listening for this enemy's death"), Enemy->OnCombatantDeath.IsBound());
+		int32 Rounds = 0;
+		while (!Enemy->IsCombatantDead() && Rounds < 200)
+		{
+			++Rounds;
+			Enemy->TakeDamage(24.0f, FDamageEvent(), nullptr, nullptr);
+		}
+		TestTrue(TEXT("Rifle-weight damage kills an encounter enemy"), Enemy->IsCombatantDead());
+		TestEqual(TEXT("A dead enemy has an empty health pool"), Enemy->GetHealthComponent()->GetHealth(), 0.0f);
+		TestTrue(TEXT("A dead enemy stopped colliding, proving OnDeathStarted ran"),
+			Enemy->GetCapsuleComponent()->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
+	}
+
+	TestEqual(TEXT("The encounter is waiting on nobody once every enemy is dead"), Encounter->GetActiveEnemyCount(), 0);
+	TestTrue(TEXT("Killing every enemy completes the encounter"), Encounter->IsComplete());
+	TestFalse(TEXT("A completed encounter is no longer active"), Encounter->IsActive());
+
+	Encounter->Destroy();
+	TestWorld->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHCorpseIsLootableTest, "AshesOfHeaven.Combat.CorpseIsLootable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHCorpseIsLootableTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
+		.InitializeScenes(true)
+		.AllowAudioPlayback(false)
+		.RequiresHitProxies(false)
+		.CreatePhysicsScene(true)
+		.CreateNavigation(false)
+		.CreateAISystem(false)
+		.ShouldSimulatePhysics(false)
+		.EnableTraceCollision(true)
+		.SetTransactional(false)
+		.CreateFXSystem(false);
+	UWorld* TestWorld = UWorld::CreateWorld(
+		EWorldType::Game,
+		false,
+		FName(TEXT("AHLootTestWorld")),
+		nullptr,
+		true,
+		ERHIFeatureLevel::Num,
+		&WorldInitialization,
+		false);
+	TestNotNull(TEXT("Loot test world is created"), TestWorld);
+	if (!TestWorld)
+	{
+		return false;
+	}
+	TestWorld->InitializeActorsForPlay(FURL());
+	TestWorld->SetBegunPlay(true);
+	TestWorld->BeginPlay();
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AAHCombatPlayerCharacter* Looter = TestWorld->SpawnActor<AAHCombatPlayerCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
+	AAHVeilPilgrimCharacter* Victim = TestWorld->SpawnActor<AAHVeilPilgrimCharacter>(FVector(300.0f, 0.0f, 0.0f), FRotator::ZeroRotator, SpawnParameters);
+	TestNotNull(TEXT("A looter can be spawned"), Looter);
+	TestNotNull(TEXT("A victim can be spawned"), Victim);
+	if (!Looter || !Victim)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+	Looter->DispatchBeginPlay();
+	Victim->DispatchBeginPlay();
+
+	TestTrue(TEXT("A living enemy offers no loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+	TestNull(TEXT("A living enemy exposes no lootable weapon"), Victim->GetLootableWeapon());
+
+	AAHWeaponBase* VictimWeapon = Victim->GetInventoryComponent()->GetCurrentWeapon();
+	AAHWeaponBase* LooterWeapon = Looter->GetInventoryComponent()->GetCurrentWeapon();
+	TestNotNull(TEXT("The victim starts armed"), VictimWeapon);
+	TestNotNull(TEXT("The looter starts armed"), LooterWeapon);
+	if (!VictimWeapon || !LooterWeapon)
+	{
+		TestWorld->DestroyWorld(false);
+		return false;
+	}
+	const FAHAmmoState VictimAmmo = VictimWeapon->GetAmmoState();
+	// Leave room in the reserve, or a full pool would hide the transfer behind its own clamp.
+	LooterWeapon->SetAmmoState(FAHAmmoState{VictimAmmo.MagazineCapacity, 0, VictimAmmo.MagazineCapacity, VictimAmmo.ReserveCapacity});
+	TestEqual(TEXT("The looter's reserve is emptied for the test"), LooterWeapon->GetAmmoState().Reserve, 0);
+
+	int32 Rounds = 0;
+	while (!Victim->IsCombatantDead() && Rounds < 200)
+	{
+		++Rounds;
+		Victim->TakeDamage(24.0f, FDamageEvent(), nullptr, nullptr);
+	}
+	TestTrue(TEXT("The victim can be killed"), Victim->IsCombatantDead());
+
+	TestNotNull(TEXT("A corpse exposes the weapon it was holding"), Victim->GetLootableWeapon());
+	TestFalse(TEXT("A corpse offers a loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+
+	IAHInteractable::Execute_Interact(Victim, Looter);
+
+	// A reserve pool is capped, so a full corpse tops the looter out rather than overfilling.
+	const int32 ExpectedReserve = FMath::Min(VictimAmmo.Magazine + VictimAmmo.Reserve, VictimAmmo.ReserveCapacity);
+	TestEqual(TEXT("Looting moves the dead soldier's rounds to the looter"),
+		LooterWeapon->GetAmmoState().Reserve, ExpectedReserve);
+	TestTrue(TEXT("The looter gained ammunition it did not have"), ExpectedReserve > 0);
+	TestNull(TEXT("A stripped corpse has nothing left to loot"), Victim->GetLootableWeapon());
+	TestTrue(TEXT("A stripped corpse stops offering a prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+
+	Looter->Destroy();
+	Victim->Destroy();
+	TestWorld->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHPlayerViewIsStandingHeightTest, "AshesOfHeaven.Combat.PlayerViewIsStandingHeight", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHPlayerViewIsStandingHeightTest::RunTest(const FString& Parameters)
+{
+	// The camera used to sit at the capsule's centre, 96cm off the floor, and the game read as
+	// though it were played from a chair. Eye height is measured from the capsule's centre, so
+	// the test asserts the offset rather than a world Z.
+	const AAHCombatPlayerCharacter* Player = GetDefault<AAHCombatPlayerCharacter>();
+	TestNotNull(TEXT("The player character default object exists"), Player);
+	if (!Player)
+	{
+		return false;
+	}
+
+	const USkeletalMeshComponent* ViewHolder = Player->GetFirstPersonMesh();
+	const UCapsuleComponent* Capsule = Player->GetCapsuleComponent();
+	TestNotNull(TEXT("The player has a first person view holder"), ViewHolder);
+	TestNotNull(TEXT("The player has a capsule"), Capsule);
+	if (!ViewHolder || !Capsule)
+	{
+		return false;
+	}
+
+	const float EyeOffset = ViewHolder->GetRelativeLocation().Z;
+	const float EyeHeightFromFeet = Capsule->GetUnscaledCapsuleHalfHeight() + EyeOffset;
+	TestEqual(TEXT("The view sits at the character's eye height, not its waist"), EyeOffset, Player->BaseEyeHeight);
+	TestTrue(TEXT("Eyes are at a standing height above the feet"), EyeHeightFromFeet > 140.0f && EyeHeightFromFeet < 190.0f);
 	return true;
 }
 

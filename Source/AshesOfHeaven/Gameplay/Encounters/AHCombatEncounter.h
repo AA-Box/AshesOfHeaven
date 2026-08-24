@@ -56,6 +56,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Encounter")
 	bool IsComplete() const { return bComplete; }
 
+	/** Enemies this encounter is still waiting on. Zero is what completes it. */
+	UFUNCTION(BlueprintPure, Category="Encounter")
+	int32 GetActiveEnemyCount() const { return ActiveEnemies.Num(); }
+
 protected:
 	UFUNCTION()
 	void OnActivationOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

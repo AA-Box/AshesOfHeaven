@@ -271,13 +271,19 @@ INSTANCES = {
     # and bright ground also drags auto-exposure down, crushing the walls.
     "MI_Erebus_Concrete_Ground": ("M_ErebusSurface", (0.018, 0.019, 0.021), {"Roughness": 0.90, "GrimeAmount": 0.55, "WearAmount": 0.50, "Wetness": 0.30}, "concrete"),
     "MI_Erebus_RoadAsphalt":     ("M_ErebusSurface", (0.010, 0.010, 0.012), {"Roughness": 0.94, "GrimeAmount": 0.48, "WearAmount": 0.55, "Wetness": 0.28}, "asphalt"),
-    "MI_Erebus_WreckMetal":      ("M_ErebusSurface", (0.110, 0.080, 0.058), {"Roughness": 0.92, "Metallic": 0.55, "GrimeAmount": 0.65, "DamageMaskStrength": 0.85}, "metal"),
+    "MI_Erebus_WreckMetal":      ("M_ErebusSurface", (0.130, 0.082, 0.052), {"Roughness": 0.92, "Metallic": 0.55, "GrimeAmount": 0.65, "DamageMaskStrength": 0.85}, "metal"),
+    # Phase 4.9 chroma separation: the gate feedback said every surface sat in one
+    # grey-brown family. Rust for pipework/traps, faded red for signage accents,
+    # dry olive-tan burlap for sandbags (the old wet-black capsules read as blobs).
+    "MI_Erebus_Rust":            ("M_ErebusSurface", (0.062, 0.030, 0.018), {"Roughness": 0.92, "Metallic": 0.12, "GrimeAmount": 0.60, "WearAmount": 0.60}, "metal"),
+    "MI_Erebus_PaintRed":        ("M_ErebusSurface", (0.150, 0.034, 0.028), {"Roughness": 0.78, "Metallic": 0.08, "GrimeAmount": 0.50, "WearAmount": 0.55}, "metal"),
+    "MI_Erebus_Sandbag":         ("M_ErebusSurface", (0.105, 0.094, 0.072), {"Roughness": 0.96, "GrimeAmount": 0.50, "WearAmount": 0.30, "Wetness": 0.0}, "mud"),
     "MI_Erebus_Rubber":          ("M_HumanArmor",    (0.024, 0.024, 0.025), {"Roughness": 0.90, "Metallic": 0.0, "GrimeAmount": 0.60}, None),
     "MI_Erebus_Glass_Damaged":   ("M_Glass",         (0.030, 0.038, 0.042), {"Roughness": 0.35, "GrimeAmount": 0.50}, None),
     "MI_Erebus_Puddle":          ("M_Glass",         (0.010, 0.012, 0.016), {"Roughness": 0.05, "Wetness": 1.0}, None),
     "MI_Erebus_RuinDark":        ("M_ErebusSurface", (0.105, 0.108, 0.115), {"Roughness": 0.95, "GrimeAmount": 0.50, "WearAmount": 0.40}, "concrete"),
     "MI_Erebus_CathedralSilhouette": ("M_VeilObsidian", (0.016, 0.017, 0.020), {"Roughness": 0.85}, None),
-    "MI_Erebus_BannerCloth":     ("M_HumanArmor",    (0.030, 0.030, 0.032), {"Roughness": 0.95, "Metallic": 0.0}, None),
+    "MI_Erebus_BannerCloth":     ("M_HumanArmor",    (0.085, 0.026, 0.022), {"Roughness": 0.95, "Metallic": 0.0}, None),
     "MI_Erebus_BannerEmblem":    ("M_HumanMetal",    (0.300, 0.310, 0.285), {"Roughness": 0.85, "Metallic": 0.08, "GrimeAmount": 0.35}, None),
     "MI_Erebus_Decal_Scorch":    ("M_Scorch",        (0.030, 0.018, 0.010), {"DecalOpacity": 0.85}, None),
     "MI_Erebus_Decal_Grime":     ("M_Decal_Master",  (0.055, 0.050, 0.042), {"DecalOpacity": 0.65}, None),
@@ -412,7 +418,7 @@ def build_pipe_large_a():
     cyl(m, (300, 0, 46), 42, 600, rot=(0, 90, 0), mat=0, radial_steps=16)
     for fx in (-290, 0, 290):
         cyl(m, (fx + 8, 0, 46), 52, 16, rot=(0, 90, 0), mat=0, radial_steps=16)
-    return finalize("SM_Erebus_Pipe_Large_A", m, [(M["MI_Erebus_Steel_Dark"], "Steel")])
+    return finalize("SM_Erebus_Pipe_Large_A", m, [(M["MI_Erebus_Rust"], "Steel")])
 
 
 def build_pipe_elbow_a():
@@ -427,7 +433,7 @@ def build_pipe_elbow_a():
     EDITS.append_mesh(m, b, xf((0, 0, 220)))
     cyl(m, (0, 0, 0), 52, 16, mat=0, radial_steps=16)               # flanges at open ends
     cyl(m, (-232, 0, 220), 52, 16, rot=(0, 90, 0), mat=0, radial_steps=16)
-    return finalize("SM_Erebus_Pipe_Elbow_A", m, [(M["MI_Erebus_Steel_Dark"], "Steel")])
+    return finalize("SM_Erebus_Pipe_Elbow_A", m, [(M["MI_Erebus_Rust"], "Steel")])
 
 
 def build_pipesupport_a():
@@ -484,13 +490,20 @@ def build_wreckage_a():
 
 
 def build_wreckage_b():
+    # Girder-and-plate collapse tangle: the old neat plate stack read as raw
+    # blockout in near-camera captures (gate feedback round 4).
     m = new_mesh()
-    box(m, (0, 0, 0), 430, 180, 56, mat=0, steps=2)              # chassis
-    box(m, (-40, 10, 56), 300, 150, 16, rot=(0, 4, 8), mat=0)    # spilled plates
-    box(m, (30, -20, 84), 260, 130, 14, rot=(3, -6, -14), mat=0)
-    box(m, (-10, 30, 110), 200, 110, 12, rot=(-4, 5, 22), mat=0)
-    noise(m, 4.0, 0.016, seed=53)
-    return finalize("SM_Erebus_Wreckage_B", m, [(M["MI_Erebus_WreckMetal"], "Hull")])
+    box(m, (0, 0, 0), 360, 170, 44, rot=(2, -3, 12), mat=0, steps=2)   # buckled base plate
+    box(m, (-50, 40, 32), 230, 24, 60, rot=(6, -14, 30), mat=1)        # fallen girder A
+    box(m, (60, -50, 44), 250, 22, 56, rot=(-8, 18, -55), mat=1)       # fallen girder B
+    box(m, (30, 60, 52), 180, 110, 13, rot=(18, 8, -18), mat=0)        # leaning torn plate
+    subtract(m, tool_box((100, 90, 90), 110, 80, 80, rot=(10, 0, 35)))
+    cyl(m, (-110, -60, 22), 5, 130, rot=(15, 62, 20), mat=1)           # rebar
+    cyl(m, (120, 20, 30), 5, 110, rot=(-25, 72, -40), mat=1)
+    box(m, (-130, -30, 14), 80, 70, 50, rot=(12, 6, 40), mat=0)        # rubble chunk
+    noise(m, 3.2, 0.016, seed=53)
+    return finalize("SM_Erebus_Wreckage_B", m, [
+        (M["MI_Erebus_WreckMetal"], "Hull"), (M["MI_Erebus_Rust"], "Girders")])
 
 
 def build_rubble(name, radius, magnitude, seed):
@@ -551,16 +564,22 @@ def build_trenchcorner_a():
 
 
 def build_sandbagrow_a():
+    # Boxy stacked bags, matte dry burlap: the earlier wet-black capsules read as
+    # shiny blockout pills in every reviewed capture (gate feedback round 4).
+    import random
+    rng = random.Random(553)
     m = new_mesh()
-    stream_positions = []
-    for course, course_z, count in ((0, 0, 8), (1, 40, 7), (2, 80, 5)):
-        offset = -160 + (course % 2) * 22
+    for course, course_z, count in ((0, 0, 8), (1, 33, 7), (2, 66, 5)):
+        offset = -160 + (course % 2) * 23
         for index in range(count):
-            stream_positions.append((offset + index * 44, (course % 2) * 8 - 4, course_z, (index * 37 + course * 91) % 22 - 11))
-    for px, py, pz, yaw in stream_positions:
-        capsule(m, (px, py, pz + 21), 22, 36, rot=(0, 90, yaw), mat=0)
-    noise(m, 2.2, 0.03, seed=71)
-    return finalize("SM_Erebus_SandbagRow_A", m, [(M["MI_Erebus_Mud"], "Bags")])
+            px = offset + index * 46 + rng.uniform(-4, 4)
+            py = (course % 2) * 8 - 4 + rng.uniform(-7, 7)
+            box(m, (px, py, course_z), 48, 32, 36,
+                rot=(rng.uniform(-5, 5), rng.uniform(-4, 4), rng.uniform(-16, 16)),
+                mat=0, steps=1)
+    noise(m, 3.6, 0.05, seed=71)
+    bevel(m, 6.0)
+    return finalize("SM_Erebus_SandbagRow_A", m, [(M["MI_Erebus_Sandbag"], "Bags")])
 
 
 def build_groundslab_a():
@@ -1248,36 +1267,147 @@ def build_debrisfield(name, radius, count, seed):
 
 
 def build_checkpointgate_a():
-    """Erebus corridor terminus gate: a heavy industrial security arch that
-    reads as engineered architecture where the legacy transit blockout posts
-    silhouetted as floating boxes from the comparison view."""
+    """Erebus corridor terminus gate, v3. The v2 solid header box + cap beam read
+    as a giant dead slab dead-center in the comparison frame (gate feedback round
+    4). Now: two stepped column towers carrying a thin bridge beam, topped by a
+    broken parapet with sky gaps, hanging rebar and a torn cable — layered ruined
+    architecture the skyline reads through, not a monolith."""
     m = new_mesh()
     for sy in (-1, 1):
         y = sy * 760.0
-        box(m, (0, y, 0), 420, 420, 60, mat=1)                    # base plates
-        box(m, (0, y, 60), 300, 300, 1250, mat=0, steps=2)        # columns
-        subtract(m, tool_box((0, y + sy * 150, 700), 60, 60, 1400, rot=(0, 0, 45)))  # chamfer
-        box(m, (0, y, 1290), 360, 360, 70, mat=1)                 # capitals
-        box(m, (-170, y, 200), 60, 200, 900, rot=(0, -6, 0), mat=1)  # face ribs
-    box(m, (0, 0, 1360), 340, 1900, 380, mat=0, steps=2)          # header box
-    subtract(m, tool_box((0, 0, 1560), 380, 1500, 130))           # recessed band
-    box(m, (-160, 0, 1500), 30, 1100, 200, mat=3)                 # sign plate (pale)
-    for gy in (-620, -320, 320, 620):
-        box(m, (-150, gy, 1420), 24, 130, 60, mat=2)              # vents
-    box(m, (0, 0, 1740), 300, 2000, 80, mat=1)                    # cap beam
-    for sy in (-1, 1):                                            # brace struts
-        box(m, (0, sy * 620, 1140), 80, 80, 460, rot=(sy * 32, 0, 0), mat=2)
-        box(m, (-140, sy * 500, 1330), 90, 70, 60, mat=2)         # floodlight boxes
-    # battle damage: south column shoulder bitten, rebar stubs
-    subtract(m, tool_box((60, -820, 1240), 260, 220, 260, rot=(12, 0, 30)))
-    box(m, (30, -790, 1180), 8, 8, 160, rot=(20, 14, 0), mat=2)
-    box(m, (-30, -830, 1200), 8, 8, 130, rot=(-16, 22, 0), mat=2)
+        box(m, (0, y, 0), 420, 420, 50, mat=1)                     # base plates
+        box(m, (0, y, 50), 280, 280, 950, mat=0, steps=2)          # column lower
+        box(m, (0, y, 1000), 230, 230, 420, mat=0, steps=1)        # setback tier
+        subtract(m, tool_box((0, y + sy * 140, 650), 60, 60, 1700, rot=(0, 0, 45)))  # chamfer
+        box(m, (-140, y, 180), 50, 170, 780, rot=(0, -5, 0), mat=1)  # face ribs
+        box(m, (0, y, 1420), 300, 300, 55, mat=1)                  # capitals
+    # thin bridge beam instead of the old solid header wall
+    box(m, (0, 0, 1475), 210, 1900, 130, mat=0, steps=2)
+    box(m, (-115, 0, 1495), 18, 1700, 90, mat=1)                   # front lip channel
+    # broken parapet segments with open sky between them
+    box(m, (0, -640, 1605), 150, 430, 110, mat=0)
+    box(m, (0, -90, 1605), 150, 330, 95, rot=(0, 0, -4), mat=0)
+    box(m, (10, 590, 1600), 150, 290, 85, rot=(3, 0, 5), mat=0)
+    # blast bite through the south parapet shoulder
+    subtract(m, tool_box((0, -420, 1650), 280, 260, 260, rot=(10, 0, 25)))
+    # hanging rebar + torn cable below the break
+    box(m, (20, -430, 1370), 7, 7, 210, rot=(18, 6, 0), mat=2)
+    box(m, (-30, -390, 1390), 7, 7, 170, rot=(-14, 10, 0), mat=2)
+    cyl(m, (0, -200, 1290), 5, 380, rot=(35, 8, 0), mat=2)         # dangling cable
+    # small skewed sign plate on the north column face
+    box(m, (-150, 620, 1120), 24, 360, 160, rot=(0, 4, -6), mat=3)
+    for gy in (-420, 420):                                          # floodlight boxes
+        box(m, (-120, gy, 1400), 80, 70, 55, rot=(0, 18, 0), mat=2)
+    # column battle damage: south shoulder bitten, rebar stubs
+    subtract(m, tool_box((60, -840, 1180), 260, 220, 280, rot=(12, 0, 30)))
+    box(m, (30, -800, 1120), 8, 8, 170, rot=(20, 14, 0), mat=2)
+    box(m, (-30, -845, 1140), 8, 8, 140, rot=(-16, 22, 0), mat=2)
     noise(m, 1.8, 0.012, seed=443)
     return finalize("SM_Erebus_CheckpointGate_A", m, [
         (M["MI_Erebus_Concrete_Panels"], "Concrete"),
         (M["MI_Erebus_Steel_Dark"], "Steel"),
         (M["MI_Erebus_Steel_Olive"], "Fittings"),
         (M["MI_Erebus_BannerEmblem"], "Sign")])
+
+
+def build_tanktrap_a():
+    """Steel hedgehog: three full beams crossing at one center point, each pitched
+    45deg and yawed 120deg apart. Boxes are base-anchored, so each base is placed
+    at center - direction*halflength to make the beams cross, not radiate."""
+    import math
+    m = new_mesh()
+    for yaw in (0, 120, 240):
+        rad = math.radians(yaw)
+        box(m, (106.0 * math.cos(rad), 106.0 * math.sin(rad), 4), 34, 34, 300,
+            rot=(0, 45, yaw), mat=0)
+    box(m, (0, 0, 86), 54, 54, 46, rot=(0, 0, 30), mat=1)          # center gusset
+    noise(m, 1.4, 0.06, seed=487)
+    return finalize("SM_Erebus_TankTrap_A", m, [
+        (M["MI_Erebus_Rust"], "Beams"), (M["MI_Erebus_Steel_Dark"], "Gussets")])
+
+
+def build_scaffold_a():
+    """Two-lift pipe scaffold with planks, half-stripped: facade repair abandoned
+    mid-war. Local -X faces away from the wall it leans on."""
+    import random
+    rng = random.Random(491)
+    m = new_mesh()
+    for px in (-260, 260):
+        for py in (-110, 110):
+            cyl(m, (px, py, 0), 9, 700 + rng.uniform(-60, 40), mat=0, radial_steps=8)
+    for lift_z in (330, 660):
+        for py in (-110, 110):
+            cyl(m, (280, py, lift_z), 7, 560, rot=(0, 90, 0), mat=0, radial_steps=8)
+        box(m, (-260, 0, lift_z - 14), 15, 236, 13, mat=0)          # cross rails
+        box(m, (260, 0, lift_z - 14), 15, 236, 13, mat=0)
+    cyl(m, (280, -60, 180), 7, 620, rot=(0, 64, 8), mat=0, radial_steps=8)  # diagonal brace
+    for index in range(3):                                          # upper planks, one missing
+        box(m, (-180 + index * 190, 0, 672), 170, 230, 14, rot=(0, 0, rng.uniform(-5, 5)), mat=1)
+    box(m, (-60, 20, 340), 180, 240, 14, rot=(0, 0, 4), mat=1)      # lower plank
+    box(m, (150, -40, 24), 190, 240, 14, rot=(4, 12, 28), mat=1)    # fallen plank
+    return finalize("SM_Erebus_Scaffold_A", m, [
+        (M["MI_Erebus_Rust"], "Pipes"), (M["MI_Erebus_Steel_Painted"], "Planks")])
+
+
+def build_cablespan(name, length, seed):
+    """Sagging overhead cable across the street: catenary of pitched segments,
+    small junction box at the low point. Local X is the span axis."""
+    import math
+    m = new_mesh()
+    segs = 7
+    seg_len = length / float(segs) * 1.01
+    pitches = (-16, -10, -5, 0, 5, 10, 16)
+    # Cylinders extrude from their base along the rotated +Z axis (pitch 90 -> -X),
+    # so each segment's base sits at its +X end and extrudes back to the previous
+    # joint: rot pitch 90+p maps direction to (-cos p, 0, -sin p).
+    x = -length / 2.0
+    z = 0.0
+    for pitch in pitches:
+        rad = math.radians(pitch)
+        dx = seg_len * math.cos(rad)
+        dz = seg_len * math.sin(rad)
+        cyl(m, (x + dx, 0, z + dz), 6, seg_len, rot=(0, 90 + pitch, 0), mat=0, radial_steps=6)
+        x += dx
+        z += dz
+    sag = -length * 0.5 * math.sin(math.radians(16)) * 0.6
+    box(m, (0, 0, sag - 30), 44, 30, 56, mat=1)                    # junction box at the sag
+    cyl(m, (0, 0, sag - 90), 4, 70, mat=1, radial_steps=6)         # dangling stub
+    return finalize(name, m, [
+        (M["MI_Erebus_Steel_Dark"], "Cable"), (M["MI_Erebus_Rust"], "Box")])
+
+
+def build_streetlamp_bent_a():
+    """City street lamp, blast-bent: single angled arm (never a crossarm — the
+    corridor sightline must not manufacture a cross silhouette)."""
+    m = new_mesh()
+    box(m, (0, 0, 0), 90, 90, 14, mat=0)                           # base plate
+    cyl(m, (0, 0, 14), 13, 430, mat=0, radial_steps=10)
+    cyl(m, (36, 0, 430), 11, 210, rot=(0, -52, 0), mat=0, radial_steps=10)  # bent upper, toward +X
+    box(m, (168, 0, 560), 74, 36, 26, rot=(0, -14, 0), mat=1)      # head
+    box(m, (176, 0, 546), 50, 26, 8, rot=(0, -14, 0), mat=2)       # dead lens
+    box(m, (0, 0, 200), 30, 10, 60, mat=1)                         # service hatch
+    return finalize("SM_Erebus_StreetLamp_Bent_A", m, [
+        (M["MI_Erebus_Steel_Dark"], "Pole"),
+        (M["MI_Erebus_Rust"], "Head"),
+        (M["MI_Erebus_Glass_Damaged"], "Lens")])
+
+
+def build_signframe_a():
+    """Broken wall-mounted shop sign: faded red panel in a dark frame, torn
+    corner, one snapped bracket. Mounts on a facade, faces local -X."""
+    m = new_mesh()
+    for by in (-120, 120):
+        box(m, (30, by, 0), 70, 22, 22, mat=0)                     # wall brackets
+    box(m, (0, 0, 0), 26, 330, 190, mat=0)                         # frame
+    box(m, (-16, 0, 0), 12, 300, 160, mat=1)                       # red panel
+    box(m, (-24, -20, 18), 8, 200, 44, mat=2)                      # pale letter band
+    subtract(m, tool_box((-10, 150, -70), 60, 140, 130, rot=(0, 0, 25)))  # torn corner
+    box(m, (10, -140, -105), 8, 8, 90, rot=(24, 10, 0), mat=0)     # snapped bracket rod
+    noise(m, 1.2, 0.05, seed=499)
+    return finalize("SM_Erebus_SignFrame_A", m, [
+        (M["MI_Erebus_Steel_Dark"], "Frame"),
+        (M["MI_Erebus_PaintRed"], "Panel"),
+        (M["MI_Erebus_BannerEmblem"], "Letters")])
 
 
 def build_worklight_a():
@@ -1477,6 +1607,15 @@ def run():
     build_cathedral_tower("SM_Erebus_CathedralTower_B", 11500, 307)
     build_cathedral_tower("SM_Erebus_CathedralTower_C", 8800, 311)
     build_worklight_a()
+
+    # Phase 4.9 authored dressing (gate feedback round 4: replace blockout-reading
+    # props, add war-zone identity).
+    build_tanktrap_a()
+    build_scaffold_a()
+    build_cablespan("SM_Erebus_CableSpan_A", 2800, 503)
+    build_cablespan("SM_Erebus_CableSpan_B", 1600, 509)
+    build_streetlamp_bent_a()
+    build_signframe_a()
 
     # Generation 3: reference-vocabulary large forms (Phase 4.8 gate iteration).
     build_fortress_a()

@@ -212,7 +212,9 @@ def build_ground():
             (-1150, -420, "A", 30, 1.0), (-400, 350, "A", 140, 1.1), (550, -520, "B", 75, 1.0),
             (1350, 420, "A", 210, 1.2), (2250, -350, "B", 160, 1.1), (3300, 250, "A", 20, 1.3),
             (-800, 900, "B", 300, 0.9), (1900, -900, "B", 250, 1.2)]):
-        mesh("SM_Erebus_DebrisField_" + variant, (dx, dy, 2), (0, 0, yaw), (s, s, 0.55),
+        # z 0 / flatter scale: at z=2 the cut plane rim silhouetted as a floating
+        # disc against the mud (gate feedback round 4 'circular blockout object').
+        mesh("SM_Erebus_DebrisField_" + variant, (dx, dy, 0), (0, 0, yaw), (s, s, 0.45),
              label="Debris_%d" % index)
 
 
@@ -294,6 +296,12 @@ def build_street_architecture():
     mesh("SM_Erebus_Overhang_A", (-450, -2290, 380), (0, 0, 184), (1.1, 1.1, 1.1), label="Overhang_S")
     mesh("SM_Erebus_Overhang_A", (300, 1830, 420), (0, 0, -6), (1.2, 1.2, 1.2), label="Overhang_N")
 
+    # Abandoned repair scaffold against the south fortress face + broken shop
+    # signage on both flanks: street-level authored identity (gate feedback round 4).
+    mesh("SM_Erebus_Scaffold_A", (1450, -1900, 0), (0, 0, 96), (1.15, 1.15, 1.15), label="Scaffold_S")
+    mesh("SM_Erebus_SignFrame_A", (-150, -1330, 520), (0, 0, 4), (1.4, 1.4, 1.4), label="Sign_S")
+    mesh("SM_Erebus_SignFrame_A", (1620, 1545, 430), (0, 0, 186), (1.3, 1.3, 1.3), label="Sign_N")
+
     mesh("SM_Erebus_Catwalk_A", (2300, -2550, 860), (0, 0, 168), (1.2, 1.2, 1.2), label="Catwalk_S")
     mesh("SM_Erebus_CatwalkSupport_A", (2100, -2520, 530), (0, 0, 168), label="CatwalkSup_S0")
     mesh("SM_Erebus_Catwalk_A", (2600, 2850, 940), (0, 14, -6), (1.1, 1.1, 1.1), label="Catwalk_N_Fallen")
@@ -324,7 +332,9 @@ def build_spawn_area():
         mesh("SM_Erebus_TrenchWall_A", (wall_x + 480.0, 965, 0), (0, 0, 0), (1.0, 1.0, 1.6), label="TrenchN_%d" % index)
 
     # Left flank wreck cluster with the burning barrel (light lives below).
-    prop("BP_Erebus_WreckCluster_A", (-1050, -650, 0), (0, 0, 25), (1.2, 1.2, 1.2))
+    # Pulled back-left and down to 1.0: at 1.2 next to the spawn it shoved the
+    # new girder tangle into the corridor's vanishing point (round-4 D8 capture).
+    prop("BP_Erebus_WreckCluster_A", (-1150, -840, 0), (0, 0, 45), (1.0, 1.0, 1.0))
     mesh("SM_Erebus_UtilityPole_A", (-1120, -280, 12), (24, 88, 0), label="FallenPole")
     mesh("SM_Erebus_Barrel_A", (-1120, -560, 0), (6, 0, 4), (1.1, 1.1, 1.1), label="BurnBarrel")
     mesh("SM_Erebus_RubbleMedium_A", (-1010, -420, -4), (0, 0, 140))
@@ -344,15 +354,17 @@ def build_spawn_area():
     mesh("SM_Erebus_PipeSupport_A", (-1080, 690, 0), (0, 0, -15))
     mesh("SM_Erebus_PipeSupport_A", (-720, 720, 0), (0, 0, -15))
     mesh("SM_Erebus_SandbagRow_A", (-1350, 480, 0), (0, 0, 12), (1.0, 1.0, 0.72))
-    # Near-camera right cover cluster: the comparison frame's bottom-right was empty mud.
+    # Near-camera right cover cluster, restaged (gate feedback round 4: the old
+    # debris disc + plate stack read as circular blockout trash bottom-right).
     mesh("SM_Erebus_SandbagRow_A", (-820, 400, 0), (0, 0, 74), (1.1, 1.1, 0.8), label="FG_Sandbags_R")
     mesh("SM_Erebus_Crate_A", (-1000, 250, 0), (0, 0, 28), label="FG_Crate_R")
     mesh("SM_Erebus_CrateOpen_A", (-940, 360, 0), (0, 0, -35), label="FG_CrateOpen_R")
     mesh("SM_Erebus_Barrel_A", (-1060, 430, 0), (0, 0, 0), label="FG_Barrel_R")
     mesh("SM_Erebus_RubbleMedium_A", (-880, 190, -4), (0, 0, 200), (0.8, 0.8, 0.8), label="FG_Rubble_R")
-    mesh("SM_Erebus_DebrisField_A", (-620, 520, 2), (0, 0, 130), (1.1, 1.1, 0.5), label="FG_Debris_R")
-    mesh("SM_Erebus_PuddleSet_A", (-880, 560, 2), (0, 0, 210), (1.6, 1.3, 1.0), label="FG_Puddle_R")
-    mesh("SM_Erebus_Wreckage_B", (-480, 640, 0), (0, 0, 210), (0.85, 0.85, 0.85), label="FG_Wreck_R")
+    mesh("SM_Erebus_TankTrap_A", (-640, 500, 0), (0, 0, 35), (1.0, 1.0, 1.0), label="FG_TankTrap_R")
+    mesh("SM_Erebus_TankTrap_A", (-460, 680, 0), (0, 0, -70), (0.9, 0.9, 0.9), label="FG_TankTrap_R2")
+    mesh("SM_Erebus_PuddleSet_A", (-880, 560, 0.5), (0, 0, 210), (1.4, 1.1, 1.0), label="FG_Puddle_R")
+    mesh("SM_Erebus_SignFrame_A", (-540, 760, 20), (12, 74, 160), (1.1, 1.1, 1.1), label="FG_FallenSign_R")
 
 
 def build_defensive_line():
@@ -361,7 +373,9 @@ def build_defensive_line():
     prop("BP_Human_ExpeditionLight", (-590, -460, 0), (0, 0, 25), (1.0, 1.0, 1.0))
     mesh("SM_Erebus_SandbagRow_A", (-600, -220, 0), (0, 0, 86), (1.15, 1.15, 0.85), label="LineBags_S")
     mesh("SM_Erebus_ArmorBarrier_A", (-560, 240, 0), (0, 0, 155), label="LineBarrier_N")
-    mesh("SM_Erebus_Barricade_A", (-620, -30, 0), (0, 0, 92), label="LineBarricade_C")
+    # Nothing tall dead-center: the corridor's vanishing point must stay open
+    # (D12: even an armor plate here re-created the central-slab read). The
+    # center is held by low sandbags and the worklight only.
     mesh("SM_Erebus_RubbleMedium_A", (-520, -420, -6), (0, 0, 240), (0.9, 0.9, 0.9), label="LineRubble")
     mesh("SM_Erebus_SandbagRow_A", (-640, -300, 0), (0, 0, 84), (1.0, 1.0, 0.72))
     mesh("SM_Erebus_SandbagRow_A", (-655, -620, 0), (0, 0, 96), (1.0, 1.0, 0.72))
@@ -369,7 +383,11 @@ def build_defensive_line():
     mesh("SM_Erebus_SandbagRow_A", (-600, 650, 0), (0, 0, 78), (1.0, 1.0, 0.72))
     mesh("SM_Erebus_Crate_A", (-700, 390, 0), (0, 0, 40))
     mesh("SM_Erebus_Barricade_A", (-540, -820, 0), (0, 0, 4))
-    light((-540, -140, 310), (1.0, 0.45, 0.15), 5200.0, 860.0, "LineLight")
+    # Tank-trap pair on the line flanks: war-zone identity without fencing off the
+    # corridor read (a full row of crossed silhouettes walled the center in D11).
+    mesh("SM_Erebus_TankTrap_A", (-440, -420, 0), (0, 0, 15), label="LineTrap_A")
+    mesh("SM_Erebus_TankTrap_A", (-390, 460, 0), (0, 0, 120), (0.95, 0.95, 0.95), label="LineTrap_D")
+    light((-540, -140, 310), (1.0, 0.45, 0.15), 7800.0, 980.0, "LineLight")
 
 
 def build_midground():
@@ -421,6 +439,28 @@ def build_midground():
     decal("MI_Erebus_Decal_Scorch", (3450, 640, 300), (0, 0, 0), (80, 260, 300), "Scorch_Gate_N")
     mesh("SM_Erebus_SandbagRow_A", (3260, -540, 0), (0, 0, 96), (1.0, 1.0, 0.72), label="GateBags_S")
     mesh("SM_Erebus_Barrel_A", (3300, 620, 0), (0, 0, 40), label="GateBarrel")
+    # Gate checkpoint dressing: faction banners on both column faces toward the
+    # player, tank traps flanking the road slot, warm floodlight pool under the
+    # beam so the gate anchors the corridor instead of reading as dead mass.
+    mesh("SM_Erebus_BannerDrape_A", (3440, -700, 1400), (0, 0, 90), (0.85, 0.85, 0.85), label="GateBanner_S")
+    mesh("SM_Erebus_BannerDrape_B", (3440, 700, 1380), (0, 0, 90), (0.8, 0.8, 0.8), label="GateBanner_N")
+    mesh("SM_Erebus_TankTrap_A", (3320, -320, 0), (0, 0, 25), label="GateTrap_S")
+    mesh("SM_Erebus_TankTrap_A", (3350, 300, 0), (0, 0, -55), (1.1, 1.1, 1.1), label="GateTrap_N")
+    mesh("SM_Erebus_WorkLight_A", (3380, -180, 0), (0, 0, 160), label="GateWorkLight")
+    light((3380, 0, 1250), (1.0, 0.55, 0.22), 9500.0, 1500.0, "GateFlood")
+    light((3300, 620, 160), (1.0, 0.40, 0.12), 2600.0, 620.0, "GateBarrelFire")
+
+    # Overhead cable spans: sagging diagonals stage depth across the corridor
+    # (off-axis so no crossarm silhouette can read as a cross).
+    mesh("SM_Erebus_CableSpan_A", (400, -60, 880), (0, 0, 78), (1.0, 1.0, 1.0), label="CableSpan_A")
+    mesh("SM_Erebus_CableSpan_A", (2050, 80, 820), (0, 0, 102), (1.0, 1.0, 1.0), label="CableSpan_B")
+    mesh("SM_Erebus_CableSpan_B", (1250, -900, 720), (0, -34, 62), (1.0, 1.0, 1.0), label="CableSpan_Torn")
+
+    # Blast-bent street lamps along the route: city furniture that stages the
+    # approach and breaks the empty mid-street band.
+    mesh("SM_Erebus_StreetLamp_Bent_A", (250, -470, 0), (0, 6, 35), label="Lamp_A")
+    mesh("SM_Erebus_StreetLamp_Bent_A", (1750, 430, 0), (0, -5, -155), (1.05, 1.05, 1.05), label="Lamp_B")
+    mesh("SM_Erebus_StreetLamp_Bent_A", (2950, -420, 0), (0, 8, 60), (0.95, 0.95, 0.95), label="Lamp_C")
 
     # Gantry tower on the right flank, past the tower slab.
     mesh("SM_Erebus_GantryTower_A", (5600, 2100, 0), (0, 0, 4))
@@ -453,15 +493,18 @@ def build_midground():
 
     # Cool ambient bounce fills: fake GI so the street walls read in the overcast
     # key instead of crushing to black (no Lumen on the Mac profile).
-    light((-1120, -560, 240), (1.0, 0.42, 0.12), 5200.0, 900.0, "BarrelFire")
-    light((-650, -560, 110), (1.0, 0.42, 0.13), 9000.0, 1400.0, "CraterFire")
-    light((1500, 560, 160), (1.0, 0.26, 0.07), 3200.0, 900.0, "WreckFire")
-    light((2160, 500, 350), (1.0, 0.48, 0.12), 1100.0, 500.0, "BunkerLamp")
-    light((2620, -700, 220), (1.0, 0.33, 0.09), 3800.0, 680.0, "PipeFire")
-    light((2800, -2540, 260), (1.0, 0.34, 0.09), 7500.0, 1600.0, "MonolithFire")
-    light((2120, -520, 200), (1.0, 0.30, 0.08), 5400.0, 950.0, "GunshipFire")
-    light((380, -730, 180), (1.0, 0.40, 0.12), 1500.0, 420.0, "TankSmolder")
-    light((1500, -3300, 400), (1.0, 0.34, 0.09), 12000.0, 3200.0, "VistaFire")
+    # Warm practical pools vs the cool overcast key (gate feedback round 4:
+    # controlled warm/cool contrast, stronger focal guidance). Intensities up
+    # ~50% so each fire carves a readable warm pocket at gameplay distance.
+    light((-1120, -560, 240), (1.0, 0.42, 0.12), 7800.0, 1000.0, "BarrelFire")
+    light((-650, -560, 110), (1.0, 0.42, 0.13), 14000.0, 1600.0, "CraterFire")
+    light((1500, 560, 160), (1.0, 0.26, 0.07), 5000.0, 1000.0, "WreckFire")
+    light((2160, 500, 350), (1.0, 0.48, 0.12), 1700.0, 560.0, "BunkerLamp")
+    light((2620, -700, 220), (1.0, 0.33, 0.09), 5600.0, 760.0, "PipeFire")
+    light((2800, -2540, 260), (1.0, 0.34, 0.09), 11000.0, 1800.0, "MonolithFire")
+    light((2120, -520, 200), (1.0, 0.30, 0.08), 8000.0, 1050.0, "GunshipFire")
+    light((380, -730, 180), (1.0, 0.40, 0.12), 2300.0, 470.0, "TankSmolder")
+    light((1500, -3300, 400), (1.0, 0.34, 0.09), 16000.0, 3400.0, "VistaFire")
 
 
 def build_background():
@@ -532,11 +575,14 @@ def build_background():
     # largely black, pushed to ~320m down the corridor axis, center-right of the
     # comparison frame, where the fog stack shapes the fluted towers into the
     # reference's haze-veiled landmark. Tops reach ~25deg above the horizon.
-    mesh("SM_Erebus_CathedralTower_A", (26500, 1500, 0), (0, 0, 20), (1.15, 1.15, 1.2), label="Cathedral_Main")
-    mesh("SM_Erebus_CathedralTower_B", (30000, 3000, 0), (0, 0, -15), (1.0, 1.0, 1.1), label="Cathedral_Flank")
-    mesh("SM_Erebus_CathedralTower_C", (24500, 500, 0), (0, 0, 45), (0.95, 0.95, 1.15), label="Cathedral_Fore")
+    # Round-4 landmark push: bigger angular size + one more spire so the cluster
+    # anchors the frame instead of being swallowed by midground massing.
+    mesh("SM_Erebus_CathedralTower_A", (26500, 1500, 0), (0, 0, 20), (1.35, 1.35, 1.4), label="Cathedral_Main")
+    mesh("SM_Erebus_CathedralTower_B", (30000, 3000, 0), (0, 0, -15), (1.1, 1.1, 1.2), label="Cathedral_Flank")
+    mesh("SM_Erebus_CathedralTower_C", (24500, 500, 0), (0, 0, 45), (1.05, 1.05, 1.25), label="Cathedral_Fore")
     mesh("SM_Erebus_CathedralSpire_A", (28500, 4600, 0), (0, 0, 70), (0.9, 0.9, 1.0), label="Cathedral_Spire_A")
     mesh("SM_Erebus_CathedralSpire_B", (25600, 2300, 0), (0, 0, 130), (1.0, 1.0, 1.1), label="Cathedral_Spire_B")
+    mesh("SM_Erebus_CathedralSpire_B", (27400, 600, 0), (0, 0, 200), (0.85, 0.85, 1.3), label="Cathedral_Spire_C")
     mesh("SM_Erebus_RuinBlock_B", (27500, 1500, 0), (0, 0, 8), (3.2, 3.2, 1.6), label="CathedralBase_A")
     mesh("SM_Erebus_RuinBlock_B", (29500, 3200, 0), (0, 0, -14), (3.0, 3.0, 1.4), label="CathedralBase_B")
     mesh("SM_Erebus_RuinBlock_B", (28500, 2300, 0), (0, 0, 24), (2.0, 2.0, 3.2), label="CathedralShoulder_A")
@@ -563,6 +609,26 @@ def build_vfx_and_decals():
     decal("MI_Erebus_Decal_Grime", (-150, -1320, 300), (0, 0, 176), (80, 520, 620), "Grime_FacadeBreak_S")
     decal("MI_Erebus_Decal_Grime", (550, 1330, 340), (0, 0, 2), (80, 520, 620), "Grime_Facade_N")
     decal("MI_Erebus_Decal_Scorch", (-450, 1220, 220), (0, 0, -4), (80, 420, 380), "Scorch_ServiceBay_N")
+
+    # Round-4 surface-variety pass: soot streaks under openings, oil stains on
+    # the road, burn shadows around every practical fire, wall grime on the
+    # trench line — believable wear instead of uniform procedural concrete.
+    for index, (gx, gy, gz, yaw, w, h) in enumerate([
+            (-300, -1335, 700, 176, 260, 520), (450, -1335, 900, 176, 300, 640),
+            (1200, -1335, 650, 176, 240, 480), (-150, 1315, 620, 2, 280, 560),
+            (900, 1305, 780, 2, 300, 600), (2200, 1500, 700, -4, 260, 520)]):
+        decal("MI_Erebus_Decal_Grime", (gx, gy, gz), (0, 0, yaw), (70, w, h),
+              "SootStreak_%d" % index)
+    for index, (ox, oy, s, yaw) in enumerate([
+            (-300, -80, 2.2, 40), (800, 120, 1.8, 150), (1600, -120, 2.4, 260),
+            (2500, 60, 1.9, 330), (-1000, 40, 1.6, 200)]):
+        decal("MI_Erebus_Decal_Grime", (ox, oy, 6), (0, -90, yaw), (30, 200 * s, 170 * s),
+              "OilStain_%d" % index)
+    decal("MI_Erebus_Decal_Scorch", (3430, -720, 700), (0, 0, 0), (90, 300, 620), "Scorch_GateCol_S")
+    decal("MI_Erebus_Decal_Grime", (3430, 720, 800), (0, 0, 0), (90, 280, 700), "Grime_GateCol_N")
+    decal("MI_Erebus_Decal_Scorch", (-620, -1010, 220), (0, 0, 90), (70, 480, 340), "Scorch_TrenchS")
+    decal("MI_Erebus_Decal_Grime", (1000, 945, 200), (0, 0, 270), (70, 520, 300), "Grime_TrenchN")
+    decal("MI_Erebus_Decal_Scorch", (3300, 620, 6), (0, -90, 40), (70, 200, 200), "Scorch_GateBarrel")
 
 
 def run():

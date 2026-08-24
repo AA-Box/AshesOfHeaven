@@ -29,6 +29,8 @@ public:
 	virtual void BeginPlay() override;
 
 	void AddWeapon(AAHWeaponBase* Weapon);
+	/** Drop a weapon out of the inventory without destroying it; the caller owns it afterwards. */
+	void DiscardWeapon(AAHWeaponBase* Weapon);
 	AAHWeaponBase* AddWeaponClass(TSubclassOf<AAHWeaponBase> WeaponClass, bool bEquipImmediately = true);
 	void EquipWeapon(int32 Index);
 	void CycleWeapon(int32 Direction);

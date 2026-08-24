@@ -326,7 +326,9 @@ void AAHWeaponBase::FireShot()
 
 	const FVector TraceStart = Combatant->GetWeaponTraceOrigin();
 	FRotator AimRotation = (Combatant->GetWeaponTargetLocation() - TraceStart).Rotation();
-	const float Spread = Combatant->IsAimingDownSights() ? ADSSpreadDegrees : HipSpreadDegrees;
+	// The shooter's own aim error rides on top of the weapon's mechanical spread.
+	const float Spread = (Combatant->IsAimingDownSights() ? ADSSpreadDegrees : HipSpreadDegrees)
+		+ Combatant->GetAimSpreadPenaltyDegrees();
 	AimRotation.Yaw += FMath::FRandRange(-Spread, Spread);
 	AimRotation.Pitch += FMath::FRandRange(-Spread, Spread);
 	const FVector TraceEnd = TraceStart + (AimRotation.Vector() * MaxRange);

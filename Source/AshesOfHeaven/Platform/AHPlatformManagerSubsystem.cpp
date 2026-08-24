@@ -247,6 +247,7 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 		PerformanceProfile.MidDistanceTickInterval = 0.20f;
 		PerformanceProfile.MaxPersistentVFX = 24;
 		PerformanceProfile.MaxDynamicLights = 4;
+		PerformanceProfile.bCharacterFillLights = false;
 		PerformanceProfile.MaxProjectilePoolSize = 64;
 		PerformanceProfile.ThermalMitigationAfterMinutes = 5;
 	}

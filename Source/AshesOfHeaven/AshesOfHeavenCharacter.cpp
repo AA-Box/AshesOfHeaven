@@ -34,7 +34,15 @@ AAshesOfHeavenCharacter::AAshesOfHeavenCharacter()
 	// Create the first person mesh that will be viewed only by this character's owner
 	FirstPersonMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("First Person Mesh"));
 
-	FirstPersonMesh->SetupAttachment(GetMesh());
+	// The camera hangs off this component, so it must not inherit the third person body's
+	// transform: that mesh carries the -90 yaw and -96 Z every character mesh needs, and once
+	// it animates the view would ride the walk cycle. Parent to the capsule instead - the arms
+	// belong to the camera, not to the body.
+	FirstPersonMesh->SetupAttachment(GetCapsuleComponent());
+	// At the capsule's own origin the view sits at the centre of a 1.92m capsule - 96cm off the
+	// ground, which is sitting height, and it made every soldier and doorway loom. BaseEyeHeight
+	// is the engine's standing offset from that centre and puts the camera at 1.60m.
+	FirstPersonMesh->SetRelativeLocation(FVector(0.0f, 0.0f, BaseEyeHeight));
 	FirstPersonMesh->SetOnlyOwnerSee(true);
 	FirstPersonMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
 	FirstPersonMesh->SetCollisionProfileName(FName("NoCollision"));

@@ -38,6 +38,35 @@ void UAHInventoryComponent::AddWeapon(AAHWeaponBase* Weapon)
 	OnInventoryChanged.Broadcast();
 }
 
+void UAHInventoryComponent::DiscardWeapon(AAHWeaponBase* Weapon)
+{
+	const int32 Index = Weapons.IndexOfByKey(Weapon);
+	if (Index == INDEX_NONE)
+	{
+		return;
+	}
+
+	Weapons.RemoveAt(Index);
+	if (Weapon)
+	{
+		Weapon->SetWeaponActive(false);
+	}
+	// Keep the equipped index pointing at the same weapon it did before the removal shifted the array.
+	if (CurrentWeaponIndex == Index)
+	{
+		CurrentWeaponIndex = INDEX_NONE;
+		if (Weapons.Num() > 0)
+		{
+			EquipWeapon(0);
+		}
+	}
+	else if (CurrentWeaponIndex > Index)
+	{
+		--CurrentWeaponIndex;
+	}
+	OnInventoryChanged.Broadcast();
+}
+
 AAHWeaponBase* UAHInventoryComponent::AddWeaponClass(TSubclassOf<AAHWeaponBase> WeaponClass, bool bEquipImmediately)
 {
 	if (!GetWorld() || !WeaponClass)

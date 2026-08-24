@@ -47,6 +47,69 @@ def write_wave(name: str, length: float, renderer) -> None:
         output.writeframes(b"".join(frames))
 
 
+def write_ambience(name: str, length: float, renderer, fade: float = 3.0) -> None:
+    """Write a bed that survives being played on repeat for a whole chapter.
+
+    Three things make a loop audible, and all three were present in the 8 second beds:
+    the loop was short enough to memorise, the event layers ran on a fixed modulo so the
+    same pattern landed in the same place every pass, and the noise layer had different
+    values at the head and the tail so the seam clicked.  This renders length+fade seconds
+    and equal-power crossfades the overhang back over the opening, so the join is
+    continuous in both the tonal and the noise layers.  The renderers take care of the
+    other two by quantising their partials to the loop and scheduling events irregularly.
+    """
+    ROOT.mkdir(parents=True, exist_ok=True)
+    rng = random.Random(name)
+    total = int(length * RATE)
+    overlap = int(fade * RATE)
+    samples = [renderer(index / RATE, length, rng) for index in range(total + overlap)]
+
+    for index in range(overlap):
+        # cos/sin equal-power pair: constant energy through the seam, no dip, no click.
+        theta = (index / overlap) * (math.pi / 2.0)
+        samples[index] = samples[index] * math.sin(theta) + samples[total + index] * math.cos(theta)
+
+    frames = b"".join(
+        struct.pack("<h", int(max(-1.0, min(1.0, value)) * 32767.0)) for value in samples[:total]
+    )
+    with wave.open(str(ROOT / f"{name}.wav"), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(RATE)
+        output.writeframes(frames)
+
+
+def wrap_tone(hz: float, t: float, length: float, phase: float = 0.0) -> float:
+    """A sine snapped to the nearest whole number of cycles in the loop, so it wraps in phase."""
+    cycles = max(1.0, round(hz * length))
+    return math.sin((math.tau * cycles * t / length) + phase)
+
+
+def event_times(seed: str, length: float, mean_gap: float, spread: float) -> tuple[float, ...]:
+    """Irregular one-shot schedule across the whole bed.
+
+    A `t % period` train repeats on a beat the ear locks onto within two passes.  These
+    gaps are drawn once, deterministically, and never line up with the loop length.
+    """
+    rng = random.Random(f"{seed}:schedule")
+    times = []
+    cursor = rng.uniform(0.0, mean_gap)
+    while cursor < length:
+        times.append(cursor)
+        cursor += max(0.35, rng.gauss(mean_gap, spread))
+    return tuple(times)
+
+
+def bursts(t: float, times: tuple[float, ...], width: float) -> float:
+    """Gaussian envelope over the nearest scheduled event; zero cost away from one."""
+    value = 0.0
+    for start in times:
+        local = t - start
+        if -width * 3.0 < local < width * 3.0:
+            value += math.exp(-(local * local) / (width * width))
+    return value
+
+
 def m91_fire(t: float, length: float, rng: random.Random) -> float:
     body = math.exp(-t * 16.0) * (0.58 * tone(66.0 + 18.0 * math.exp(-t * 24.0), t))
     crack = math.exp(-t * 92.0) * (0.28 * noise(rng) + 0.18 * tone(1840.0, t))
@@ -137,31 +200,48 @@ def footstep_sound(t: float, length: float, rng: random.Random) -> float:
     return math.exp(-t * 32.0) * (0.66 * noise(rng) + 0.26 * tone(74.0, t) + 0.12 * tone(142.0, t))
 
 
+EREBUS_ARTILLERY = None
+EREBUS_DEBRIS = None
+TRANSIT_RELAYS = None
+CATHEDRAL_PULSES = None
+
+
 def erebus_ambience(t: float, length: float, rng: random.Random) -> float:
-    distant = 0.08 * tone(43.0, t) + 0.045 * tone(87.0, t)
-    wind = 0.07 * noise(rng) * (0.65 + 0.35 * tone(0.19, t))
-    artillery = 0.15 * math.exp(-((t % 3.7) - 1.9) ** 2 * 24.0) * (noise(rng) + 0.35 * tone(61.0, t))
-    return distant + wind + artillery
+    distant = 0.08 * wrap_tone(43.0, t, length) + 0.045 * wrap_tone(87.0, t, length)
+    # Two wind envelopes on coprime cycle counts: the pair only realigns once per loop, so the
+    # bed never settles into a rhythm the ear can follow.
+    swell = 0.65 + 0.22 * wrap_tone(0.19, t, length) + 0.13 * wrap_tone(0.071, t, length)
+    wind = 0.07 * noise(rng) * swell
+    artillery = 0.15 * bursts(t, EREBUS_ARTILLERY, 0.20) * (noise(rng) + 0.35 * wrap_tone(61.0, t, length))
+    debris = 0.05 * bursts(t, EREBUS_DEBRIS, 0.06) * noise(rng)
+    return distant + wind + artillery + debris
 
 
 def transit_ambience(t: float, length: float, rng: random.Random) -> float:
-    electrical = 0.09 * tone(59.0, t) + 0.035 * tone(118.0, t)
-    rail = 0.08 * noise(rng) * (0.5 + 0.5 * tone(0.11, t))
-    relay = 0.08 * math.exp(-((t % 2.6) - 0.7) ** 2 * 34.0) * tone(740.0, t)
+    electrical = 0.09 * wrap_tone(59.0, t, length) + 0.035 * wrap_tone(118.0, t, length)
+    rail = 0.08 * noise(rng) * (0.5 + 0.32 * wrap_tone(0.11, t, length) + 0.18 * wrap_tone(0.043, t, length))
+    relay = 0.08 * bursts(t, TRANSIT_RELAYS, 0.09) * wrap_tone(740.0, t, length)
     return electrical + rail + relay
 
 
 def cathedral_ambience(t: float, length: float, rng: random.Random) -> float:
-    resonance = 0.08 * tone(31.0, t) + 0.06 * tone(62.0, t) + 0.025 * tone(137.0, t)
+    resonance = (
+        0.08 * wrap_tone(31.0, t, length)
+        + 0.06 * wrap_tone(62.0, t, length)
+        + 0.025 * wrap_tone(137.0, t, length)
+    )
     air = 0.04 * noise(rng)
-    pulse = 0.07 * math.exp(-((t % 4.8) - 2.0) ** 2 * 11.0) * tone(211.0, t)
+    pulse = 0.07 * bursts(t, CATHEDRAL_PULSES, 0.30) * wrap_tone(211.0, t, length)
     return resonance + air + pulse
 
 
 def manticore_engine(t: float, length: float, rng: random.Random) -> float:
-    rpm = 38.0 + 4.0 * tone(0.13, t)
-    engine = 0.15 * tone(rpm, t) + 0.09 * tone(rpm * 2.0, t) + 0.04 * tone(rpm * 3.0, t)
-    machinery = 0.08 * noise(rng) * (0.5 + 0.5 * tone(0.27, t))
+    # The RPM wobble has to wrap too, or the engine audibly re-pitches at the seam.
+    rpm_cycles = max(1.0, round(38.0 * length))
+    wobble = 4.0 * wrap_tone(0.13, t, length) + 1.5 * wrap_tone(0.037, t, length)
+    phase = math.tau * (rpm_cycles * t / length + wobble * t / length)
+    engine = 0.15 * math.sin(phase) + 0.09 * math.sin(2.0 * phase) + 0.04 * math.sin(3.0 * phase)
+    machinery = 0.08 * noise(rng) * (0.5 + 0.30 * wrap_tone(0.27, t, length) + 0.20 * wrap_tone(0.083, t, length))
     return engine + machinery
 
 
@@ -179,14 +259,29 @@ SOURCES = {
     "SC_UI_Dialogue": (0.40, dialogue_sound),
     "SC_UI_Pickup": (0.36, pickup_sound),
     "SC_Player_Footstep": (0.22, footstep_sound),
-    "SC_Erebus_Ambience": (8.0, erebus_ambience),
-    "SC_Transit_Ambience": (8.0, transit_ambience),
-    "SC_Cathedral_Ambience": (8.0, cathedral_ambience),
-    "SC_Manticore_Engine": (8.0, manticore_engine),
+}
+
+# Beds are played on repeat for as long as a chapter stage lasts. Eight seconds was short
+# enough to memorise on the second pass; a minute reads as continuous atmosphere.
+AMBIENCE_LENGTH = 60.0
+
+AMBIENCE = {
+    "SC_Erebus_Ambience": erebus_ambience,
+    "SC_Transit_Ambience": transit_ambience,
+    "SC_Cathedral_Ambience": cathedral_ambience,
+    "SC_Manticore_Engine": manticore_engine,
 }
 
 
 if __name__ == "__main__":
+    span = AMBIENCE_LENGTH + 3.0
+    EREBUS_ARTILLERY = event_times("erebus.artillery", span, 5.1, 2.2)
+    EREBUS_DEBRIS = event_times("erebus.debris", span, 2.3, 1.1)
+    TRANSIT_RELAYS = event_times("transit.relay", span, 3.4, 1.6)
+    CATHEDRAL_PULSES = event_times("cathedral.pulse", span, 6.7, 2.9)
+
     for source_name, (duration, renderer) in SOURCES.items():
         write_wave(source_name, duration, renderer)
-    print(f"generated {len(SOURCES)} static source WAV files in {ROOT}")
+    for source_name, renderer in AMBIENCE.items():
+        write_ambience(source_name, AMBIENCE_LENGTH, renderer)
+    print(f"generated {len(SOURCES) + len(AMBIENCE)} static source WAV files in {ROOT}")

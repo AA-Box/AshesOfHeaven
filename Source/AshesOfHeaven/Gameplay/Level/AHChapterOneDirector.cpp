@@ -1056,6 +1056,10 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(1500.0f, 560.0f, 0.0f), FVector(1.4f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(2620.0f, -700.0f, 120.0f), FVector(1.6f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(2620.0f, -700.0f, 150.0f), FVector(1.2f));
+	// Gate checkpoint barrel fire: warm accent at the corridor terminus so the
+	// route destination carries its own light pool (visible source: GateBarrel).
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(3300.0f, 620.0f, 90.0f), FVector(1.2f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(3300.0f, 620.0f, 110.0f), FVector(1.0f));
 
 	// Phase 4.7 hero wrecks: the crashed gunship burns, the tank and truck smolder.
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(2120.0f, -520.0f, 40.0f), FVector(1.1f));
@@ -1824,6 +1828,13 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 		// the full route (defensive line, monoliths, smoke, Cathedral landmark).
 		TeleportPlayer(FVector(-1380.0f, -120.0f, 210.0f), FRotator::ZeroRotator);
 	}
+	else if (TargetName.Equals(TEXT("Battle"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("OpeningBattle"), ESearchCase::IgnoreCase))
+	{
+		// Combat review camera: the only way to look at AI behaviour and character readability
+		// without playing the chapter up to the first firefight.
+		StartStage(EAHChapterStage::OpeningBattle);
+		TeleportPlayer(FVector(-400.0f, -120.0f, 150.0f), FRotator::ZeroRotator);
+	}
 	else if (TargetName.Equals(TEXT("Transit"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("TransitStation"), ESearchCase::IgnoreCase))
 	{
 		StartStage(EAHChapterStage::TransitStation);
@@ -1927,6 +1938,10 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		ADirectionalLight::StaticClass(), FVector(0.0f, 0.0f, 6000.0f), FRotator(-15.0f, -150.0f, 0.0f), SpawnParams))
 	{
 		SunLight->SetMobility(EComponentMobility::Movable);
+		// Re-assert the key angle after mobility: in-editor sessions have been observed
+		// with the spawn rotation replaced (pitch -61 toplight), which flattens the
+		// entire tonal recipe. The raking -15 pitch is load-bearing for the look.
+		SunLight->SetActorRotation(FRotator(-15.0f, -150.0f, 0.0f));
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
 			// Low raking sun diffused by the cloud deck: cold, desaturated. Phase 4.7: the
@@ -2023,6 +2038,13 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			FogComponent->SetFogMaxOpacity(1.0f);
 			// Volumetric fog carries the fire glow and sun shafts through the smoke.
 			FogComponent->SetVolumetricFog(true);
+			// Second fog layer: a shallow ground-mist band. Near camera it sits below eye
+			// level; at distance it draws a bright horizontal mist line across building
+			// bases, separating midground from background planes. Values verified live in
+			// SIE (round 4, D14); use the setters — direct struct writes get clamped.
+			FogComponent->SetSecondFogDensity(0.02f);
+			FogComponent->SetSecondFogHeightFalloff(2.0f);
+			FogComponent->SetSecondFogHeightOffset(-120.0f);
 		}
 	}
 

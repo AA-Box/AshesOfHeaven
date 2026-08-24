@@ -267,6 +267,12 @@ bool UAHCheckpointSubsystem::IsEncounterCompleted(FName EncounterId) const
 	{
 		return true;
 	}
+	// MarkEncounterCompleted already guards this; without the same guard a world with no game
+	// instance dereferences null on the very first encounter's BeginPlay.
+	if (!GetWorld() || !GetWorld()->GetGameInstance())
+	{
+		return false;
+	}
 	if (const UAHPlatformSaveSubsystem* Save = GetWorld()->GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>())
 	{
 		FAHCombatCheckpointState Loaded;

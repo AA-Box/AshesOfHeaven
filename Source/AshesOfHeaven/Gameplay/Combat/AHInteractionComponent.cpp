@@ -32,18 +32,28 @@ void UAHInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AHInteraction), true, GetOwner());
 	FHitResult Hit;
 	AActor* NewTarget = nullptr;
+	FText NewPrompt;
 	if (GetWorld()->LineTraceSingleByChannel(Hit, ViewLocation, TraceEnd, ECC_Visibility, Params))
 	{
 		if (Hit.GetActor() && Hit.GetActor()->GetClass()->ImplementsInterface(UAHInteractable::StaticClass()))
 		{
-			NewTarget = Hit.GetActor();
+			// An empty prompt is how an interactable says it has nothing to offer right now - a
+			// combatant is only lootable once it is a corpse. Treat that as no target at all,
+			// rather than putting a blank prompt on the HUD every time one crosses the crosshair.
+			NewPrompt = IAHInteractable::Execute_GetInteractionPrompt(Hit.GetActor());
+			if (!NewPrompt.IsEmpty())
+			{
+				NewTarget = Hit.GetActor();
+			}
 		}
 	}
 
-	if (NewTarget != CurrentTarget.Get())
+	// The prompt is re-read every tick, so a target whose state changed under the crosshair
+	// (a body stripped of its rifle) updates without having to look away and back.
+	if (NewTarget != CurrentTarget.Get() || !NewPrompt.EqualTo(CurrentPrompt))
 	{
 		CurrentTarget = NewTarget;
-		CurrentPrompt = NewTarget ? IAHInteractable::Execute_GetInteractionPrompt(NewTarget) : FText::GetEmpty();
+		CurrentPrompt = NewPrompt;
 		OnTargetChanged.Broadcast(NewTarget);
 	}
 }

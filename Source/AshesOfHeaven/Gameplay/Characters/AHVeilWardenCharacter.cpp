@@ -7,6 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "NavigationSystem.h"
 
 AAHVeilWardenCharacter::AAHVeilWardenCharacter()
@@ -20,6 +21,9 @@ AAHVeilWardenCharacter::AAHVeilWardenCharacter()
 	GetCharacterMovement()->MaxWalkSpeed = 220.0f;
 	WeaponClass = AAHWeaponBase::StaticClass();
 	HeadshotMultiplier = 1.5f;
+	// The Warden has to read as the heavy from across the battlefield. Scale grows from the
+	// mesh origin, which sits at the feet, so the silhouette gets taller without floating.
+	GetMesh()->SetRelativeScale3D(FVector(1.18f));
 }
 
 void AAHVeilWardenCharacter::BeginPlay()

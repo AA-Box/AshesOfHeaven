@@ -181,6 +181,12 @@ struct ASHESOFHEAVEN_API FAHPerformanceProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	int32 MaxDynamicLights = 16;
 
+	/** Per-combatant body fill lights. One unshadowed point light per body fits a desktop budget,
+	 * but the mobile profile affords MaxDynamicLights (4) for the whole scene against 8-16
+	 * combatants, so mobile bodies read off the sun and skylight instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
+	bool bCharacterFillLights = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Performance")
 	int32 MaxProjectilePoolSize = 128;
 
