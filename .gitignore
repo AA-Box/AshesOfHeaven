@@ -14,6 +14,10 @@ Build/Mac/FileOpenOrder/
 *.stablepc.csv
 
 # IDE and generated project metadata
+.codex/
+.cursor/
+.gemini/
+.vscode/
 .vs/
 .idea/
 *.sln
