@@ -731,7 +731,10 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Sael")))
 	{
-		StartStage(EAHChapterStage::SaelTransmission);
+		// Only advance if the chapter is still where this beat started. The player can confirm
+		// the terminal while it is still playing, and an unconditional StartStage here would
+		// rewind the chapter out of Escape and leave every later trigger rejected.
+		AdvanceStageFromDialogue(EAHChapterStage::CathedralInterior, EAHChapterStage::SaelTransmission);
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Maya")))
 	{
@@ -743,8 +746,21 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_OtherLucian")))
 	{
-		StartStage(EAHChapterStage::Escape);
+		AdvanceStageFromDialogue(EAHChapterStage::OtherLucian, EAHChapterStage::Escape);
 	}
+}
+
+void AAHChapterOneDirector::AdvanceStageFromDialogue(EAHChapterStage ExpectedStage, EAHChapterStage NextStage)
+{
+	if (GetCurrentStage() != ExpectedStage)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] stale_dialogue_transition expected=%s current=%s skipped=%s"),
+			*UEnum::GetValueAsString(ExpectedStage), *UEnum::GetValueAsString(GetCurrentStage()), *UEnum::GetValueAsString(NextStage));
+		#endif
+		return;
+	}
+	StartStage(NextStage);
 }
 
 void AAHChapterOneDirector::HandleTerminalConfirmed()
@@ -1746,8 +1762,13 @@ void AAHChapterOneDirector::BuildMissionActors()
 	const FAHStageSpatialDefinition& Battlefield = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpenBattlefield);
 	Trigger = SpawnTrigger(Battlefield.ObjectiveTargetLocation, FVector(300.0f, 1100.0f, 180.0f), FName(TEXT("CrossBattlefield")), EAHChapterStage::OpenBattlefield);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	const FAHStageSpatialDefinition& CathedralApproach = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach);
-	Trigger = SpawnTrigger(CathedralApproach.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::CathedralApproach);
+	// EnterCathedral belongs to FailsafeOrder, not CathedralApproach. Tick already completes
+	// REACH THE CATHEDRAL APPROACH when the player or the Manticore passes X=13700, several
+	// hundred units before this box, so a trigger authored for CathedralApproach can only ever
+	// be overlapped while the chapter is already on FailsafeOrder - where AAHChapterTrigger
+	// rejects it and ACTIVATE PLANETARY FAILSAFE has no other completer at all.
+	const FAHStageSpatialDefinition& FailsafeOrder = AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeOrder);
+	Trigger = SpawnTrigger(FailsafeOrder.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::FailsafeOrder);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
 	const FAHStageSpatialDefinition& CathedralInterior = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior);
 	Trigger = SpawnTrigger(CathedralInterior.ObjectiveTargetLocation, FVector(300.0f, 650.0f, 220.0f), FName(TEXT("ReachTerminal")), EAHChapterStage::CathedralInterior);

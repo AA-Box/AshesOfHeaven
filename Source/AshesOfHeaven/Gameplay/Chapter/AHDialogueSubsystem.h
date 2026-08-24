@@ -7,6 +7,13 @@
 
 class UAHChapterSubsystem;
 
+/** A stage beat waiting for the dialogue channel, and the line it should resume on. */
+struct FAHPendingStageEntry
+{
+	EAHChapterStage Stage = EAHChapterStage::OpeningBlack;
+	int32 ResumeLineIndex = 0;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAHDialogueLineChangedDelegate, FName, Speaker, FText, Subtitle, float, Duration);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHDialogueSequenceCompleteDelegate, FName, SequenceId);
 
@@ -60,13 +67,17 @@ private:
 	void HandleChapterStageChanged(EAHChapterStage Stage);
 
 	UAHChapterSubsystem* GetChapterSubsystem() const;
-	void StartStageEntrySequence(EAHChapterStage Stage);
+	void StartStageEntrySequence(EAHChapterStage Stage, int32 ResumeLineIndex = 0);
 	void DrainPendingStageEntries();
+	void RequeueActiveStageEntry();
 	void ShowNextLine();
 	void FinishSequence();
 
 	TArray<FAHDialogueLine> QueuedLines;
-	TArray<EAHChapterStage> PendingStageEntries;
+	TArray<FAHPendingStageEntry> PendingStageEntries;
+	EAHChapterStage ActiveStageEntryStage = EAHChapterStage::OpeningBlack;
+	int32 ActiveStageEntryResumeBase = 0;
+	bool bActiveSequenceIsStageEntry = false;
 	FAHDialogueLine CurrentLine;
 	FName CurrentSequenceId = NAME_None;
 	int32 CurrentLineIndex = INDEX_NONE;

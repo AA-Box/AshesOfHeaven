@@ -60,34 +60,23 @@ int32 UAHChapterSubsystem::ObjectiveIndexForStage(EAHChapterStage Stage)
 FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candidate)
 {
 	FAHChapterState Normalized = Candidate;
-	const int32 SourceSaveVersion = Candidate.SaveVersion;
 	Normalized.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
 
-	const bool bCompatibilityPostErebusStage = Candidate.Stage >= EAHChapterStage::TenYearsLater
-		&& Candidate.Stage <= EAHChapterStage::StarsDisappearing;
-	const bool bPersistedLegacyPostErebusStage = SourceSaveVersion < AHChapterStateConstants::CurrentSaveVersion
-		&& bCompatibilityPostErebusStage;
-
-	// The deprecated post-Erebus enum values are retained so old serialized enum values and
-	// source-level invariants remain readable. Only a save written before v7 is migrated;
-	// fresh v7 gameplay can never enter these stages because Level One has only 12 objectives.
-	if (bPersistedLegacyPostErebusStage)
+	// The deprecated post-Erebus enum values are retained so old serialized values stay
+	// readable, but no state that names one is playable: Level One ends at Erebus and the
+	// director has no objective that drives those stages. Migrate every one of them,
+	// regardless of the version that wrote it. Version-gating this let a v7 write put the
+	// state back - UAHCheckpointSubsystem::CaptureCheckpoint stamps the checkpoint's own stage
+	// onto the saved chapter state, and ChapterComplete's checkpoint (Ch01_PresentDay) carries
+	// Stage=TenYearsLater - so the next boot restored straight into the removed epilogue with
+	// no objective and no way forward.
+	if (Candidate.Stage >= EAHChapterStage::TenYearsLater && Candidate.Stage <= EAHChapterStage::StarsDisappearing)
 	{
 		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
 		Normalized.Stage = EAHChapterStage::ChapterComplete;
 		Normalized.bChapterComplete = true;
 		Normalized.bCountdownActive = false;
 		Normalized.CountdownSeconds = 0.0f;
-		return Normalized;
-	}
-
-	if (bCompatibilityPostErebusStage)
-	{
-		// Compatibility-only state used by old editor/commandlet invariants. It is not a
-		// reachable Level One runtime state, but preserving it avoids rewriting historical
-		// tests just because the campaign boundary moved.
-		Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
-		Normalized.bChapterComplete = false;
 		return Normalized;
 	}
 

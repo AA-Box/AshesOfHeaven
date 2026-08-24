@@ -101,7 +101,7 @@ bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointSta
 	const bool bChapterOneState = State.MapName.Contains(TEXT("ChapterOne"), ESearchCase::IgnoreCase)
 		|| State.CheckpointId.ToString().StartsWith(TEXT("Ch01_"))
 		|| State.ChapterState.CompletedSections.Num() > 0;
-	const int32 ObjectiveCount = bChapterOneState ? 17 : 5;
+	const int32 ObjectiveCount = bChapterOneState ? AHChapterStateConstants::ObjectiveCount : 5;
 	SaveObject->CampaignProgress = FMath::Clamp(static_cast<float>(State.ObjectiveIndex) / static_cast<float>(ObjectiveCount), 0.0f, 1.0f);
 	SaveObject->CombatState = State;
 	SaveObject->CombatState.bValid = true;
