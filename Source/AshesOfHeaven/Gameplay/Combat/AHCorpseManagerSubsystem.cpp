@@ -379,7 +379,8 @@ FAHCorpseCleanupEvaluation UAHCorpseManagerSubsystem::BuildEvaluation(const FMan
 	Evaluation.bObjectiveCritical = Corpse->IsObjectiveCriticalCorpse();
 	Evaluation.bScriptedCivilian = Corpse->IsScriptedCivilianCorpse();
 	Evaluation.bCurrentlyVisible = IsInAnyPlayerView(Corpse);
-	Evaluation.bRecentlyRendered = Corpse->WasRecentlyRendered(Budget.RecentlyRenderedGraceSeconds);
+	Evaluation.bRecentlyRendered = Budget.RecentlyRenderedGraceSeconds > 0.0f
+		&& Corpse->WasRecentlyRendered(Budget.RecentlyRenderedGraceSeconds);
 	Evaluation.bTargetedInteractable = IsTargetedInteractable(Corpse);
 	Evaluation.bHasImportantLoot = Corpse->HasUnlootedImportantWeapon();
 	Evaluation.QueueSequence = Entry.QueueSequence;
