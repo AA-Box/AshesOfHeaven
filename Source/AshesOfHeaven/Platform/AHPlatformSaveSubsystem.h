@@ -6,6 +6,7 @@
 #include "GameFramework/SaveGame.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Gameplay/Combat/AHGameplayTypes.h"
+#include "Gameplay/WorldState/AHWorldStateTypes.h"
 #include "AHPlatformSaveSubsystem.generated.h"
 
 /** Logical campaign state. Unreal resolves the physical save location per platform. */
@@ -44,6 +45,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Combat")
 	FAHCombatCheckpointState CombatState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="World State")
+	FAHWorldStateSaveData WorldState;
 };
 
 /** Platform-neutral save API for checkpoints, settings, and suspend protection. */
@@ -61,6 +65,11 @@ public:
 
 	bool SaveCombatCheckpoint(const FAHCombatCheckpointState& State);
 	bool LoadCombatCheckpoint(FAHCombatCheckpointState& State) const;
+	int32 GetDifficulty() const;
+	bool LoadWorldState(FAHWorldStateSaveData& State) const;
+
+	/** Upgrades compatible legacy data in memory; unknown future versions are left untouched. */
+	static bool MigrateSaveObject(UAHSaveGame* SaveObject);
 
 	/** Development-only clean-run support; callers decide whether exposing it is appropriate. */
 	bool ResetProgress();
@@ -76,4 +85,6 @@ public:
 
 private:
 	UAHSaveGame* LoadSaveObject() const;
+	UAHSaveGame* GetOrCreateSaveObject() const;
+	void CaptureLiveWorldState(UAHSaveGame* SaveObject) const;
 };

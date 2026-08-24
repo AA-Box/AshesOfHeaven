@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
+#include "Gameplay/Encounters/AHEncounterTypes.h"
 #include "AHGameplayTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -86,6 +87,10 @@ struct ASHESOFHEAVEN_API FAHCombatCheckpointState
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
 	TArray<FName> CompletedEncounters;
+
+	/** Phase-boundary encounter state; live AI transforms are intentionally not serialized. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
+	FAHEncounterCheckpointState EncounterState;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Checkpoint")
 	FAHChapterState ChapterState;

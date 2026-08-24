@@ -4,6 +4,8 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/WorldState/AHPersistentIdComponent.h"
+#include "Gameplay/WorldState/AHWorldStateSubsystem.h"
 #include "Components/StaticMeshComponent.h"
 
 AAHWeaponPickup::AAHWeaponPickup()
@@ -13,7 +15,17 @@ AAHWeaponPickup::AAHWeaponPickup()
 	RootComponent = PickupMesh;
 	PickupMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	PickupMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	PersistentIdComponent = CreateDefaultSubobject<UAHPersistentIdComponent>(TEXT("PersistentId"));
 	WeaponClass = AAHWeaponBase::StaticClass();
+}
+
+void AAHWeaponPickup::BeginPlay()
+{
+	Super::BeginPlay();
+	if (UAHWorldStateSubsystem* WorldState = GetWorld()->GetSubsystem<UAHWorldStateSubsystem>())
+	{
+		WorldState->RegisterSavableActor(this);
+	}
 }
 
 void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
@@ -34,7 +46,6 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] weapon actor=%s amount=%d"), *GetName(), Amount);
 			#endif
 			bCollected = true;
-			Destroy();
 		}
 		break;
 	case EAHResourcePickupType::Ammo:
@@ -45,7 +56,6 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] ammo actor=%s amount=%d"), *GetName(), Amount);
 			#endif
 			bCollected = true;
-			Destroy();
 		}
 		break;
 	case EAHResourcePickupType::Grenades:
@@ -54,7 +64,6 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Pickup] grenades actor=%s amount=%d"), *GetName(), Amount);
 		#endif
 		bCollected = true;
-		Destroy();
 		break;
 	default:
 		break;
@@ -66,6 +75,11 @@ void AAHWeaponPickup::Interact_Implementation(AActor* Interactor)
 		{
 			Audio->PlayWorldCue(EAHAudioCue::Pickup, GetActorLocation(), 0.7f);
 		}
+		if (UAHWorldStateSubsystem* WorldState = GetWorld()->GetSubsystem<UAHWorldStateSubsystem>())
+		{
+			WorldState->MarkActorDestroyed(this);
+		}
+		Destroy();
 	}
 }
 
@@ -74,12 +88,56 @@ FText AAHWeaponPickup::GetInteractionPrompt_Implementation() const
 	switch (PickupType)
 	{
 	case EAHResourcePickupType::Weapon:
-		return FText::FromString(TEXT("INTERACT  M91 REVENANT"));
+		if (const AAHWeaponBase* WeaponDefaults = WeaponClass ? WeaponClass->GetDefaultObject<AAHWeaponBase>() : nullptr)
+		{
+			return FText::Format(NSLOCTEXT("AshesOfHeaven", "PickupWeaponPrompt", "E — PICK UP {0}"), WeaponDefaults->DisplayName);
+		}
+		return FText::GetEmpty();
 	case EAHResourcePickupType::Ammo:
-		return FText::FromString(TEXT("INTERACT  AMMUNITION"));
+		return Amount > 0 ? NSLOCTEXT("AshesOfHeaven", "TakeAmmoPrompt", "E — TAKE AMMO") : FText::GetEmpty();
 	case EAHResourcePickupType::Grenades:
-		return FText::FromString(TEXT("INTERACT  FRAG GRENADES"));
+		return Amount > 0 ? NSLOCTEXT("AshesOfHeaven", "TakeGrenadePrompt", "E — TAKE FRAG GRENADES") : FText::GetEmpty();
 	default:
-		return FText::FromString(TEXT("INTERACT"));
+		return FText::GetEmpty();
 	}
+}
+
+float AAHWeaponPickup::GetInteractionPriority_Implementation() const
+{
+	switch (PickupType)
+	{
+	case EAHResourcePickupType::Weapon:
+		return 0.50f;
+	case EAHResourcePickupType::Grenades:
+		return 0.20f;
+	case EAHResourcePickupType::Ammo:
+		return 0.10f;
+	default:
+		return 0.0f;
+	}
+}
+
+void AAHWeaponPickup::SetPersistentId(const FGuid& PersistentId)
+{
+	PersistentIdComponent->SetPersistentId(PersistentId);
+}
+
+FGuid AAHWeaponPickup::GetPersistentId_Implementation() const
+{
+	return PersistentIdComponent ? PersistentIdComponent->GetPersistentId() : FGuid();
+}
+
+bool AAHWeaponPickup::CaptureWorldState_Implementation(TArray<uint8>& OutPayload) const
+{
+	OutPayload.Reset();
+	return true;
+}
+
+bool AAHWeaponPickup::RestoreWorldState_Implementation(const TArray<uint8>& Payload, int32 SavedStateVersion)
+{
+	return Payload.IsEmpty() && SavedStateVersion >= 0 && SavedStateVersion <= GetWorldStateVersion_Implementation();
+}
+
+void AAHWeaponPickup::OnWorldStateRestored_Implementation()
+{
 }

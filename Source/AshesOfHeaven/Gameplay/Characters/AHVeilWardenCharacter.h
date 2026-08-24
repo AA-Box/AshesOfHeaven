@@ -4,7 +4,7 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "AHVeilWardenCharacter.generated.h"
 
-class AAHWeaponBase;
+class UAHEnemyDefinition;
 
 UCLASS()
 class ASHESOFHEAVEN_API AAHVeilWardenCharacter : public AAHCombatantCharacter
@@ -17,9 +17,7 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Veil Warden")
-	TSubclassOf<AAHWeaponBase> WeaponClass;
+	virtual void ApplyEnemyDefinition(UAHEnemyDefinition* Definition) override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Veil Warden", meta=(ClampMin=0.0))
 	float ShieldCycleSeconds = 3.5f;
@@ -37,6 +35,8 @@ public:
 	bool IsShieldActive() const { return bShieldActive; }
 
 private:
+	virtual FPrimaryAssetId GetDefaultEnemyDefinitionId() const override;
+
 	float ShieldTimer = 0.0f;
 	float TeleportTimer = 0.0f;
 	bool bShieldActive = true;

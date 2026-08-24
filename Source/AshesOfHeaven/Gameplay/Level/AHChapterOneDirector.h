@@ -12,6 +12,7 @@ class AAHCombatEncounter;
 class AAHManticoreVehicle;
 class AAHCombatantCharacter;
 class UAHDialogueSubsystem;
+class UAHEncounterDirectorSubsystem;
 class UMaterialInterface;
 class UStaticMesh;
 class AStaticMeshActor;
@@ -145,6 +146,10 @@ protected:
 	void SpawnFriendly(const FVector& Location, FName DisplayId = NAME_None);
 	void SpawnLabel(const FVector& Location, const FString& Text, const FColor& Color = FColor::White, float WorldSize = 90.0f, const FRotator& Rotation = FRotator(0.0f, 90.0f, 0.0f));
 	void TeleportPlayer(const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
+	// Projects the named review regions into normalised viewport space and logs them, so the
+	// acceptance harness can score "is the road readable" instead of scoring the whole frame and
+	// counting a deliberately black building silhouette as a failure.
+	void LogArtRoiProjections() const;
 	bool ValidateStageSpatialDefinition(const FAHStageSpatialDefinition& Definition, bool bLogDetails) const;
 	bool ValidateStageSpatialState(EAHChapterStage Stage, bool bLogDetails) const;
 	void EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason);
@@ -179,6 +184,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UAHObjectiveSubsystem> Objectives;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAHEncounterDirectorSubsystem> EncounterDirector;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMesh> BlockMesh;
@@ -222,9 +230,6 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> DarkStructureMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<AAHCombatEncounter> OpeningEncounter;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAHCombatEncounter> BattlefieldEncounter;

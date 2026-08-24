@@ -2,12 +2,15 @@
 #include "AshesOfHeaven.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/DamageEvents.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
@@ -28,45 +31,97 @@ AAHWeaponBase::AAHWeaponBase()
 	// use the camera's FirstPersonFieldOfView/FirstPersonScale, which is what makes a held
 	// weapon read at the right size.
 	WeaponMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
-	if (USkeletalMesh* RifleMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Weapons/Rifle/Meshes/SKM_Rifle.SKM_Rifle")))
-	{
-		WeaponMesh->SetSkeletalMesh(RifleMesh);
-	}
-	// The template rifle material reads as bright silver under the war sky. The M91 is
-	// matte dark steel per the art targets.
-	if (UMaterialInterface* DarkSteel = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")))
-	{
-		for (int32 SlotIndex = 0; SlotIndex < WeaponMesh->GetNumMaterials(); ++SlotIndex)
-		{
-			WeaponMesh->SetMaterial(SlotIndex, DarkSteel);
-		}
-	}
 	CapacitorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MagneticCapacitor"));
 	CapacitorMesh->SetupAttachment(WeaponMesh);
-	CapacitorMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube")));
 	CapacitorMesh->SetRelativeLocation(FVector(0.0f, -28.0f, -8.0f));
 	CapacitorMesh->SetRelativeScale3D(FVector(0.18f, 0.62f, 0.10f));
 	CapacitorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CapacitorMesh->SetOnlyOwnerSee(true);
 	CapacitorMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
-	if (UMaterialInterface* RifleMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle")))
-	{
-		CapacitorMesh->SetMaterial(0, RifleMaterial);
-	}
-	if (USoundBase* RifleFireSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire.SC_M91_Fire")))
-	{
-		ShotSound = RifleFireSound;
-	}
 }
 
 void AAHWeaponBase::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!bHasStreamedLoadout)
+	{
+		RequestLegacyPresentationAsync();
+	}
 	Ammo.MagazineCapacity = MagazineCapacity;
 	Ammo.ReserveCapacity = ReserveCapacity;
 	Ammo.Magazine = MagazineCapacity;
 	Ammo.Reserve = ReserveCapacity;
 	OnAmmoChanged.Broadcast(Ammo);
+}
+
+void AAHWeaponBase::ApplyStreamedLoadout(const FAHEnemyLoadout& Loadout)
+{
+	bHasStreamedLoadout = true;
+	if (LegacyPresentationHandle.IsValid() && !LegacyPresentationHandle->HasLoadCompleted())
+	{
+		LegacyPresentationHandle->CancelHandle();
+	}
+	LegacyPresentationHandle.Reset();
+	if (WeaponMesh)
+	{
+		if (USkeletalMesh* Mesh = Loadout.WeaponMesh.Get()) WeaponMesh->SetSkeletalMesh(Mesh);
+		if (UMaterialInterface* Material = Loadout.WeaponMaterial.Get())
+		{
+			for (int32 Index = 0; Index < WeaponMesh->GetNumMaterials(); ++Index) WeaponMesh->SetMaterial(Index, Material);
+		}
+	}
+	if (CapacitorMesh)
+	{
+		if (UStaticMesh* Mesh = Loadout.CapacitorMesh.Get()) CapacitorMesh->SetStaticMesh(Mesh);
+		if (UMaterialInterface* Material = Loadout.CapacitorMaterial.Get()) CapacitorMesh->SetMaterial(0, Material);
+	}
+	ShotSound = Loadout.ShotSound.Get();
+	ReloadSound = Loadout.ReloadSound.Get();
+	EmptySound = Loadout.EmptySound.Get();
+	ImpactSound = Loadout.ImpactSound.Get();
+	MuzzleFlashEffect = Loadout.MuzzleFlashEffect.Get();
+	ImpactEffect = Loadout.ImpactEffect.Get();
+}
+
+void AAHWeaponBase::RequestLegacyPresentationAsync()
+{
+	const TArray<FSoftObjectPath> Paths {
+		FSoftObjectPath(TEXT("/Game/Weapons/Rifle/Meshes/SKM_Rifle.SKM_Rifle")),
+		FSoftObjectPath(TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")),
+		FSoftObjectPath(TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube")),
+		FSoftObjectPath(TEXT("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle")),
+		FSoftObjectPath(TEXT("/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire.SC_M91_Fire"))
+	};
+	LegacyPresentationHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths, FStreamableDelegate::CreateUObject(this, &ThisClass::HandleLegacyPresentationLoaded));
+}
+
+void AAHWeaponBase::HandleLegacyPresentationLoaded()
+{
+	if (bHasStreamedLoadout)
+	{
+		return;
+	}
+	if (WeaponMesh)
+	{
+		WeaponMesh->SetSkeletalMesh(Cast<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Weapons/Rifle/Meshes/SKM_Rifle.SKM_Rifle")).ResolveObject()));
+		if (UMaterialInterface* Material = Cast<UMaterialInterface>(FSoftObjectPath(
+			TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark")).ResolveObject()))
+		{
+			for (int32 Index = 0; Index < WeaponMesh->GetNumMaterials(); ++Index) WeaponMesh->SetMaterial(Index, Material);
+		}
+	}
+	if (CapacitorMesh)
+	{
+		CapacitorMesh->SetStaticMesh(Cast<UStaticMesh>(FSoftObjectPath(
+			TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube")).ResolveObject()));
+		CapacitorMesh->SetMaterial(0, Cast<UMaterialInterface>(FSoftObjectPath(
+			TEXT("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle")).ResolveObject()));
+	}
+	ShotSound = Cast<USoundBase>(FSoftObjectPath(
+		TEXT("/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire.SC_M91_Fire")).ResolveObject());
+	LegacyPresentationHandle.Reset();
 }
 
 FRotator AAHWeaponBase::GetRestRotation() const
@@ -354,16 +409,20 @@ void AAHWeaponBase::FireShot()
 		}
 		if (ImpactEffect)
 		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactEffect, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				this, ImpactEffect, Hit.ImpactPoint, Hit.ImpactNormal.Rotation(), FVector::OneVector, true, true, ENCPoolMethod::AutoRelease);
 		}
 	}
 	if (TracerEffect)
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, TracerEffect, TraceStart, AimRotation);
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this, TracerEffect, TraceStart, AimRotation, FVector::OneVector, true, true, ENCPoolMethod::AutoRelease);
 	}
 	if (MuzzleFlashEffect && WeaponMesh)
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlashEffect, WeaponMesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			MuzzleFlashEffect, WeaponMesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::KeepRelativeOffset, true, true, ENCPoolMethod::AutoRelease);
 	}
 
 	--Ammo.Magazine;

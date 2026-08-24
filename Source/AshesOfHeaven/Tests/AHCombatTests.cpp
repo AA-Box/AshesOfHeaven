@@ -10,6 +10,7 @@
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
@@ -511,7 +512,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterConfigurationTest, "AshesOfHeaven.C
 bool FAHEncounterConfigurationTest::RunTest(const FString& Parameters)
 {
 	AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
-	TestTrue(TEXT("Encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
+	TestEqual(TEXT("Encounter defaults to the Pilgrim patrol definition"), Encounter->EncounterDefinitionId, AHEnemyAssets::EncounterId(TEXT("PilgrimPatrol")));
 	TestFalse(TEXT("New encounter is inactive"), Encounter->IsActive());
 	TestFalse(TEXT("New encounter is incomplete"), Encounter->IsComplete());
 	return true;
@@ -612,91 +613,12 @@ bool FAHCombatantIsShootableTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterCompletesWhenEnemiesAreKilledTest, "AshesOfHeaven.Combat.EncounterCompletesWhenEnemiesAreKilled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHEncounterCompletesWhenEnemiesAreKilledTest::RunTest(const FString& Parameters)
 {
-	// The chapter's pacing hangs off this loop: an encounter holds the player until its enemies
-	// are dead, and completing it advances the objective. While nothing could be shot the loop
-	// resolved on nobody's terms, so the whole slice played as a walk-through.
-	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
-		.InitializeScenes(true)
-		.AllowAudioPlayback(false)
-		.RequiresHitProxies(false)
-		.CreatePhysicsScene(true)
-		.CreateNavigation(false)
-		.CreateAISystem(false)
-		.ShouldSimulatePhysics(false)
-		.EnableTraceCollision(true)
-		.SetTransactional(false)
-		.CreateFXSystem(false);
-	UWorld* TestWorld = UWorld::CreateWorld(
-		EWorldType::Game,
-		false,
-		FName(TEXT("AHEncounterLoopTestWorld")),
-		nullptr,
-		true,
-		ERHIFeatureLevel::Num,
-		&WorldInitialization,
-		false);
-	TestNotNull(TEXT("Encounter loop test world is created"), TestWorld);
-	if (!TestWorld)
-	{
-		return false;
-	}
-
-	AAHCombatEncounter* Encounter = TestWorld->SpawnActor<AAHCombatEncounter>();
-	TestNotNull(TEXT("An encounter can be spawned"), Encounter);
-	if (!Encounter)
-	{
-		TestWorld->DestroyWorld(false);
-		return false;
-	}
-	Encounter->EncounterId = FName(TEXT("Test_EncounterLoop"));
-	Encounter->EnemyCount = 3;
-	Encounter->bActivateOnPlayerOverlap = false;
-	Encounter->SpawnLocations = { FVector(0.0f, 0.0f, 0.0f), FVector(600.0f, 0.0f, 0.0f), FVector(1200.0f, 0.0f, 0.0f) };
-	// AActor::ProcessEvent silently drops every script event until the world reports its actors
-	// as initialised, so without this the death delegates bind, broadcast, and reach nobody.
-	TestWorld->InitializeActorsForPlay(FURL());
-	TestWorld->SetBegunPlay(true);
-	TestWorld->BeginPlay();
-	Encounter->DispatchBeginPlay();
-
+	// Runtime encounters may no longer fall back to a hard class when there is no GameInstance
+	// asset subsystem. The full async spawn/death loop is covered by Assets.Enemies.AsyncLifecycle.
+	AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
 	Encounter->ActivateEncounter();
-	TestTrue(TEXT("An activated encounter is active"), Encounter->IsActive());
-	TestFalse(TEXT("An activated encounter is not yet complete"), Encounter->IsComplete());
-
-	TArray<AAHCombatantCharacter*> Spawned;
-	for (TActorIterator<AAHCombatantCharacter> It(TestWorld); It; ++It)
-	{
-		Spawned.Add(*It);
-	}
-	TestEqual(TEXT("The encounter spawned its requested enemies"), Spawned.Num(), 3);
-	TestEqual(TEXT("The encounter is tracking every enemy it spawned"), Encounter->GetActiveEnemyCount(), 3);
-
-	for (AAHCombatantCharacter* Enemy : Spawned)
-	{
-		Enemy->DispatchBeginPlay();
-		TestTrue(TEXT("A freshly spawned enemy is alive"), !Enemy->IsCombatantDead());
-		// The loop only closes if these two links exist: health death reaches the combatant,
-		// and the combatant's death reaches the encounter.
-		TestTrue(TEXT("The enemy's health is wired to its own death handler"), Enemy->GetHealthComponent()->OnDeath.IsBound());
-		TestTrue(TEXT("The encounter is listening for this enemy's death"), Enemy->OnCombatantDeath.IsBound());
-		int32 Rounds = 0;
-		while (!Enemy->IsCombatantDead() && Rounds < 200)
-		{
-			++Rounds;
-			Enemy->TakeDamage(24.0f, FDamageEvent(), nullptr, nullptr);
-		}
-		TestTrue(TEXT("Rifle-weight damage kills an encounter enemy"), Enemy->IsCombatantDead());
-		TestEqual(TEXT("A dead enemy has an empty health pool"), Enemy->GetHealthComponent()->GetHealth(), 0.0f);
-		TestTrue(TEXT("A dead enemy stopped colliding, proving OnDeathStarted ran"),
-			Enemy->GetCapsuleComponent()->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
-	}
-
-	TestEqual(TEXT("The encounter is waiting on nobody once every enemy is dead"), Encounter->GetActiveEnemyCount(), 0);
-	TestTrue(TEXT("Killing every enemy completes the encounter"), Encounter->IsComplete());
-	TestFalse(TEXT("A completed encounter is no longer active"), Encounter->IsActive());
-
-	Encounter->Destroy();
-	TestWorld->DestroyWorld(false);
+	TestFalse(TEXT("an encounter cannot spawn before an async asset lease is ready"), Encounter->IsActive());
+	TestEqual(TEXT("no fallback enemy was hard-spawned"), Encounter->GetActiveEnemyCount(), 0);
 	return true;
 }
 

@@ -1,12 +1,17 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "AshesOfHeaven.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Gameplay/Audio/AHAudioPaletteData.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
+#include "Gameplay/Combat/AHCorpseManagerSubsystem.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/AI/AHCombatAIController.h"
 #include "Platform/AHPlatformManagerSubsystem.h"
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
@@ -14,12 +19,18 @@
 #include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "Engine/DamageEvents.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "TimerManager.h"
 
 AAHCombatantCharacter::AAHCombatantCharacter()
 {
@@ -31,25 +42,12 @@ AAHCombatantCharacter::AAHCombatantCharacter()
 
 	GetCharacterMovement()->MaxWalkSpeed = 460.0f;
 
-	// A combatant with no skeletal mesh has nothing that blocks ECC_Visibility: the capsule's
-	// Pawn profile ignores that channel and the old greybox blocks were NoCollision, so every
-	// rifle trace passed straight through everyone and no shot could ever land. The body is
-	// what makes a combatant hittable, animated and visible - it is not decoration.
+	// Presentation is assigned by an asynchronously loaded enemy definition (or by the legacy
+	// async fallback for player/friendly classes). Constructors must never force heavy packages.
 	USkeletalMeshComponent* Body = GetMesh();
-	if (USkeletalMesh* BodyMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")))
-	{
-		Body->SetSkeletalMesh(BodyMesh);
-	}
 	// Skeletons are authored facing +Y with the origin at the feet; the capsule's origin is its
 	// centre, so the mesh drops by the half height.
 	Body->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, -96.0f), FRotator(0.0f, -90.0f, 0.0f));
-	if (UClass* BodyAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Variant_Shooter/Anims/ABP_TP_Rifle.ABP_TP_Rifle_C")))
-	{
-		// This graph drives itself from the pawn's velocity and movement component and casts to
-		// no particular character class, so it runs a full idle/walk/run blend plus jump, fall
-		// and rifle aim offset on any ACharacter.
-		Body->SetAnimInstanceClass(BodyAnimClass);
-	}
 	// Query only: movement and melee stay on the capsule (ECC_Pawn). The body exists for weapon
 	// traces, and SKM_Manny_Simple ships PA_Mannequin, so a hit resolves to a bone name and the
 	// headshot multiplier in TakeDamage finally has something to read.
@@ -122,6 +120,307 @@ void AAHCombatantCharacter::BeginPlay()
 	{
 		ArmorComponent->OnArmorBroken.AddDynamic(this, &AAHCombatantCharacter::HandleArmorBroken);
 	}
+
+	if (EnemyDefinition)
+	{
+		ApplyDefinitionLoadout();
+		if (SpawnEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, SpawnEffect, GetActorLocation(), GetActorRotation());
+		}
+	}
+	else if (const FPrimaryAssetId DefaultEnemyId = GetDefaultEnemyDefinitionId(); DefaultEnemyId.IsValid())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAHEnemyAssetSubsystem* Assets = GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>())
+			{
+				SelfAssetLease = Assets->PreloadEnemyAssets(
+					{ DefaultEnemyId },
+					Assets->BuildBundlesForCurrentPlatform(true, true),
+					FName(*FString::Printf(TEXT("DirectSpawn.%s"), *GetName())),
+					FAHEnemyAssetsReady::CreateUObject(this, &ThisClass::HandleSelfEnemyAssetsReady));
+			}
+		}
+	}
+	else
+	{
+		RequestLegacyPresentationAsync();
+	}
+}
+
+void AAHCombatantCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (SelfAssetLease.IsValid())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAHEnemyAssetSubsystem* Assets = GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>())
+			{
+				Assets->ReleaseEncounterAssets(SelfAssetLease);
+			}
+		}
+		SelfAssetLease.Invalidate();
+	}
+	if (LegacyPresentationHandle.IsValid() && !LegacyPresentationHandle->HasLoadCompleted())
+	{
+		LegacyPresentationHandle->CancelHandle();
+	}
+	LegacyPresentationHandle.Reset();
+	Super::EndPlay(EndPlayReason);
+}
+
+void AAHCombatantCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	ApplyDefinitionToController();
+}
+
+void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
+{
+	if (!Definition)
+	{
+		return;
+	}
+	EnemyDefinition = Definition;
+	Faction = Definition->CombatDefaults.Faction;
+	HeadshotMultiplier = Definition->CombatDefaults.HeadshotMultiplier;
+	bDestroyOnDeath = Definition->CombatDefaults.bDestroyOnDeath;
+	CorpseLifeSpan = Definition->CombatDefaults.CorpseLifeSpan;
+	if (HealthComponent)
+	{
+		HealthComponent->MaxHealth = Definition->CombatDefaults.MaxHealth * Definition->Difficulty.HealthScale;
+		if (HasActorBegunPlay()) HealthComponent->ResetHealth();
+	}
+	if (ArmorComponent)
+	{
+		ArmorComponent->MaxArmor = Definition->CombatDefaults.MaxArmor * Definition->Difficulty.ArmorScale;
+		if (HasActorBegunPlay()) ArmorComponent->ResetArmor();
+	}
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->MaxWalkSpeed = Definition->CombatDefaults.WalkSpeed;
+	}
+	if (UClass* ControllerClass = Definition->AISettings.ControllerClass.Get())
+	{
+		AIControllerClass = ControllerClass;
+		AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	}
+
+	const UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this);
+	const bool bMobile = Platform && Platform->GetCapabilities().bIsMobile;
+	const FAHEnemyVisualPayload Visuals = Definition->ResolveVisuals(bMobile);
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		if (USkeletalMesh* Mesh = Visuals.SkeletalMesh.Get()) Body->SetSkeletalMesh(Mesh);
+		if (UClass* AnimClass = Visuals.AnimClass.Get()) Body->SetAnimInstanceClass(AnimClass);
+		if (UPhysicsAsset* PhysicsAsset = Visuals.PhysicsAsset.Get()) Body->SetPhysicsAsset(PhysicsAsset, true);
+		Body->SetRelativeScale3D(Visuals.MeshScale);
+		for (int32 Index = 0; Index < Visuals.Materials.Num(); ++Index)
+		{
+			if (UMaterialInterface* Material = Visuals.Materials[Index].Get()) ApplyBodyPaint(Body, Index, Material);
+		}
+	}
+	const FAHEnemyAudioPayload AudioPayload = Definition->ResolveAudio(bMobile);
+	VoicePalette = AudioPayload.VoicePalette.Get();
+	HurtSound = AudioPayload.HurtSound.Get();
+	ArmorDamageSound = AudioPayload.ArmorDamageSound.Get();
+	DeathSound = AudioPayload.DeathSound.Get();
+	const FAHEnemyVFXPayload VFXPayload = Definition->ResolveVFX(bMobile);
+	SpawnEffect = VFXPayload.SpawnEffect.Get();
+	DeathEffect = VFXPayload.DeathEffect.Get();
+
+	ApplyFactionAppearance();
+	ApplyDefinitionToController();
+	if (HasActorBegunPlay())
+	{
+		ApplyDefinitionLoadout();
+		if (SpawnEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, SpawnEffect, GetActorLocation(), GetActorRotation());
+		}
+	}
+}
+
+void AAHCombatantCharacter::ApplyDefinitionLoadout()
+{
+	if (!EnemyDefinition || !InventoryComponent || !InventoryComponent->GetWeapons().IsEmpty())
+	{
+		return;
+	}
+	for (const TSoftClassPtr<AAHWeaponBase>& WeaponClass : EnemyDefinition->Loadout.WeaponClasses)
+	{
+		if (UClass* LoadedClass = WeaponClass.Get())
+		{
+			if (AAHWeaponBase* Weapon = InventoryComponent->AddWeaponClass(LoadedClass))
+			{
+				Weapon->ApplyStreamedLoadout(EnemyDefinition->Loadout);
+			}
+		}
+	}
+}
+
+void AAHCombatantCharacter::ApplyDefinitionToController()
+{
+	if (EnemyDefinition)
+	{
+		if (AAHCombatAIController* AI = Cast<AAHCombatAIController>(GetController()))
+		{
+			AI->ApplyEnemySettings(EnemyDefinition->AISettings);
+		}
+	}
+}
+
+FPrimaryAssetId AAHCombatantCharacter::GetDefaultEnemyDefinitionId() const
+{
+	return FPrimaryAssetId();
+}
+
+void AAHCombatantCharacter::HandleSelfEnemyAssetsReady(
+	FGuid RequestId,
+	bool bSuccess,
+	const TArray<UAHEnemyDefinition*>& Definitions,
+	const FString& Error)
+{
+	if (bSuccess && !Definitions.IsEmpty())
+	{
+		ApplyEnemyDefinition(Definitions[0]);
+	}
+	else
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Assets] direct enemy spawn failed actor=%s error=%s"), *GetName(), *Error);
+	}
+}
+
+void AAHCombatantCharacter::RequestLegacyPresentationAsync()
+{
+	if (GetMesh() && GetMesh()->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+	TArray<FSoftObjectPath> Paths {
+		FSoftObjectPath(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")),
+		FSoftObjectPath(TEXT("/Game/Variant_Shooter/Anims/ABP_TP_Rifle.ABP_TP_Rifle_C"))
+	};
+	for (const TSoftObjectPtr<UMaterialInterface>& Material : HumanBodyMaterials) Paths.AddUnique(Material.ToSoftObjectPath());
+	for (const TSoftObjectPtr<UMaterialInterface>& Material : VeilBodyMaterials) Paths.AddUnique(Material.ToSoftObjectPath());
+	LegacyPresentationHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths, FStreamableDelegate::CreateUObject(this, &ThisClass::HandleLegacyPresentationLoaded));
+}
+
+void AAHCombatantCharacter::HandleLegacyPresentationLoaded()
+{
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->SetSkeletalMesh(Cast<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")).ResolveObject()));
+		Body->SetAnimInstanceClass(Cast<UClass>(FSoftObjectPath(
+			TEXT("/Game/Variant_Shooter/Anims/ABP_TP_Rifle.ABP_TP_Rifle_C")).ResolveObject()));
+	}
+	ApplyFactionAppearance();
+	LegacyPresentationHandle.Reset();
+}
+
+void AAHCombatantCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const float GroundSpeed = GetVelocity().Size2D();
+	if (IsCombatantDead() || !Movement || !Movement->IsMovingOnGround() || GroundSpeed <= FootstepMinimumSpeed)
+	{
+		// Owe a third of a stride on the next start: the first step lands promptly when the body
+		// sets off, without a tapped movement key firing one step per tap.
+		FootstepDistanceRemaining = FMath::Max(FootstepDistanceRemaining, FootstepStride * 0.35f);
+		return;
+	}
+
+	FootstepDistanceRemaining -= GroundSpeed * DeltaSeconds;
+	if (FootstepDistanceRemaining <= 0.0f)
+	{
+		PlayFootstep(1.0f, bNextFootIsLeft ? 1.03f : 0.97f);
+		bNextFootIsLeft = !bNextFootIsLeft;
+		// Carry the overshoot instead of resetting, so cadence stays exact across frame times.
+		FootstepDistanceRemaining += FMath::Max(20.0f, FootstepStride);
+		if (FootstepDistanceRemaining <= 0.0f)
+		{
+			// One frame covered more than a whole stride - a teleport or a huge hitch, not a walk.
+			FootstepDistanceRemaining = FMath::Max(20.0f, FootstepStride);
+		}
+	}
+}
+
+void AAHCombatantCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	if (IsCombatantDead())
+	{
+		return;
+	}
+
+	// Velocity still holds the fall when ProcessLanded calls this. If something has already
+	// zeroed it, the mapping floors at the light end rather than dropping the sound entirely.
+	const float FallSpeed = FMath::Abs(GetVelocity().Z);
+	const float Weight = FMath::Lerp(0.9f, 1.6f, FMath::Clamp((FallSpeed - 250.0f) / 650.0f, 0.0f, 1.0f));
+	PlayFootstep(Weight, 0.78f);
+	// The landing is the step. Do not follow it with another one half a metre later.
+	FootstepDistanceRemaining = FMath::Max(20.0f, FootstepStride) * 0.6f;
+}
+
+void AAHCombatantCharacter::PlayFootstep(float VolumeScale, float PitchScale)
+{
+	UAHAudioSubsystem* Audio = GetWorld() ? GetWorld()->GetSubsystem<UAHAudioSubsystem>() : nullptr;
+	if (!Audio)
+	{
+		return;
+	}
+
+	// At the actor origin a step comes from the middle of the chest. Boots are at the bottom of
+	// the capsule, which is also where attenuation should be measured from.
+	const float HalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.0f;
+	const FVector Feet = GetActorLocation() - FVector(0.0f, 0.0f, HalfHeight);
+	// One sample at one pitch every step reads as a click track. Jitter plus alternating feet is
+	// what a variation set would do, without needing four more assets and four palette entries.
+	const float Volume = FMath::Max(0.0f, FootstepVolume * VolumeScale * FMath::FRandRange(0.92f, 1.08f));
+	const float Pitch = FMath::Max(0.1f, FootstepPitch * PitchScale * FMath::FRandRange(0.96f, 1.04f));
+	Audio->PlayWorldCue(EAHAudioCue::Footstep, Feet, Volume, Pitch);
+	UE_LOG(LogAshesOfHeaven, Verbose, TEXT("[Audio] footstep actor=%s speed=%.0f stride=%.0f volume=%.2f pitch=%.2f"),
+		*GetName(), GetVelocity().Size2D(), FootstepStride, Volume, Pitch);
+}
+
+void AAHCombatantCharacter::ApplyBodyPaint(USkeletalMeshComponent* Body, int32 SlotIndex, UMaterialInterface* Source)
+{
+	if (!Body || !Source)
+	{
+		return;
+	}
+
+	UMaterialInstanceDynamic* Paint = Body->CreateDynamicMaterialInstance(SlotIndex, Source);
+	if (!Paint)
+	{
+		Body->SetMaterial(SlotIndex, Source);
+		return;
+	}
+
+	// The white-mannequin bug is albedo, not the fill light: these bodies wear the engine's
+	// showroom mannequin suit, and the -ArtTarget=Battle capture shows it still reading as a
+	// white cutout against Erebus's fog. Setting "Paint Tint" alone was a no-op, because
+	// M_Mannequin gates the paint layer behind "Masking Paint" and takes its actual base colour
+	// from T_Manny_01_D. So: open the mask, then tint. Soldiers wear issue fabric and painted
+	// plate - warm olive-brown for human, cold slate for Veil, both in the 24-42% range where
+	// the fill reads as a lit body instead of an emissive silhouette.
+	const FLinearColor BodyTint = Faction == EAHFaction::Veil
+		? FLinearColor(0.24f, 0.31f, 0.42f)
+		: FLinearColor(0.42f, 0.34f, 0.24f);
+	// ponytail: three parameter names for one job, because a SetParameter on a name the master
+	// does not expose is a silent no-op and M_Mannequin exposes all three. Narrow this to
+	// whichever one moves the capture rather than guessing which is authoritative.
+	Paint->SetScalarParameterValue(TEXT("Masking Paint"), 1.0f);
+	Paint->SetVectorParameterValue(TEXT("Paint Tint"), BodyTint);
+	Paint->SetVectorParameterValue(TEXT("Base Color"), BodyTint);
+	// The stock suit is a polished 0.10 roughness, so the fill also lands a mirror highlight on
+	// the shoulders and helmet. Field kit is matte.
+	Paint->SetScalarParameterValue(TEXT("MetalPaintRoughness"), 0.55f);
 }
 
 void AAHCombatantCharacter::ApplyFactionAppearance()
@@ -138,6 +437,10 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 		BodyFillLight->SetLightColor(Faction == EAHFaction::Veil ? FLinearColor(0.62f, 0.82f, 1.0f) : FLinearColor(1.0f, 0.94f, 0.84f));
 		BodyFillLight->SetIntensity(BodyFillIntensity);
 	}
+	if (EnemyDefinition)
+	{
+		return;
+	}
 
 	const TArray<TSoftObjectPtr<UMaterialInterface>>& Skin = Faction == EAHFaction::Veil ? VeilBodyMaterials : HumanBodyMaterials;
 	for (int32 SlotIndex = 0; SlotIndex < Body->GetNumMaterials(); ++SlotIndex)
@@ -148,9 +451,9 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 			// rather than smearing the last one over parts it was not authored for.
 			break;
 		}
-		if (UMaterialInterface* SkinMaterial = Skin[SlotIndex].LoadSynchronous())
+		if (UMaterialInterface* SkinMaterial = Skin[SlotIndex].Get())
 		{
-			Body->SetMaterial(SlotIndex, SkinMaterial);
+			ApplyBodyPaint(Body, SlotIndex, SkinMaterial);
 		}
 	}
 }
@@ -169,6 +472,141 @@ void AAHCombatantCharacter::StartRagdoll()
 	Body->SetAllBodiesBelowSimulatePhysics(TEXT("pelvis"), true, true);
 	Body->SetSimulatePhysics(true);
 	Body->WakeAllRigidBodies();
+}
+
+bool AAHCombatantCharacter::AllowsCorpseCleanup() const
+{
+	return (bDestroyOnDeath && bAllowCorpseCleanup) || ActorHasTag(FAHCorpseTags::AllowCleanup);
+}
+
+bool AAHCombatantCharacter::IsPersistentCorpse() const
+{
+	return bPersistentCorpse || ActorHasTag(FAHCorpseTags::Persistent);
+}
+
+bool AAHCombatantCharacter::IsNarrativeCorpse() const
+{
+	return bNarrativeCorpse || ActorHasTag(FAHCorpseTags::Narrative);
+}
+
+bool AAHCombatantCharacter::IsObjectiveCriticalCorpse() const
+{
+	return bObjectiveCriticalCorpse || ActorHasTag(FAHCorpseTags::ObjectiveCritical);
+}
+
+bool AAHCombatantCharacter::IsScriptedCivilianCorpse() const
+{
+	return bScriptedCivilianCorpse || ActorHasTag(FAHCorpseTags::ScriptedCivilian);
+}
+
+bool AAHCombatantCharacter::HasUnlootedImportantWeapon() const
+{
+	const AAHWeaponBase* Weapon = GetLootableWeapon();
+	return Weapon && (Weapon->bImportantCorpseLoot || ActorHasTag(FAHCorpseTags::Lootable));
+}
+
+bool AAHCombatantCharacter::ShouldManageCorpseLifecycle() const
+{
+	return bDestroyOnDeath
+		|| bPersistentCorpse
+		|| bNarrativeCorpse
+		|| bObjectiveCriticalCorpse
+		|| bScriptedCivilianCorpse
+		|| ActorHasTag(FAHCorpseTags::Persistent)
+		|| ActorHasTag(FAHCorpseTags::Narrative)
+		|| ActorHasTag(FAHCorpseTags::ObjectiveCritical)
+		|| ActorHasTag(FAHCorpseTags::ScriptedCivilian)
+		|| ActorHasTag(FAHCorpseTags::AllowCleanup);
+}
+
+void AAHCombatantCharacter::PrepareForCorpseManagement()
+{
+	SetActorTickEnabled(false);
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->Deactivate();
+		Movement->SetComponentTickEnabled(false);
+	}
+	auto DisableComponentTick = [](UActorComponent* Component)
+	{
+		if (Component)
+		{
+			Component->SetComponentTickEnabled(false);
+		}
+	};
+	DisableComponentTick(HealthComponent.Get());
+	DisableComponentTick(ArmorComponent.Get());
+	DisableComponentTick(CombatComponent.Get());
+	DisableComponentTick(InteractionComponent.Get());
+	DisableComponentTick(InventoryComponent.Get());
+	DisableComponentTick(BodyFillLight.Get());
+	if (BodyFillLight)
+	{
+		BodyFillLight->SetVisibility(false);
+	}
+	if (InventoryComponent)
+	{
+		for (AAHWeaponBase* Weapon : InventoryComponent->GetWeapons())
+		{
+			if (IsValid(Weapon))
+			{
+				Weapon->StopFire();
+				Weapon->SetActorTickEnabled(false);
+			}
+		}
+	}
+}
+
+void AAHCombatantCharacter::SettleCorpsePhysics()
+{
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->PutAllRigidBodiesToSleep();
+	}
+}
+
+void AAHCombatantCharacter::ApplyReducedCorpseCost()
+{
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body)
+	{
+		return;
+	}
+
+	// Pause the last physics-authored component-space pose before removing it from the solver.
+	// The mesh remains visibility-queryable for targeting and loot, but no longer animates or
+	// maintains a set of simulated rigid bodies.
+	Body->PutAllRigidBodiesToSleep();
+	Body->bPauseAnims = true;
+	Body->SetEnableGravity(false);
+	Body->SetAllBodiesSimulatePhysics(false);
+	Body->SetSimulatePhysics(false);
+	Body->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Body->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Body->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	Body->SetComponentTickEnabled(false);
+}
+
+void AAHCombatantCharacter::PrepareForCorpseRemoval()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->PutAllRigidBodiesToSleep();
+		Body->SetAllBodiesSimulatePhysics(false);
+		Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (InventoryComponent)
+	{
+		InventoryComponent->DestroyWeaponsForCorpseCleanup();
+	}
+	OnDamageFeedback.Clear();
+	OnCombatantDeath.Clear();
+	OnWeaponShot.Clear();
 }
 
 AAHWeaponBase* AAHCombatantCharacter::GetLootableWeapon() const
@@ -190,7 +628,14 @@ FText AAHCombatantCharacter::GetInteractionPrompt_Implementation() const
 		// treats it as no target, so a living enemy never offers to be looted.
 		return FText::GetEmpty();
 	}
-	return FText::Format(NSLOCTEXT("AshesOfHeaven", "TakeWeaponPrompt", "INTERACT  TAKE {0}"), Weapon->DisplayName);
+	return FText::Format(NSLOCTEXT("AshesOfHeaven", "TakeWeaponPrompt", "E — TAKE {0}"), Weapon->DisplayName);
+}
+
+float AAHCombatantCharacter::GetInteractionPriority_Implementation() const
+{
+	// Lootable bodies remain selectable, but a deliberately dropped weapon should win when the
+	// two occupy the same screen space. This value belongs to the actor, not the selector.
+	return GetLootableWeapon() ? 0.20f : 0.0f;
 }
 
 void AAHCombatantCharacter::Interact_Implementation(AActor* Interactor)
@@ -377,10 +822,9 @@ void AAHCombatantCharacter::OnDeathStarted()
 	// Without this the body keeps standing in its idle loop and a kill reads as a bug.
 	StartRagdoll();
 	OnCombatantDeath.Broadcast();
-	if (bDestroyOnDeath)
+	if (DeathEffect)
 	{
-		// Three seconds cut the corpse away before it finished falling.
-		SetLifeSpan(CorpseLifeSpan);
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, DeathEffect, GetActorLocation(), GetActorRotation());
 	}
 	if (DeathSound)
 	{
@@ -391,6 +835,19 @@ void AAHCombatantCharacter::OnDeathStarted()
 		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
 		{
 			Audio->PlayWorldCue(EAHAudioCue::Death, GetActorLocation(), 0.8f);
+		}
+	}
+
+	if (ShouldManageCorpseLifecycle())
+	{
+		if (UAHCorpseManagerSubsystem* CorpseManager = GetWorld() ? GetWorld()->GetSubsystem<UAHCorpseManagerSubsystem>() : nullptr)
+		{
+			CorpseManager->RegisterCorpse(this);
+		}
+		else if (bDestroyOnDeath)
+		{
+			// Safe fallback for an unsupported world type; normal gameplay always uses the manager.
+			SetLifeSpan(CorpseLifeSpan);
 		}
 	}
 }

@@ -1,9 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/AssetManagerTypes.h"
 #include "AshesOfHeavenCharacter.h"
 #include "Gameplay/Combat/AHGameplayTypes.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "AHCombatantCharacter.generated.h"
 
 class UAHHealthComponent;
@@ -14,7 +16,12 @@ class UAHInventoryComponent;
 class AAHWeaponBase;
 class USoundBase;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class UPointLightComponent;
+class UNiagaraSystem;
+class UAHAudioPaletteData;
+struct FStreamableHandle;
+class UAHCorpseManagerSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FAHCombatDamageFeedbackDelegate, float, Damage, bool, bHeadshot, bool, bArmorHit, bool, bArmorBroken, float, DirectionAngle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAHCombatantDeathDelegate);
@@ -31,6 +38,7 @@ public:
 	/** A body can be stripped for the weapon it was still holding. Live combatants offer nothing. */
 	virtual void Interact_Implementation(AActor* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual float GetInteractionPriority_Implementation() const override;
 
 	UFUNCTION(BlueprintPure, Category="Combat")
 	AAHWeaponBase* GetLootableWeapon() const;
@@ -59,7 +67,7 @@ public:
 	TObjectPtr<UPointLightComponent> BodyFillLight;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance", meta=(ClampMin=0.0))
-	float BodyFillIntensity = 260.0f;
+	float BodyFillIntensity = 110.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	EAHFaction Faction = EAHFaction::Neutral;
@@ -70,6 +78,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	bool bDestroyOnDeath = true;
 
+	/** Ordinary combat bodies can be removed under platform-budget pressure. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bAllowCorpseCleanup = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bPersistentCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bNarrativeCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bObjectiveCriticalCorpse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse")
+	bool bScriptedCivilianCorpse = false;
+
+	/** Higher values make an otherwise ordinary body a later cleanup choice. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Corpse", meta=(ClampMin=0.0, ClampMax=1.0))
+	float CorpseImportance = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TObjectPtr<USoundBase> HurtSound;
 
@@ -78,6 +106,24 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TObjectPtr<USoundBase> DeathSound;
+
+	/** Centimetres of ground travel between one footstep and the next.
+	 * Footsteps used to run off a per-stance timer, which fixes the cadence and lets the stride
+	 * be whatever the current speed happens to make it: 0.43s at 420cm/s is a 181cm stride, and
+	 * the same 0.43s at half-stick is 90cm. A stride is a distance, so this is a distance, and
+	 * cadence falls out of however fast the body is actually moving. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=20.0))
+	float FootstepStride = 150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=0.0))
+	float FootstepVolume = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=0.1))
+	float FootstepPitch = 1.0f;
+
+	/** Ground speed under which the body counts as standing still rather than walking. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio|Footsteps", meta=(ClampMin=0.0))
+	float FootstepMinimumSpeed = 35.0f;
 
 	UPROPERTY(BlueprintAssignable, Category="Combat")
 	FAHCombatDamageFeedbackDelegate OnDamageFeedback;
@@ -88,6 +134,10 @@ public:
 	FAHWeaponShotNativeDelegate OnWeaponShot;
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void Landed(const FHitResult& Hit) override;
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	UFUNCTION(BlueprintCallable, Category="Combat")
@@ -101,6 +151,26 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Combat")
 	bool IsCombatantDead() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool AllowsCorpseCleanup() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsPersistentCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsNarrativeCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsObjectiveCriticalCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool IsScriptedCivilianCorpse() const;
+
+	UFUNCTION(BlueprintPure, Category="Corpse")
+	bool HasUnlootedImportantWeapon() const;
+
+	float GetCorpseImportance() const { return FMath::Clamp(CorpseImportance, 0.0f, 1.0f); }
 
 	FVector GetWeaponTraceOrigin() const;
 	virtual FVector GetWeaponTargetLocation() const;
@@ -117,6 +187,10 @@ public:
 	void SetAimingDownSights(bool bNewAiming);
 	void ApplyCameraRecoil(float Vertical, float Horizontal);
 	void NotifyWeaponShot(const FHitResult& Hit, bool bHit);
+
+	/** Applies an already-streamed immutable definition before deferred spawning finishes. */
+	virtual void ApplyEnemyDefinition(UAHEnemyDefinition* Definition);
+	UAHEnemyDefinition* GetEnemyDefinition() const { return EnemyDefinition; }
 
 	virtual void OnDeathStarted();
 
@@ -148,7 +222,24 @@ protected:
 	float CorpseLifeSpan = 30.0f;
 
 	void ApplyFactionAppearance();
+	/** Every body material goes through here: both the faction skins and the definition-driven
+	 * visuals, so the paint cannot be right on one path and stock grey on the other. */
+	void ApplyBodyPaint(USkeletalMeshComponent* Body, int32 SlotIndex, UMaterialInterface* Source);
+	void ApplyDefinitionLoadout();
+	void ApplyDefinitionToController();
+	void RequestLegacyPresentationAsync();
+	void HandleLegacyPresentationLoaded();
+	void HandleSelfEnemyAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error);
+	virtual FPrimaryAssetId GetDefaultEnemyDefinitionId() const;
 	void StartRagdoll();
+	bool ShouldManageCorpseLifecycle() const;
+	void PrepareForCorpseManagement();
+	void SettleCorpsePhysics();
+	void ApplyReducedCorpseCost();
+	void PrepareForCorpseRemoval();
+
+	/** One step, at the feet, with the jitter that stops a single sample sounding like a machine. */
+	void PlayFootstep(float VolumeScale, float PitchScale);
 
 	UFUNCTION()
 	void HandleHealthDeath();
@@ -157,6 +248,28 @@ protected:
 	void HandleArmorBroken();
 
 	TWeakObjectPtr<AActor> CombatTarget;
+
+	/** The immutable archetype reference; mutable health, inventory, timers, and AI remain on the actor. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAHEnemyDefinition> EnemyDefinition;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAHAudioPaletteData> VoicePalette;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> SpawnEffect;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> DeathEffect;
+
+	FGuid SelfAssetLease;
+	TSharedPtr<FStreamableHandle> LegacyPresentationHandle;
 	bool bAimingDownSights = false;
 	float AimSpreadPenaltyDegrees = 0.0f;
+	/** Ground distance still owed before the next step, in centimetres. */
+	float FootstepDistanceRemaining = 0.0f;
+	/** Alternated per step so consecutive steps are not the same pitch twice running. */
+	bool bNextFootIsLeft = true;
+
+	friend class UAHCorpseManagerSubsystem;
 };

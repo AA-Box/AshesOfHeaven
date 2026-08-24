@@ -13,6 +13,7 @@
 #include "Engine/GameInstance.h"
 #include "GameFramework/GameUserSettings.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformMemory.h"
 #include "HAL/PlatformProperties.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CoreDelegates.h"
@@ -51,13 +52,15 @@ void UAHPlatformManagerSubsystem::Initialize(FSubsystemCollectionBase& Collectio
 	const UAHPlatformSettings* Settings = UAHPlatformSettings::Get();
 	if (Settings->bLogPlatformProfileAtStartup)
 	{
-		UE_LOG(LogAshesOfHeaven, Log, TEXT("Platform profile: %s | device=%s %s | quality=%s | target=%0.f FPS | active combatants=%d"),
+		UE_LOG(LogAshesOfHeaven, Log, TEXT("Platform profile: %s | device=%s %s | quality=%s | target=%0.f FPS | active combatants=%d | corpses=%d/%d"),
 			*Capabilities.PlatformName,
 			*DeviceProfile.DeviceMake,
 			*DeviceProfile.DeviceModel,
 			*UEnum::GetValueAsString(ActiveQualityPreset),
 			PerformanceProfile.TargetFrameRate,
-			PerformanceProfile.MaxActiveCombatants);
+			PerformanceProfile.MaxActiveCombatants,
+			PerformanceProfile.CorpseBudget.SoftLimit,
+			PerformanceProfile.CorpseBudget.HardLimit);
 	}
 }
 
@@ -67,6 +70,7 @@ void UAHPlatformManagerSubsystem::Deinitialize()
 	FCoreDelegates::ApplicationHasEnteredForegroundDelegate.RemoveAll(this);
 	RuntimeInputMappingContext = nullptr;
 	ActiveCombatants = 0;
+	ActiveEQSQueries = 0;
 	Super::Deinitialize();
 }
 
@@ -117,7 +121,53 @@ void UAHPlatformManagerSubsystem::DetectPlatform()
 	DeviceProfile.DeviceProfileName = Capabilities.bIsMobile ? TEXT("Mobile") : TEXT("Desktop");
 	DeviceProfile.DeviceMake = FPlatformMisc::GetDeviceMakeAndModel();
 	DeviceProfile.DeviceModel = TEXT("See device make/model");
-	DeviceProfile.bHighEnd = !Capabilities.bIsMobile;
+	const uint64 TotalPhysicalBytes = FPlatformMemory::GetStats().TotalPhysical;
+	DeviceProfile.ApproximateMemoryGB = TotalPhysicalBytes > 0
+		? FMath::Max(1, FMath::RoundToInt(static_cast<double>(TotalPhysicalBytes) / (1024.0 * 1024.0 * 1024.0)))
+		: 0;
+	DeviceProfile.bHighEnd = !Capabilities.bIsMobile
+		|| DeviceProfile.ApproximateMemoryGB >= Settings->HighEndMobileMemoryThresholdGB;
+}
+
+FAHCorpseBudget UAHPlatformManagerSubsystem::SelectCorpseBudget(bool bIsMobile, bool bHighEnd)
+{
+	const UAHPlatformSettings* Settings = UAHPlatformSettings::Get();
+	FAHCorpseBudget Result = !bIsMobile
+		? Settings->DesktopCorpseBudget
+		: (bHighEnd ? Settings->HighEndMobileCorpseBudget : Settings->BaselineMobileCorpseBudget);
+	Result.Sanitize();
+	return Result;
+}
+
+void UAHPlatformManagerSubsystem::ApplyEQSPerformanceBudget(
+	FAHPerformanceProfile& Profile,
+	bool bIsMobile,
+	bool bMobilePerformanceMode,
+	EAHQualityPreset QualityPreset)
+{
+	Profile.MaxConcurrentEQSQueries = 8;
+	Profile.EQSQueryUpdateInterval = 0.75f;
+	Profile.EQSQueryTimeout = 0.25f;
+	Profile.EQSMaxCandidatePoints = 64;
+	Profile.bUseSimplifiedEQSScoring = false;
+	Profile.EQSExpensiveRepositionDistance = 6500.0f;
+
+	if (QualityPreset == EAHQualityPreset::Low)
+	{
+		Profile.MaxConcurrentEQSQueries = 4;
+		Profile.EQSQueryUpdateInterval = 1.0f;
+		Profile.EQSMaxCandidatePoints = 48;
+		Profile.EQSExpensiveRepositionDistance = 5000.0f;
+	}
+	if (bIsMobile)
+	{
+		Profile.MaxConcurrentEQSQueries = bMobilePerformanceMode ? 2 : 3;
+		Profile.EQSQueryUpdateInterval = bMobilePerformanceMode ? 1.5f : 1.1f;
+		Profile.EQSQueryTimeout = bMobilePerformanceMode ? 0.12f : 0.18f;
+		Profile.EQSMaxCandidatePoints = bMobilePerformanceMode ? 24 : 32;
+		Profile.bUseSimplifiedEQSScoring = true;
+		Profile.EQSExpensiveRepositionDistance = bMobilePerformanceMode ? 3500.0f : 4500.0f;
+	}
 }
 
 EAHQualityPreset UAHPlatformManagerSubsystem::ResolveQualityPreset(EAHQualityPreset Requested) const
@@ -237,6 +287,7 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 	}
 
 	PerformanceProfile = FAHPerformanceProfile();
+	PerformanceProfile.CorpseBudget = SelectCorpseBudget(Capabilities.bIsMobile, DeviceProfile.bHighEnd);
 	if (Capabilities.bIsMobile)
 	{
 		PerformanceProfile.TargetFrameRate = ActiveMobilePerformanceMode == EAHMobilePerformanceMode::Performance ? 30.0f : 60.0f;
@@ -248,9 +299,15 @@ void UAHPlatformManagerSubsystem::BuildProfiles()
 		PerformanceProfile.MaxPersistentVFX = 24;
 		PerformanceProfile.MaxDynamicLights = 4;
 		PerformanceProfile.bCharacterFillLights = false;
+		PerformanceProfile.InitialProjectilePoolSize = 0;
 		PerformanceProfile.MaxProjectilePoolSize = 64;
 		PerformanceProfile.ThermalMitigationAfterMinutes = 5;
 	}
+	ApplyEQSPerformanceBudget(
+		PerformanceProfile,
+		Capabilities.bIsMobile,
+		ActiveMobilePerformanceMode == EAHMobilePerformanceMode::Performance,
+		ActiveQualityPreset);
 
 	InputProfile = FAHInputProfile();
 	InputProfile.bUsesTouchControls = Capabilities.bSupportsTouch || Settings->bForceTouchControls;
@@ -437,6 +494,22 @@ bool UAHPlatformManagerSubsystem::TryRegisterActiveCombatant()
 void UAHPlatformManagerSubsystem::UnregisterActiveCombatant()
 {
 	ActiveCombatants = FMath::Max(0, ActiveCombatants - 1);
+}
+
+bool UAHPlatformManagerSubsystem::TryAcquireEQSQuerySlot()
+{
+	if (ActiveEQSQueries >= FMath::Max(1, PerformanceProfile.MaxConcurrentEQSQueries))
+	{
+		return false;
+	}
+
+	++ActiveEQSQueries;
+	return true;
+}
+
+void UAHPlatformManagerSubsystem::ReleaseEQSQuerySlot()
+{
+	ActiveEQSQueries = FMath::Max(0, ActiveEQSQueries - 1);
 }
 
 void UAHPlatformManagerSubsystem::HandleApplicationWillEnterBackground()

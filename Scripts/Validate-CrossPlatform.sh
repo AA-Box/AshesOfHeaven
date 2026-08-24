@@ -16,6 +16,8 @@ required=(
   "Scripts/Build-Mac.sh"
   "Scripts/Build-Android.sh"
   "Scripts/Build-iOS.sh"
+  "Scripts/Validate-PSO.py"
+  "Docs/PSO_AND_SHADER_PIPELINE.md"
 )
 for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "ERROR: missing required cross-platform file: $file" >&2; exit 1; }
@@ -36,4 +38,6 @@ if find . -type f \( -name '*.p12' -o -name '*.mobileprovision' -o -name '*.keys
 fi
 
 bash -n Scripts/Build-Mac.sh Scripts/Build-Android.sh Scripts/Build-iOS.sh
+python3 Scripts/Validate-PSO.py config --all-platforms
+python3 -m unittest Scripts/tests/test_validate_pso.py
 echo "Cross-platform source/config validation passed. Platform binaries remain evidence-gated in Docs/PLATFORM_MATRIX.md."

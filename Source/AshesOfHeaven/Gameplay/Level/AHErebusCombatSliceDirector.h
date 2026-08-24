@@ -26,7 +26,7 @@ protected:
 	void BuildMissionActors();
 	void SpawnBlock(const FVector& Location, const FVector& Scale, const FRotator& Rotation = FRotator::ZeroRotator);
 	AAHCombatEncounter* SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns);
-	void SpawnPickup(const FVector& Location, EAHResourcePickupType Type, int32 Amount = 36);
+	void SpawnPickup(const FVector& Location, EAHResourcePickupType Type, const FGuid& PersistentId, int32 Amount = 36);
 	void SpawnCheckpoint(const FVector& Location, FName Id);
 	void SpawnObjectiveZone(const FVector& Location, const FVector& Extent, FName Id);
 	void SpawnFriendly(const FVector& Location);

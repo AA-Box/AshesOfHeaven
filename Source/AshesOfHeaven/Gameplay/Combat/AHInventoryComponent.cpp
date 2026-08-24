@@ -2,6 +2,7 @@
 #include "AshesOfHeaven.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 
 UAHInventoryComponent::UAHInventoryComponent()
 {
@@ -65,6 +66,29 @@ void UAHInventoryComponent::DiscardWeapon(AAHWeaponBase* Weapon)
 		--CurrentWeaponIndex;
 	}
 	OnInventoryChanged.Broadcast();
+}
+
+void UAHInventoryComponent::DestroyWeaponsForCorpseCleanup()
+{
+	for (AAHWeaponBase* Weapon : Weapons)
+	{
+		if (!IsValid(Weapon))
+		{
+			continue;
+		}
+		Weapon->StopFire();
+		if (UWorld* World = Weapon->GetWorld())
+		{
+			World->GetTimerManager().ClearAllTimersForObject(Weapon);
+		}
+		Weapon->OnAmmoChanged.Clear();
+		Weapon->OnShot.Clear();
+		Weapon->OnReloaded.Clear();
+		Weapon->Destroy();
+	}
+	Weapons.Reset();
+	CurrentWeaponIndex = INDEX_NONE;
+	OnInventoryChanged.Clear();
 }
 
 AAHWeaponBase* UAHInventoryComponent::AddWeaponClass(TSubclassOf<AAHWeaponBase> WeaponClass, bool bEquipImmediately)

@@ -45,10 +45,22 @@ public:
 	UPROPERTY(config, EditAnywhere, Category="Save")
 	FString DefaultSaveSlot = TEXT("AshesOfHeaven_Slot_0");
 
+	UPROPERTY(config, EditAnywhere, Category="Performance|Corpses")
+	FAHCorpseBudget DesktopCorpseBudget;
+
+	UPROPERTY(config, EditAnywhere, Category="Performance|Corpses")
+	FAHCorpseBudget HighEndMobileCorpseBudget;
+
+	UPROPERTY(config, EditAnywhere, Category="Performance|Corpses")
+	FAHCorpseBudget BaselineMobileCorpseBudget;
+
+	/** Physical memory threshold used to select the high-end mobile corpse profile. */
+	UPROPERTY(config, EditAnywhere, Category="Performance|Corpses", meta=(ClampMin=1))
+	int32 HighEndMobileMemoryThresholdGB = 6;
+
 	UPROPERTY(config, EditAnywhere, Category="Debug")
 	bool bForceMobileProfileInEditor = false;
 
 	UPROPERTY(config, EditAnywhere, Category="Debug")
 	bool bLogPlatformProfileAtStartup = true;
 };
-

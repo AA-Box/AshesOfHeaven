@@ -5,7 +5,13 @@ Intermediate/
 Saved/
 Builds/
 Build/Mac/FileOpenOrder/
-Scripts/__pycache__/
+**/__pycache__/
+
+# Local PSO capture evidence can be large and is regenerated per RHI/driver run.
+*.rec.upipelinecache
+*.shk
+*.utrace
+*.stablepc.csv
 
 # IDE and generated project metadata
 .vs/

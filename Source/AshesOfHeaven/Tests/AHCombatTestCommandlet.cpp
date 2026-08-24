@@ -7,6 +7,7 @@
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
 #include "Gameplay/UI/AHCombatHUD.h"
@@ -29,6 +30,23 @@
 #include "Materials/MaterialInterface.h"
 #include "NiagaraSystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AI/NavigationSystemBase.h"
+#include "EngineUtils.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "EnvironmentQuery/EnvQueryManager.h"
+#include "GameFramework/Character.h"
+#include "Gameplay/AI/AHTacticalPositionSubsystem.h"
+#include "NavMesh/NavMeshBoundsVolume.h"
+#include "NavigationSystem.h"
+#include "Components/StaticMeshComponent.h"
+#if WITH_EDITOR
+#include "ActorFactories/ActorFactory.h"
+#include "Builders/CubeBuilder.h"
+#include "Editor.h"
+#include "FileHelpers.h"
+#include "Misc/PackageName.h"
+#endif
 
 UAHCombatVerificationCommandlet::UAHCombatVerificationCommandlet()
 {
@@ -297,7 +315,7 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		const FString TestName = TEXT("AshesOfHeaven.Combat.EncounterConfiguration");
 		const int32 FailureCountBefore = FailureCount;
 		AAHCombatEncounter* Encounter = NewObject<AAHCombatEncounter>();
-		Expect(TestName, TEXT("encounter enemies default to Veil Pilgrims"), Encounter->EnemyClass == AAHVeilPilgrimCharacter::StaticClass());
+		Expect(TestName, TEXT("encounter defaults to the Pilgrim patrol definition"), Encounter->EncounterDefinitionId == AHEnemyAssets::EncounterId(TEXT("PilgrimPatrol")));
 		Expect(TestName, TEXT("new encounter starts incomplete and inactive"), !Encounter->IsActive() && !Encounter->IsComplete());
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
@@ -612,6 +630,213 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		UAHAudioPaletteData* Palette = LoadObject<UAHAudioPaletteData>(nullptr, TEXT("/Game/Ashes/Audio/DA_AudioPalette_Default.DA_AudioPalette_Default"));
 		const TSoftObjectPtr<USoundBase>* PresentDay = Palette ? Palette->Environments.Find(FName(TEXT("Environment.PresentDay"))) : nullptr;
 		Expect(TestName, TEXT("PresentDay audio environment is mapped"), PresentDay && PresentDay->ToSoftObjectPath().IsValid());
+		FinishTest(TestName, FailureCountBefore, FailureCount);
+		++RunCount;
+	}
+
+	if (BeginTest(TEXT("AshesOfHeaven.AI.Tactical.ErebusSmoke")))
+	{
+		const FString TestName = TEXT("AshesOfHeaven.AI.Tactical.ErebusSmoke");
+		const int32 FailureCountBefore = FailureCount;
+#if WITH_EDITOR
+		const FString ErebusPackage = TEXT("/Game/Ashes/Environment/Erebus/L_ErebusOpening_Presentation");
+		const FString ErebusFilename = FPackageName::LongPackageNameToFilename(ErebusPackage, FPackageName::GetMapPackageExtension());
+		const bool bLoadedMap = FEditorFileUtils::LoadMap(ErebusFilename, false, false);
+		Expect(TestName, TEXT("real Erebus combat map loads without modifying it"), bLoadedMap);
+
+		UWorld* World = bLoadedMap && GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		Expect(TestName, TEXT("Erebus editor world is available"), World != nullptr);
+		if (World)
+		{
+			const FBox TacticalSector(FVector(-1800.0f, -1400.0f, -300.0f), FVector(3000.0f, 1400.0f, 1200.0f));
+			int32 ErebusGeometryCount = 0;
+			TArray<UStaticMeshComponent*> ErebusGeometryComponents;
+			for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+			{
+				AStaticMeshActor* MeshActor = *It;
+				if (MeshActor && MeshActor->GetComponentsBoundingBox(true).Intersect(TacticalSector))
+				{
+					++ErebusGeometryCount;
+					if (UStaticMeshComponent* MeshComponent = MeshActor->GetStaticMeshComponent())
+					{
+						// The art stream intentionally ships presentation-only. Enable collision only in this
+						// unsaved commandlet world so the tactical query exercises its real meshes.
+						MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+						MeshComponent->SetCanEverAffectNavigation(true);
+						ErebusGeometryComponents.Add(MeshComponent);
+					}
+				}
+			}
+			Expect(TestName, TEXT("real Erebus authored geometry populates the tactical sector"), ErebusGeometryCount >= 20);
+
+			TActorIterator<ANavMeshBoundsVolume> NavBoundsIt(World);
+			ANavMeshBoundsVolume* NavBoundsVolume = NavBoundsIt ? *NavBoundsIt : nullptr;
+			bool bTransientNavBounds = false;
+			if (!NavBoundsVolume)
+			{
+				FActorSpawnParameters BoundsSpawnParameters;
+				BoundsSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				BoundsSpawnParameters.ObjectFlags |= RF_Transient;
+				NavBoundsVolume = World->SpawnActor<ANavMeshBoundsVolume>(
+					ANavMeshBoundsVolume::StaticClass(),
+					TacticalSector.GetCenter(),
+					FRotator::ZeroRotator,
+					BoundsSpawnParameters);
+				if (NavBoundsVolume)
+				{
+					UCubeBuilder* BoundsBuilder = NewObject<UCubeBuilder>(GetTransientPackage(), NAME_None, RF_Transient);
+					BoundsBuilder->X = TacticalSector.GetSize().X;
+					BoundsBuilder->Y = TacticalSector.GetSize().Y;
+					BoundsBuilder->Z = TacticalSector.GetSize().Z;
+					UActorFactory::CreateBrushForVolumeActor(NavBoundsVolume, BoundsBuilder);
+					NavBoundsVolume->ReregisterAllComponents();
+					bTransientNavBounds = true;
+				}
+			}
+			Expect(TestName, TEXT("an unsaved navigation fixture covers the real Erebus geometry"), NavBoundsVolume != nullptr);
+
+			// The presentation map deliberately disables collision, so add a transient walkable plane
+			// beneath its real meshes. The actual Erebus actors remain in the query scene and provide
+			// the line-of-sight/cover geometry; this plane only makes the smoke fixture deterministic.
+			AStaticMeshActor* NavigationFloor = nullptr;
+			if (UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")))
+			{
+				FActorSpawnParameters FloorSpawnParameters;
+				FloorSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				FloorSpawnParameters.ObjectFlags |= RF_Transient;
+				const FVector FloorLocation(TacticalSector.GetCenter().X, TacticalSector.GetCenter().Y, TacticalSector.Min.Z + 25.0f);
+				NavigationFloor = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FloorLocation, FRotator::ZeroRotator, FloorSpawnParameters);
+				if (NavigationFloor)
+				{
+					UStaticMeshComponent* FloorComponent = NavigationFloor->GetStaticMeshComponent();
+					FloorComponent->SetStaticMesh(CubeMesh);
+					FloorComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+					FloorComponent->SetCanEverAffectNavigation(true);
+					NavigationFloor->SetActorScale3D(FVector(TacticalSector.GetSize().X / 100.0f, TacticalSector.GetSize().Y / 100.0f, 0.5f));
+				}
+			}
+			Expect(TestName, TEXT("deterministic navigation floor is available"), NavigationFloor != nullptr);
+
+			UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+			if (!NavSystem)
+			{
+				FNavigationSystem::AddNavigationSystemToWorld(*World, FNavigationSystemRunMode::EditorMode);
+				NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+			}
+			Expect(TestName, TEXT("Erebus navigation system initializes"), NavSystem != nullptr);
+			if (NavSystem && NavBoundsVolume)
+			{
+				// LoadMap leaves editor commandlet worlds behind the async-load navigation lock because
+				// they never enter the normal editor tick that releases it. This world is transient and
+				// unsaved, so explicitly release only that lock before building the smoke-test fixture.
+				NavSystem->RemoveNavigationBuildLock(
+					ENavigationBuildLock::AsyncLoadLock,
+					UNavigationSystemV1::ELockRemovalRebuildAction::NoRebuild);
+				for (UStaticMeshComponent* MeshComponent : ErebusGeometryComponents)
+				{
+					UNavigationSystemV1::UpdateComponentInNavOctree(*MeshComponent);
+				}
+				if (NavigationFloor)
+				{
+					UNavigationSystemV1::UpdateActorAndComponentsInNavOctree(*NavigationFloor);
+				}
+				NavSystem->OnNavigationBoundsUpdated(NavBoundsVolume);
+				NavSystem->Tick(0.0f);
+				NavSystem->Build();
+				const FBox NavBounds = TacticalSector;
+				FNavLocation OriginOnNav;
+				bool bProjectedOrigin = NavSystem->ProjectPointToNavigation(
+					NavBounds.GetCenter(),
+					OriginOnNav,
+					FVector(FMath::Max(500.0f, NavBounds.GetExtent().X), FMath::Max(500.0f, NavBounds.GetExtent().Y), 2000.0f));
+				if (!bProjectedOrigin)
+				{
+					bProjectedOrigin = NavSystem->GetRandomPointInNavigableRadius(NavBounds.GetCenter(), NavBounds.GetExtent().Size2D(), OriginOnNav);
+				}
+				Expect(TestName, TEXT("Erebus geometry yields a navigable tactical origin"), bProjectedOrigin);
+
+				FNavLocation TargetOnNav;
+				const bool bProjectedTarget = bProjectedOrigin
+					&& NavSystem->GetRandomReachablePointInRadius(OriginOnNav.Location, 1400.0f, TargetOnNav);
+				Expect(TestName, TEXT("Erebus geometry yields a reachable combat target point"), bProjectedTarget);
+
+				if (bProjectedOrigin && bProjectedTarget)
+				{
+					FActorSpawnParameters SpawnParameters;
+					SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					SpawnParameters.ObjectFlags |= RF_Transient;
+					ACharacter* Querier = World->SpawnActor<ACharacter>(ACharacter::StaticClass(), OriginOnNav.Location, FRotator::ZeroRotator, SpawnParameters);
+					AActor* Target = World->SpawnActor<AActor>(AActor::StaticClass(), TargetOnNav.Location, FRotator::ZeroRotator, SpawnParameters);
+					UAHTacticalPositionSubsystem* Tactical = World->GetSubsystem<UAHTacticalPositionSubsystem>();
+					UEnvQueryManager* EQSManager = UEnvQueryManager::GetCurrent(World);
+					Expect(TestName, TEXT("tactical subsystem is available on Erebus"), Tactical != nullptr);
+					Expect(TestName, TEXT("EQS manager is available on Erebus"), EQSManager != nullptr);
+
+					if (Querier && Target && Tactical && EQSManager)
+					{
+						FAHTacticalPositionRequest Request;
+						Request.Querier = Querier;
+						Request.CombatTarget = Target;
+						Request.Intent = EAHTacticalIntent::Reposition;
+						Request.QueryKind = EAHTacticalQueryKind::RangedFiring;
+						Request.Origin = OriginOnNav.Location;
+						Request.LastKnownTarget = TargetOnNav.Location;
+						Request.FallbackLocation = OriginOnNav.Location;
+						Request.PlayableBounds = NavBounds;
+						Request.PreferredRange = 1100.0f;
+						Request.MinimumRange = 650.0f;
+						Request.CurrentDistanceToTarget = FVector::Dist2D(OriginOnNav.Location, TargetOnNav.Location);
+						Request.QualityTolerance = 0.8f;
+						Request.TimeoutSeconds = 2.0f;
+						Request.MaxCandidatePoints = 48;
+						Request.RandomSeed = 1337;
+
+						bool bCompleted = false;
+						FAHTacticalPositionResult QueryResult;
+						const int32 QueryId = Tactical->RequestPosition(Request, FAHTacticalQueryFinished::CreateLambda(
+							[&bCompleted, &QueryResult](const FAHTacticalPositionResult& Result)
+							{
+								bCompleted = true;
+								QueryResult = Result;
+							}));
+						Expect(TestName, TEXT("Erebus tactical query starts asynchronously"), QueryId != INDEX_NONE && !bCompleted);
+
+						for (int32 TickIndex = 0; TickIndex < 240 && !bCompleted; ++TickIndex)
+						{
+							EQSManager->Tick(1.0f / 60.0f);
+							Tactical->Tick(1.0f / 60.0f);
+						}
+						Expect(TestName, TEXT("asynchronous Erebus query completes"), bCompleted);
+						Expect(TestName, TEXT("Erebus query selects an EQS point rather than fallback"), QueryResult.bSuccess && !QueryResult.bUsedFallback);
+
+						FNavLocation VerifiedLocation;
+						const bool bResultOnNav = bCompleted && NavSystem->ProjectPointToNavigation(QueryResult.Location, VerifiedLocation, FVector(150.0f, 150.0f, 300.0f));
+						Expect(TestName, TEXT("selected Erebus tactical location is navigation reachable"), bResultOnNav);
+						Expect(TestName, TEXT("selected Erebus tactical location stays inside authored bounds"), NavBounds.IsInsideOrOn(QueryResult.Location));
+					}
+
+					if (Querier)
+					{
+						World->DestroyActor(Querier);
+					}
+					if (Target)
+					{
+						World->DestroyActor(Target);
+					}
+				}
+			}
+			if (bTransientNavBounds && NavBoundsVolume)
+			{
+				World->DestroyActor(NavBoundsVolume);
+			}
+			if (NavigationFloor)
+			{
+				World->DestroyActor(NavigationFloor);
+			}
+		}
+#else
+		Expect(TestName, TEXT("Erebus integration smoke requires an editor commandlet"), false);
+#endif
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}

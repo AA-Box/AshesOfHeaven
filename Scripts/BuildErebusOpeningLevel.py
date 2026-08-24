@@ -575,17 +575,22 @@ def build_background():
     # largely black, pushed to ~320m down the corridor axis, center-right of the
     # comparison frame, where the fog stack shapes the fluted towers into the
     # reference's haze-veiled landmark. Tops reach ~25deg above the horizon.
-    # Round-4 landmark push: bigger angular size + one more spire so the cluster
-    # anchors the frame instead of being swallowed by midground massing.
-    mesh("SM_Erebus_CathedralTower_A", (26500, 1500, 0), (0, 0, 20), (1.35, 1.35, 1.4), label="Cathedral_Main")
-    mesh("SM_Erebus_CathedralTower_B", (30000, 3000, 0), (0, 0, -15), (1.1, 1.1, 1.2), label="Cathedral_Flank")
-    mesh("SM_Erebus_CathedralTower_C", (24500, 500, 0), (0, 0, 45), (1.05, 1.05, 1.25), label="Cathedral_Fore")
-    mesh("SM_Erebus_CathedralSpire_A", (28500, 4600, 0), (0, 0, 70), (0.9, 0.9, 1.0), label="Cathedral_Spire_A")
-    mesh("SM_Erebus_CathedralSpire_B", (25600, 2300, 0), (0, 0, 130), (1.0, 1.0, 1.1), label="Cathedral_Spire_B")
-    mesh("SM_Erebus_CathedralSpire_B", (27400, 600, 0), (0, 0, 200), (0.85, 0.85, 1.3), label="Cathedral_Spire_C")
-    mesh("SM_Erebus_RuinBlock_B", (27500, 1500, 0), (0, 0, 8), (3.2, 3.2, 1.6), label="CathedralBase_A")
-    mesh("SM_Erebus_RuinBlock_B", (29500, 3200, 0), (0, 0, -14), (3.0, 3.0, 1.4), label="CathedralBase_B")
-    mesh("SM_Erebus_RuinBlock_B", (28500, 2300, 0), (0, 0, 24), (2.0, 2.0, 3.2), label="CathedralShoulder_A")
+    # Round-5 correction: the cluster was not hidden, it was CROPPED. SM_Erebus_CathedralTower_A
+    # measures ~16960uu tall; at Z scale 1.4 that is a 237m tower whose crown sits ~40deg above
+    # the horizon, while the game's 90deg HipFOV at 16:9 only reaches ~29deg. From the actual
+    # Objective 01 spawn you saw its lower shaft and read it as another wall. Z x0.55 on the whole
+    # cluster (XY untouched, so the mass and the fluting stay) puts the crown near 25deg: inside
+    # the frame with headroom at the review pitch, and still the tallest thing in the corridor
+    # lane, which ring() keeps clear within 9deg of +X.
+    mesh("SM_Erebus_CathedralTower_A", (26500, 1500, 0), (0, 0, 20), (1.35, 1.35, 0.77), label="Cathedral_Main")
+    mesh("SM_Erebus_CathedralTower_B", (30000, 3000, 0), (0, 0, -15), (1.1, 1.1, 0.66), label="Cathedral_Flank")
+    mesh("SM_Erebus_CathedralTower_C", (24500, 500, 0), (0, 0, 45), (1.05, 1.05, 0.69), label="Cathedral_Fore")
+    mesh("SM_Erebus_CathedralSpire_A", (28500, 4600, 0), (0, 0, 70), (0.9, 0.9, 0.55), label="Cathedral_Spire_A")
+    mesh("SM_Erebus_CathedralSpire_B", (25600, 2300, 0), (0, 0, 130), (1.0, 1.0, 0.61), label="Cathedral_Spire_B")
+    mesh("SM_Erebus_CathedralSpire_B", (27400, 600, 0), (0, 0, 200), (0.85, 0.85, 0.72), label="Cathedral_Spire_C")
+    mesh("SM_Erebus_RuinBlock_B", (27500, 1500, 0), (0, 0, 8), (3.2, 3.2, 0.88), label="CathedralBase_A")
+    mesh("SM_Erebus_RuinBlock_B", (29500, 3200, 0), (0, 0, -14), (3.0, 3.0, 0.77), label="CathedralBase_B")
+    mesh("SM_Erebus_RuinBlock_B", (28500, 2300, 0), (0, 0, 24), (2.0, 2.0, 1.76), label="CathedralShoulder_A")
 
 
 def build_vfx_and_decals():

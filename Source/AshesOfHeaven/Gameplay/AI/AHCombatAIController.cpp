@@ -2,12 +2,20 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/AI/AHTacticalPositionSubsystem.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHChapterTypes.h"
+#include "Platform/AHPlatformManagerSubsystem.h"
+#include "Performance/AHPerformanceStats.h"
+#include "Performance/AHUpdateBudgetSubsystem.h"
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "BehaviorTree/BehaviorTree.h"
 #include "DrawDebugHelpers.h"
 
 AAHCombatAIController::AAHCombatAIController()
@@ -23,20 +31,77 @@ AAHCombatAIController::AAHCombatAIController()
 	AIPerception->SetDominantSense(Sight->GetSenseImplementation());
 }
 
+void AAHCombatAIController::ApplyEnemySettings(const FAHEnemyAISettings& Settings)
+{
+	SightRange = Settings.SightRange;
+	Accuracy = Settings.Accuracy;
+	MaxAimErrorDegrees = Settings.MaxAimErrorDegrees;
+	bPreferCover = Settings.bPreferCover;
+	PreferredEngagementRange = Settings.PreferredEngagementRange;
+	MinimumEngagementRange = Settings.MinimumEngagementRange;
+	BurstRounds = Settings.BurstRounds;
+	MinBurstPause = Settings.MinBurstPause;
+	MaxBurstPause = Settings.MaxBurstPause;
+	if (AIPerception)
+	{
+		if (UAISenseConfig_Sight* Sight = AIPerception->GetSenseConfig<UAISenseConfig_Sight>())
+		{
+			Sight->SightRadius = SightRange;
+			Sight->LoseSightRadius = SightRange * 1.15f;
+			AIPerception->RequestStimuliListenerUpdate();
+		}
+	}
+	if (UBehaviorTree* BehaviorTree = Settings.BehaviorTree.Get())
+	{
+		RunBehaviorTree(BehaviorTree);
+	}
+	if (Combatant.IsValid())
+	{
+		Combatant->SetAimSpreadPenaltyDegrees((1.0f - FMath::Clamp(Accuracy, 0.0f, 1.0f)) * MaxAimErrorDegrees);
+	}
+}
+
 void AAHCombatAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	SetActorTickEnabled(true);
+	AIPerception->Activate();
 	Combatant = Cast<AAHCombatantCharacter>(InPawn);
 	if (Combatant.IsValid())
 	{
 		Combatant->OnCombatantDeath.AddDynamic(this, &AAHCombatAIController::HandlePawnDeath);
-		Combatant->SetAimSpreadPenaltyDegrees((1.0f - FMath::Clamp(Accuracy, 0.0f, 1.0f)) * MaxAimErrorDegrees);
+		Combatant->SetAimSpreadPenaltyDegrees((1.0f - GetEffectiveAccuracy()) * MaxAimErrorDegrees);
+		NextTacticalQueryTime = GetWorld()->GetTimeSeconds() + static_cast<float>(GetUniqueID() % 7) * 0.08f;
+		const bool bActiveEncounterMember = InPawn->ActorHasTag(TEXT("ActiveEncounter"))
+			|| InPawn->ActorHasTag(TEXT("AH.DirectedEncounter"))
+			|| InPawn->GetOwner() != nullptr;
+		if (UAHUpdateBudgetSubsystem* Budget = GetWorld()->GetSubsystem<UAHUpdateBudgetSubsystem>())
+		{
+			Budget->RegisterCombatant(Combatant.Get(), this, bActiveEncounterMember);
+		}
+	}
+}
+
+void AAHCombatAIController::ApplyEncounterSophistication(float Sophistication)
+{
+	const float Pressure = FMath::Clamp(Sophistication, 0.65f, 1.50f);
+	Accuracy = FMath::Clamp(Accuracy + (Pressure - 1.0f) * 0.16f, 0.45f, 0.90f);
+	MinBurstPause = FMath::Max(0.25f, MinBurstPause / Pressure);
+	MaxBurstPause = FMath::Max(MinBurstPause, MaxBurstPause / Pressure);
+	FirstContactGraceSeconds = FMath::Clamp(FirstContactGraceSeconds / Pressure, 0.65f, 2.0f);
+	MaxSimultaneousAttackers = FMath::Clamp(FMath::RoundToInt(MaxSimultaneousAttackers * Pressure), 1, 4);
+	bPreferCover = bPreferCover || Pressure >= 1.0f;
+	if (Combatant.IsValid())
+	{
+		Combatant->SetAimSpreadPenaltyDegrees((1.0f - Accuracy) * MaxAimErrorDegrees);
 	}
 }
 
 void AAHCombatAIController::HandlePawnDeath()
 {
 	StopMovement();
+	SetActorTickEnabled(false);
+	AIPerception->Deactivate();
 	if (Combatant.IsValid() && Combatant->GetCombatComponent())
 	{
 		Combatant->GetCombatComponent()->StopFire();
@@ -46,12 +111,38 @@ void AAHCombatAIController::HandlePawnDeath()
 
 void AAHCombatAIController::OnUnPossess()
 {
+	if (Combatant.IsValid())
+	{
+		if (UAHUpdateBudgetSubsystem* Budget = GetWorld()->GetSubsystem<UAHUpdateBudgetSubsystem>())
+		{
+			Budget->UnregisterCombatant(Combatant.Get());
+		}
+		if (UAHTacticalPositionSubsystem* Tactical = GetWorld()->GetSubsystem<UAHTacticalPositionSubsystem>())
+		{
+			Tactical->CancelForQuerier(Combatant.Get());
+		}
+	}
 	if (Combatant.IsValid() && Combatant->GetCombatComponent())
 	{
 		Combatant->GetCombatComponent()->StopFire();
 	}
 	StopMovement();
 	Super::OnUnPossess();
+}
+
+void AAHCombatAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (Combatant.IsValid())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (UAHUpdateBudgetSubsystem* Budget = World->GetSubsystem<UAHUpdateBudgetSubsystem>())
+			{
+				Budget->UnregisterCombatant(Combatant.Get());
+			}
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void AAHCombatAIController::Tick(float DeltaSeconds)
@@ -63,6 +154,43 @@ void AAHCombatAIController::Tick(float DeltaSeconds)
 	}
 
 	const float Now = GetWorld()->GetTimeSeconds();
+	UAHUpdateBudgetSubsystem* Budget = GetWorld()->GetSubsystem<UAHUpdateBudgetSubsystem>();
+	if (Budget && UAHUpdateBudgetSubsystem::IsEnabled())
+	{
+		const bool bCombatRelevant = CurrentTarget.IsValid() || (bHasSeenTarget && Now - LastSeenTime < 14.0f);
+		Budget->SetCombatState(Combatant.Get(), bCombatRelevant, IsCurrentAttacker());
+		const EAHSignificanceTier Tier = Budget->GetTier(Combatant.Get());
+		if (Tier == EAHSignificanceTier::Dormant)
+		{
+			return;
+		}
+
+		float UpdateDelta = 0.0f;
+		if (Tier == EAHSignificanceTier::Far)
+		{
+			if (Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::DistantBattlefieldSimulation, Now, UpdateDelta))
+			{
+				UpdateDistantBattlefieldSimulation(UpdateDelta);
+			}
+			return;
+		}
+
+		const bool bPerceptionDue = Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::Perception, Now, UpdateDelta);
+		const bool bTacticalDue = Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::TacticalDecision, Now, UpdateDelta);
+		if (bTacticalDue)
+		{
+			UpdateTarget();
+			UpdateAttackSlot();
+			const bool bUpdatedCombatRelevant = CurrentTarget.IsValid() || (bHasSeenTarget && Now - LastSeenTime < 14.0f);
+			Budget->SetCombatState(Combatant.Get(), bUpdatedCombatRelevant, IsCurrentAttacker());
+		}
+		const bool bMovementDue = Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::Movement, Now, UpdateDelta);
+		const bool bCombatDue = Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::Combat, Now, UpdateDelta);
+		const bool bAimDue = Budget->IsUpdateDue(Combatant.Get(), EAHUpdateChannel::Aim, Now, UpdateDelta);
+		UpdateCombatBehavior(DeltaSeconds, bPerceptionDue, bTacticalDue, bMovementDue, bCombatDue, bAimDue);
+		return;
+	}
+
 	if (Now >= NextDecisionTime)
 	{
 		NextDecisionTime = Now + 0.25f;
@@ -74,6 +202,7 @@ void AAHCombatAIController::Tick(float DeltaSeconds)
 
 void AAHCombatAIController::UpdateTarget()
 {
+	AH_SCOPE_PERFORMANCE(AIPerception, this);
 	if (CurrentTarget.IsValid() && Cast<AAHCombatantCharacter>(CurrentTarget.Get()) && !Cast<AAHCombatantCharacter>(CurrentTarget.Get())->IsCombatantDead())
 	{
 		return;
@@ -84,6 +213,20 @@ void AAHCombatAIController::UpdateTarget()
 	{
 		// A new target is a new contact, so it gets its own grace window.
 		FirstContactTime = -BIG_NUMBER;
+		bCachedHasLineOfSight = false;
+		bHasSeenTarget = false;
+		bInvestigating = false;
+		LastKnownLocation = FVector::ZeroVector;
+		SearchLocation = FVector::ZeroVector;
+		SetTacticalIntent(EAHTacticalIntent::Hold);
+		if (Combatant.IsValid())
+		{
+			if (UAHTacticalPositionSubsystem* Tactical = GetWorld()->GetSubsystem<UAHTacticalPositionSubsystem>())
+			{
+				Tactical->CancelForQuerier(Combatant.Get());
+			}
+		}
+		bTacticalQueryInFlight = false;
 	}
 	// AAHCombatantCharacter::GetWeaponTargetLocation reads this. Without it every AI rifle aimed
 	// down the control rotation instead of at anyone, so shots trailed behind the turn.
@@ -118,6 +261,7 @@ AActor* AAHCombatAIController::FindBestTarget() const
 
 bool AAHCombatAIController::HasLineOfSightTo(AActor* Target) const
 {
+	AH_SCOPE_PERFORMANCE(AIPerception, this);
 	if (!Target || !Combatant.IsValid())
 	{
 		return false;
@@ -130,39 +274,9 @@ bool AAHCombatAIController::HasLineOfSightTo(AActor* Target) const
 	return !GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params) || Hit.GetActor() == Target;
 }
 
-FVector AAHCombatAIController::ChooseCoverLocation(AActor* Target) const
-{
-	if (!Target || !GetWorld())
-	{
-		return Combatant.IsValid() ? Combatant->GetActorLocation() : FVector::ZeroVector;
-	}
-
-	const UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-	const FVector AwayFromTarget = (Combatant->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal();
-	for (int32 Attempt = 0; Attempt < 8; ++Attempt)
-	{
-		FVector Candidate = Combatant->GetActorLocation() + AwayFromTarget * FMath::FRandRange(350.0f, 850.0f) + FVector(0.0f, FMath::FRandRange(-700.0f, 700.0f), 0.0f);
-		if (Nav)
-		{
-			FNavLocation NavLocation;
-			if (Nav->ProjectPointToNavigation(Candidate, NavLocation))
-			{
-				Candidate = NavLocation.Location;
-			}
-		}
-
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(AHCoverTrace), true, Combatant.Get());
-		FHitResult CoverHit;
-		if (GetWorld()->LineTraceSingleByChannel(CoverHit, Target->GetActorLocation() + FVector(0.0f, 0.0f, 62.0f), Candidate + FVector(0.0f, 0.0f, 62.0f), ECC_Visibility, Params))
-		{
-			return Candidate;
-		}
-	}
-	return Combatant->GetActorLocation() + AwayFromTarget * 500.0f;
-}
-
 void AAHCombatAIController::FaceLocation(const FVector& Target, float DeltaSeconds)
 {
+	AH_SCOPE_PERFORMANCE(Combat, this);
 	if (!Combatant.IsValid())
 	{
 		return;
@@ -194,6 +308,7 @@ void AAHCombatAIController::MoveWithFallback(const FVector& Destination, float D
 	const bool bIdle = GetMoveStatus() == EPathFollowingStatus::Idle;
 	if (bForceNewRequest || bGoalMoved || bIdle)
 	{
+		AH_SCOPE_PERFORMANCE(Movement, this);
 		CurrentMoveGoal = Destination;
 		MoveToLocation(Destination, 80.0f, true);
 	}
@@ -204,6 +319,7 @@ void AAHCombatAIController::MoveWithFallback(const FVector& Destination, float D
 
 void AAHCombatAIController::MaintainWeapon()
 {
+	AH_SCOPE_PERFORMANCE(Combat, this);
 	if (!Combatant.IsValid() || !Combatant->GetInventoryComponent())
 	{
 		return;
@@ -246,90 +362,506 @@ FVector AAHCombatAIController::GetStandoffLocation(const FVector& TargetLocation
 	return TargetLocation + FromTarget * Range;
 }
 
-void AAHCombatAIController::UpdateCombatBehavior(float DeltaSeconds)
+void AAHCombatAIController::UpdateCombatBehavior(float DeltaSeconds, bool bPerceptionDue, bool bTacticalDue,
+	bool bMovementDue, bool bCombatDue, bool bAimDue)
 {
 	const float Now = GetWorld()->GetTimeSeconds();
 	AAHCombatantCharacter* Target = Cast<AAHCombatantCharacter>(CurrentTarget.Get());
-	if (EscapeLocation != FVector::ZeroVector && FVector::DistSquared(EscapeLocation, Combatant->GetActorLocation()) > FMath::Square(120.0f))
+	if (Now < GrenadeThreatExpiryTime)
 	{
-		MoveWithFallback(EscapeLocation, DeltaSeconds);
+		if (bCombatDue && Combatant->GetCombatComponent())
+		{
+			Combatant->GetCombatComponent()->StopFire();
+		}
+		if (bMovementDue && Now >= GrenadeReactionReadyTime)
+		{
+			SetTacticalIntent(EAHTacticalIntent::EscapeGrenade, GrenadeThreatExpiryTime - Now);
+			// Grenade escape is explicitly protected from throttling, including its tactical query.
+			ExecuteTacticalMovement(EAHTacticalIntent::EscapeGrenade, Target, DeltaSeconds, true);
+		}
 		return;
 	}
-	EscapeLocation = FVector::ZeroVector;
-
-	if (Target && HasLineOfSightTo(Target))
+	if (bTacticalDue && CurrentTacticalIntent == EAHTacticalIntent::EscapeGrenade)
 	{
-		LastKnownLocation = Target->GetActorLocation();
-		LastSeenTime = Now;
-		bHasSeenTarget = true;
-		bInvestigating = false;
-		NextSearchTime = 0.0f;
+		SetTacticalIntent(EAHTacticalIntent::Hold);
+	}
+	GrenadeThreatRadius = 0.0f;
 
-		const float Distance = FVector::Dist(Target->GetActorLocation(), Combatant->GetActorLocation());
-		const bool bTooClose = Distance < MinimumEngagementRange;
-		if (bTooClose)
+	if (bPerceptionDue)
+	{
+		bCachedHasLineOfSight = Target && HasLineOfSightTo(Target);
+	}
+
+	if (Target && bCachedHasLineOfSight)
+	{
+		if (bPerceptionDue)
 		{
-			// Break contact immediately rather than on the reposition cadence: standing inside a
-			// rifle's minimum range is the one thing a combatant should never wait to fix.
-			MoveWithFallback(GetStandoffLocation(Target->GetActorLocation(), PreferredEngagementRange), DeltaSeconds);
+			LastKnownLocation = Target->GetActorLocation();
+			LastSeenTime = Now;
+			bHasSeenTarget = true;
+			bInvestigating = false;
+			NextSearchTime = 0.0f;
 		}
-		else if (Now >= NextRepositionTime && bPreferCover)
+
+		if (bTacticalDue)
 		{
-			// A fresh cover point on a slow cadence. The old 2.5-5s reposition window landed on
-			// top of a per-tick path restart, so a combatant never actually arrived anywhere.
-			NextRepositionTime = Now + FMath::FRandRange(4.5f, 8.0f);
-			MoveWithFallback(ChooseCoverLocation(Target), DeltaSeconds, true);
+			AH_SCOPE_PERFORMANCE(AITacticalDecisions, this);
+			const float Distance = FVector::Dist(Target->GetActorLocation(), Combatant->GetActorLocation());
+			const bool bTooClose = Distance < MinimumEngagementRange;
+			EAHTacticalIntent DesiredIntent = EAHTacticalIntent::Hold;
+			if (bTooClose)
+			{
+				DesiredIntent = EAHTacticalIntent::Retreat;
+				SetTacticalIntent(DesiredIntent, 3.0f);
+			}
+			else if (CurrentTacticalIntent == EAHTacticalIntent::Retreat && Now < TacticalIntentEndTime && Distance < PreferredEngagementRange * 0.9f)
+			{
+				DesiredIntent = EAHTacticalIntent::Retreat;
+			}
+			else if (Distance > PreferredEngagementRange * 1.35f)
+			{
+				DesiredIntent = EAHTacticalIntent::Advance;
+				SetTacticalIntent(DesiredIntent, 4.0f);
+			}
+			else
+			{
+				const bool bRepositioning =
+					(CurrentTacticalIntent == EAHTacticalIntent::FindCover
+						|| CurrentTacticalIntent == EAHTacticalIntent::FlankLeft
+						|| CurrentTacticalIntent == EAHTacticalIntent::FlankRight
+						|| CurrentTacticalIntent == EAHTacticalIntent::Reposition)
+					&& Now < TacticalIntentEndTime
+					&& (bTacticalQueryInFlight
+						|| (bHasCachedTacticalLocation && FVector::DistSquared2D(CachedTacticalLocation, Combatant->GetActorLocation()) > FMath::Square(130.0f)));
+				if (bRepositioning)
+				{
+					DesiredIntent = CurrentTacticalIntent;
+				}
+				else if (Now >= NextRepositionTime)
+				{
+					float CadenceScale = 1.0f;
+					switch (TacticalDifficulty)
+					{
+					case EAHAITacticalDifficulty::Recruit: CadenceScale = 1.25f; break;
+					case EAHAITacticalDifficulty::Veteran: CadenceScale = 0.85f; break;
+					case EAHAITacticalDifficulty::Damnation: CadenceScale = 0.72f; break;
+					default: break;
+					}
+					NextRepositionTime = Now + FMath::FRandRange(4.5f, 8.0f) * CadenceScale;
+					DesiredIntent = ChooseRepositionIntent();
+					SetTacticalIntent(DesiredIntent, 5.0f);
+				}
+			}
+
+			if (DesiredIntent == EAHTacticalIntent::Hold)
+			{
+				SetTacticalIntent(EAHTacticalIntent::Hold);
+				if (GetMoveStatus() == EPathFollowingStatus::Idle)
+				{
+					CurrentMoveGoal = FVector::ZeroVector;
+				}
+			}
 		}
-		else if (GetMoveStatus() == EPathFollowingStatus::Idle)
+
+		if (bMovementDue && CurrentTacticalIntent != EAHTacticalIntent::Hold)
 		{
-			// Holding position with a clear shot is correct; drifting off the goal is not.
-			CurrentMoveGoal = FVector::ZeroVector;
+			ExecuteTacticalMovement(CurrentTacticalIntent, Target, DeltaSeconds, bTacticalDue);
 		}
 		// Aim at the target, not at the cover point: a combatant that can see you shoots at you
 		// while it moves. The old code held fire for the whole approach and inside 900 units,
 		// which is most of a firefight, so the enemies never returned any.
-		FaceLocation(Target->GetActorLocation() + FVector(0.0f, 0.0f, 55.0f), DeltaSeconds);
+		if (bAimDue)
+		{
+			FaceLocation(Target->GetActorLocation() + FVector(0.0f, 0.0f, 55.0f), DeltaSeconds);
+		}
 		if (FirstContactTime < 0.0f)
 		{
 			FirstContactTime = Now;
 		}
-		MaintainWeapon();
-		ApplyAimDiscipline(Now);
-		UpdateBurstFire(Now);
+		if (bCombatDue)
+		{
+			MaintainWeapon();
+			ApplyAimDiscipline(Now);
+			UpdateBurstFire(Now);
+		}
 		return;
 	}
 
-	if (Combatant->GetCombatComponent())
+	if (bCombatDue && Combatant->GetCombatComponent())
 	{
 		Combatant->GetCombatComponent()->StopFire();
 	}
 	// Out of contact is the free moment to reload, not mid-burst.
-	MaintainWeapon();
-	if (Now - LastSeenTime > 3.0f)
+	if (bCombatDue)
+	{
+		MaintainWeapon();
+	}
+	if (bPerceptionDue && Now - LastSeenTime > 3.0f)
 	{
 		FirstContactTime = -BIG_NUMBER;
 	}
-	if (bHasSeenTarget && Now - LastSeenTime < 6.0f)
+	if (bHasSeenTarget && Now - LastSeenTime < 14.0f)
 	{
-		bInvestigating = true;
-		MoveWithFallback(GetStandoffLocation(LastKnownLocation, PreferredEngagementRange), DeltaSeconds);
-	}
-	else if (Target)
-	{
-		LastKnownLocation = Target->GetActorLocation();
-		// Rolling a new random offset every frame meant the destination never stopped moving and
-		// the combatant jittered on the spot. Hold one sweep point long enough to walk to it.
-		if (Now >= NextSearchTime)
+		if (bTacticalDue)
 		{
-			NextSearchTime = Now + FMath::FRandRange(3.5f, 6.0f);
-			SearchLocation = LastKnownLocation + FVector(FMath::FRandRange(-400.0f, 400.0f), FMath::FRandRange(-500.0f, 500.0f), 0.0f);
+			bInvestigating = true;
+			if (Now >= NextSearchTime)
+			{
+				NextSearchTime = Now + FMath::FRandRange(3.5f, 6.0f);
+				bHasCachedTacticalLocation = false;
+				bCachedTacticalFallback = false;
+				NextTacticalQueryTime = FMath::Min(NextTacticalQueryTime, Now);
+			}
+			SetTacticalIntent(EAHTacticalIntent::SearchLastKnown, 14.0f - (Now - LastSeenTime));
 		}
-		MoveWithFallback(SearchLocation, DeltaSeconds);
+		if (bMovementDue && CurrentTacticalIntent == EAHTacticalIntent::SearchLastKnown)
+		{
+			ExecuteTacticalMovement(EAHTacticalIntent::SearchLastKnown, nullptr, DeltaSeconds, bTacticalDue);
+		}
 	}
+	else if (bTacticalDue)
+	{
+		bInvestigating = false;
+		SetTacticalIntent(EAHTacticalIntent::Hold);
+	}
+}
+
+void AAHCombatAIController::UpdateDistantBattlefieldSimulation(float SimulatedDeltaSeconds)
+{
+	AH_SCOPE_PERFORMANCE(AITacticalDecisions, this);
+	AAHCombatantCharacter* Target = Cast<AAHCombatantCharacter>(CurrentTarget.Get());
+	if (Target && Target->IsCombatantDead())
+	{
+		CurrentTarget.Reset();
+		bCachedHasLineOfSight = false;
+		bHasSeenTarget = false;
+		if (Combatant.IsValid())
+		{
+			Combatant->SetCombatTarget(nullptr);
+		}
+	}
+	// The accumulated delta is intentionally consumed as a single deterministic simulation step.
+	// Far actors never run navigation, LOS traces, tactical queries, weapon fire, or CharacterMovement.
+	(void)SimulatedDeltaSeconds;
+}
+
+EAHTacticalIntent AAHCombatAIController::ChooseRepositionIntent() const
+{
+	if (!bAttackSlotHeld)
+	{
+		FRandomStream Random(GetUniqueID() ^ FMath::FloorToInt(GetWorld()->GetTimeSeconds() * 0.2f));
+		if (Random.FRand() <= GetFlankWillingness())
+		{
+			return (GetUniqueID() & 1) == 0 ? EAHTacticalIntent::FlankLeft : EAHTacticalIntent::FlankRight;
+		}
+	}
+	return bPreferCover ? EAHTacticalIntent::FindCover : EAHTacticalIntent::Reposition;
+}
+
+void AAHCombatAIController::SetTacticalIntent(EAHTacticalIntent NewIntent, float LifetimeSeconds)
+{
+	if (CurrentTacticalIntent == NewIntent)
+	{
+		return;
+	}
+	CurrentTacticalIntent = NewIntent;
+	TacticalIntentEndTime = LifetimeSeconds > 0.0f ? GetWorld()->GetTimeSeconds() + LifetimeSeconds : -BIG_NUMBER;
+	bHasCachedTacticalLocation = false;
+	bCachedTacticalFallback = false;
+	CachedTacticalIntent = EAHTacticalIntent::Hold;
+	if (UAHTacticalPositionSubsystem::IsDebugEnabled())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[AI.EQS] intent owner=%s requested=%s"), *GetNameSafe(Combatant.Get()), AHTacticalScoring::IntentToString(NewIntent));
+	}
+}
+
+void AAHCombatAIController::ExecuteTacticalMovement(EAHTacticalIntent Intent, AActor* Target, float DeltaSeconds, bool bAllowTacticalQuery)
+{
+	if (!Combatant.IsValid() || Intent == EAHTacticalIntent::Hold)
+	{
+		return;
+	}
+	if (CurrentTacticalIntent != Intent)
+	{
+		SetTacticalIntent(Intent, 4.0f);
+	}
+
+	const float Now = GetWorld()->GetTimeSeconds();
+	const bool bCanRunExpensiveQuery = Intent == EAHTacticalIntent::EscapeGrenade
+		|| Intent == EAHTacticalIntent::SearchLastKnown
+		|| IsExpensiveTacticalQueryAllowed(Target);
+	if (bAllowTacticalQuery
+		&& bCanRunExpensiveQuery
+		&& AHTacticalScoring::CanStartQuery(
+			bTacticalQueryInFlight,
+			Now,
+			NextTacticalQueryTime,
+			bHasCachedTacticalLocation && !bCachedTacticalFallback))
+	{
+		RequestTacticalPosition(Intent, Target);
+	}
+
+	const FVector Destination = bHasCachedTacticalLocation && CachedTacticalIntent == Intent
+		? CachedTacticalLocation
+		: BuildTacticalFallback(Intent, Target);
+	if (FVector::DistSquared2D(Destination, Combatant->GetActorLocation()) > FMath::Square(120.0f))
+	{
+		MoveWithFallback(Destination, DeltaSeconds);
+	}
+	else
+	{
+		CurrentMoveGoal = FVector::ZeroVector;
+	}
+}
+
+void AAHCombatAIController::RequestTacticalPosition(EAHTacticalIntent Intent, AActor* Target)
+{
+	AH_SCOPE_PERFORMANCE(AITacticalDecisions, this);
+	if (!Combatant.IsValid())
+	{
+		return;
+	}
+	UAHTacticalPositionSubsystem* Tactical = GetWorld()->GetSubsystem<UAHTacticalPositionSubsystem>();
+	const FVector Fallback = BuildTacticalFallback(Intent, Target);
+	if (!Tactical)
+	{
+		FAHTacticalPositionResult Result;
+		Result.Intent = Intent;
+		Result.Location = Fallback;
+		Result.bUsedFallback = true;
+		Result.FailureReason = TEXT("SubsystemUnavailable");
+		HandleTacticalQueryFinished(Result);
+		return;
+	}
+
+	FAHPerformanceProfile PerformanceProfile;
+	if (const UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
+	{
+		PerformanceProfile = Platform->GetPerformanceProfile();
+	}
+
+	FAHTacticalPositionRequest Request;
+	Request.Querier = Combatant.Get();
+	Request.CombatTarget = Intent == EAHTacticalIntent::SearchLastKnown ? nullptr : Target;
+	Request.Intent = Intent;
+	Request.QueryKind = AHTacticalScoring::QueryKindForIntent(Intent);
+	Request.Origin = Combatant->GetActorLocation();
+	Request.LastKnownTarget = LastKnownLocation.IsNearlyZero() ? Request.Origin : LastKnownLocation;
+	Request.GrenadeThreat = GrenadeThreatLocation;
+	Request.FallbackLocation = Fallback;
+	Request.PreferredRange = PreferredEngagementRange;
+	Request.MinimumRange = MinimumEngagementRange;
+	Request.CurrentDistanceToTarget = Target ? FVector::Dist2D(Request.Origin, Target->GetActorLocation()) : 0.0f;
+	Request.GrenadeDangerRadius = GetWorld()->GetTimeSeconds() < GrenadeThreatExpiryTime ? GrenadeThreatRadius : 0.0f;
+	Request.QualityTolerance = GetTacticalQualityTolerance();
+	Request.TimeoutSeconds = PerformanceProfile.EQSQueryTimeout;
+	Request.MaxCandidatePoints = PerformanceProfile.EQSMaxCandidatePoints;
+	Request.RandomSeed = GetUniqueID() ^ (++TacticalQueryRequestCount * 7919);
+	Request.bAccurateAttacker = bAttackSlotHeld;
+	Request.bSuppressionAttacker = !bAttackSlotHeld;
+	Request.bSimplifiedScoring = PerformanceProfile.bUseSimplifiedEQSScoring;
+
+	for (TActorIterator<AAHCombatAIController> It(GetWorld()); It; ++It)
+	{
+		const AAHCombatAIController* Other = *It;
+		AAHCombatantCharacter* OtherPawn = Other && Other != this ? Other->Combatant.Get() : nullptr;
+		if (OtherPawn && !OtherPawn->IsCombatantDead() && !Combatant->IsHostileTo(OtherPawn))
+		{
+			Request.Squadmates.Add(OtherPawn);
+		}
+	}
+
+	if (const UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (const UAHChapterSubsystem* Chapter = GameInstance->GetSubsystem<UAHChapterSubsystem>())
+		{
+			const FAHStageSpatialDefinition& Stage = AHChapterSpatial::GetStageDefinition(Chapter->GetStage());
+			Request.PlayableBounds = FBox(Stage.ExpectedBoundsMin, Stage.ExpectedBoundsMax);
+		}
+	}
+
+	bTacticalQueryInFlight = true;
+	bHasCachedTacticalLocation = false;
+	bCachedTacticalFallback = false;
+	NextTacticalQueryTime = GetWorld()->GetTimeSeconds() + GetTacticalQueryInterval();
+	Tactical->RequestPosition(Request, FAHTacticalQueryFinished::CreateUObject(this, &AAHCombatAIController::HandleTacticalQueryFinished));
+}
+
+void AAHCombatAIController::HandleTacticalQueryFinished(const FAHTacticalPositionResult& Result)
+{
+	bTacticalQueryInFlight = false;
+	if (!Combatant.IsValid() || Result.Intent != CurrentTacticalIntent)
+	{
+		NextTacticalQueryTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+		return;
+	}
+
+	CachedTacticalIntent = Result.Intent;
+	CachedTacticalLocation = Result.Location;
+	CachedTacticalScore = Result.Score;
+	bHasCachedTacticalLocation = true;
+	bCachedTacticalFallback = Result.bUsedFallback;
+}
+
+FVector AAHCombatAIController::BuildTacticalFallback(EAHTacticalIntent Intent, AActor* Target) const
+{
+	if (!Combatant.IsValid())
+	{
+		return FVector::ZeroVector;
+	}
+	const FVector Origin = Combatant->GetActorLocation();
+	const FVector TargetLocation = Target ? Target->GetActorLocation() : LastKnownLocation;
+	FVector Away = (Origin - TargetLocation).GetSafeNormal2D();
+	if (Intent == EAHTacticalIntent::EscapeGrenade)
+	{
+		Away = (Origin - GrenadeThreatLocation).GetSafeNormal2D();
+	}
+	if (Away.IsNearlyZero())
+	{
+		Away = Combatant->GetActorForwardVector() * -1.0f;
+	}
+
+	FVector Destination = Origin;
+	switch (Intent)
+	{
+	case EAHTacticalIntent::Advance:
+		Destination = GetStandoffLocation(TargetLocation, PreferredEngagementRange);
+		break;
+	case EAHTacticalIntent::Retreat:
+		Destination = Origin + Away * FMath::Max(700.0f, PreferredEngagementRange - MinimumEngagementRange + 350.0f);
+		break;
+	case EAHTacticalIntent::EscapeGrenade:
+		Destination = Origin + Away * FMath::Max(800.0f, GrenadeThreatRadius + 350.0f);
+		break;
+	case EAHTacticalIntent::FlankLeft:
+	case EAHTacticalIntent::FlankRight:
+	{
+		const float Side = Intent == EAHTacticalIntent::FlankLeft ? 1.0f : -1.0f;
+		Destination = TargetLocation + Away.RotateAngleAxis(70.0f * Side, FVector::UpVector) * PreferredEngagementRange;
+		break;
+	}
+	case EAHTacticalIntent::SearchLastKnown:
+	{
+		FRandomStream Random(GetUniqueID() ^ (TacticalQueryRequestCount + 1) * 3571);
+		Destination = LastKnownLocation + FVector(Random.FRandRange(-550.0f, 550.0f), Random.FRandRange(-550.0f, 550.0f), 0.0f);
+		break;
+	}
+	case EAHTacticalIntent::FindCover:
+	case EAHTacticalIntent::Reposition:
+	{
+		const float Side = (GetUniqueID() & 1) == 0 ? 1.0f : -1.0f;
+		const FVector Lateral = FVector::CrossProduct(FVector::UpVector, Away).GetSafeNormal2D();
+		Destination = Origin + Away * 420.0f + Lateral * Side * 320.0f;
+		break;
+	}
+	default:
+		break;
+	}
+
+	if (const UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+	{
+		FNavLocation Projected;
+		if (Navigation->ProjectPointToNavigation(Destination, Projected, FVector(450.0f, 450.0f, 500.0f)))
+		{
+			Destination = Projected.Location;
+		}
+	}
+	return Destination;
+}
+
+float AAHCombatAIController::GetTacticalQueryInterval() const
+{
+	float Interval = 0.75f;
+	if (const UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
+	{
+		Interval = Platform->GetPerformanceProfile().EQSQueryUpdateInterval;
+	}
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: return Interval * 1.3f;
+	case EAHAITacticalDifficulty::Veteran: return Interval * 0.86f;
+	case EAHAITacticalDifficulty::Damnation: return Interval * 0.74f;
+	default: return Interval;
+	}
+}
+
+float AAHCombatAIController::GetTacticalQualityTolerance() const
+{
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: return 0.72f;
+	case EAHAITacticalDifficulty::Veteran: return 0.90f;
+	case EAHAITacticalDifficulty::Damnation: return 0.94f;
+	default: return 0.82f;
+	}
+}
+
+float AAHCombatAIController::GetFlankWillingness() const
+{
+	float Scale = 1.0f;
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: Scale = 0.4f; break;
+	case EAHAITacticalDifficulty::Veteran: Scale = 1.55f; break;
+	case EAHAITacticalDifficulty::Damnation: Scale = 2.0f; break;
+	default: break;
+	}
+	return FMath::Clamp(BaseFlankWillingness * Scale, 0.0f, 0.65f);
+}
+
+float AAHCombatAIController::GetGrenadeReactionDelay() const
+{
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: return 0.45f;
+	case EAHAITacticalDifficulty::Veteran: return 0.16f;
+	case EAHAITacticalDifficulty::Damnation: return 0.10f;
+	default: return 0.28f;
+	}
+}
+
+float AAHCombatAIController::GetEffectiveAccuracy() const
+{
+	float Offset = 0.0f;
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: Offset = -0.12f; break;
+	case EAHAITacticalDifficulty::Veteran: Offset = 0.05f; break;
+	case EAHAITacticalDifficulty::Damnation: Offset = 0.09f; break;
+	default: break;
+	}
+	return FMath::Clamp(Accuracy + Offset, 0.35f, 0.90f);
+}
+
+float AAHCombatAIController::GetBurstPauseScale() const
+{
+	switch (TacticalDifficulty)
+	{
+	case EAHAITacticalDifficulty::Recruit: return 1.20f;
+	case EAHAITacticalDifficulty::Veteran: return 0.90f;
+	case EAHAITacticalDifficulty::Damnation: return 0.82f;
+	default: return 1.0f;
+	}
+}
+
+bool AAHCombatAIController::IsExpensiveTacticalQueryAllowed(AActor* Target) const
+{
+	if (!Target || !Combatant.IsValid())
+	{
+		return true;
+	}
+	float MaximumDistance = 6500.0f;
+	if (const UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this))
+	{
+		MaximumDistance = Platform->GetPerformanceProfile().EQSExpensiveRepositionDistance;
+	}
+	return FVector::DistSquared2D(Target->GetActorLocation(), Combatant->GetActorLocation()) <= FMath::Square(MaximumDistance);
 }
 
 void AAHCombatAIController::UpdateAttackSlot()
 {
+	AH_SCOPE_PERFORMANCE(AITacticalDecisions, this);
+	bAttackSlotEvaluated = true;
 	AActor* const Target = CurrentTarget.Get();
 	if (!Target || !Combatant.IsValid())
 	{
@@ -364,12 +896,13 @@ void AAHCombatAIController::UpdateAttackSlot()
 
 void AAHCombatAIController::ApplyAimDiscipline(float Now)
 {
+	AH_SCOPE_PERFORMANCE(Combat, this);
 	if (!Combatant.IsValid())
 	{
 		return;
 	}
 
-	const float AimedSpread = (1.0f - FMath::Clamp(Accuracy, 0.0f, 1.0f)) * MaxAimErrorDegrees;
+	const float AimedSpread = (1.0f - GetEffectiveAccuracy()) * MaxAimErrorDegrees;
 	const bool bInGrace = FirstContactTime >= 0.0f && Now - FirstContactTime < FirstContactGraceSeconds;
 	const bool bAiming = bAttackSlotHeld && !bInGrace;
 	Combatant->SetAimSpreadPenaltyDegrees(bAiming ? AimedSpread : FMath::Max(AimedSpread, SuppressionSpreadDegrees));
@@ -377,6 +910,7 @@ void AAHCombatAIController::ApplyAimDiscipline(float Now)
 
 void AAHCombatAIController::UpdateBurstFire(float Now)
 {
+	AH_SCOPE_PERFORMANCE(Combat, this);
 	UAHCombatComponent* Combat = Combatant.IsValid() ? Combatant->GetCombatComponent() : nullptr;
 	AAHWeaponBase* Weapon = Combatant.IsValid() && Combatant->GetInventoryComponent() ? Combatant->GetInventoryComponent()->GetCurrentWeapon() : nullptr;
 	if (!Combat || !Weapon || Weapon->IsReloading())
@@ -389,7 +923,7 @@ void AAHCombatAIController::UpdateBurstFire(float Now)
 		if (Now >= BurstEndTime)
 		{
 			Combat->StopFire();
-			NextShotTime = Now + FMath::FRandRange(MinBurstPause, FMath::Max(MinBurstPause, MaxBurstPause));
+			NextShotTime = Now + FMath::FRandRange(MinBurstPause, FMath::Max(MinBurstPause, MaxBurstPause)) * GetBurstPauseScale();
 		}
 		return;
 	}
@@ -410,11 +944,26 @@ void AAHCombatAIController::ReactToGrenade(const FVector& GrenadeLocation, float
 	{
 		return;
 	}
-	EscapeLocation = Combatant->GetActorLocation() + (Combatant->GetActorLocation() - GrenadeLocation).GetSafeNormal2D() * (Radius + 300.0f);
+	const float Now = GetWorld()->GetTimeSeconds();
+	GrenadeThreatLocation = GrenadeLocation;
+	GrenadeThreatRadius = FMath::Max(100.0f, Radius);
+	GrenadeThreatExpiryTime = Now + 2.5f;
+	GrenadeReactionReadyTime = Now + GetGrenadeReactionDelay();
+	SetTacticalIntent(EAHTacticalIntent::EscapeGrenade, 2.5f);
+	NextTacticalQueryTime = FMath::Min(NextTacticalQueryTime, GrenadeReactionReadyTime);
+	if (UAHUpdateBudgetSubsystem* Budget = GetWorld()->GetSubsystem<UAHUpdateBudgetSubsystem>())
+	{
+		Budget->ProtectFromGrenade(Combatant.Get(), 2.5f);
+	}
 	if (Combatant->GetCombatComponent())
 	{
 		Combatant->GetCombatComponent()->StopFire();
 	}
+}
+
+bool AAHCombatAIController::IsCurrentAttacker() const
+{
+	return bAttackSlotEvaluated && bAttackSlotHeld && CurrentTarget.IsValid();
 }
 
 void AAHCombatAIController::DebugDrawAI() const
@@ -426,6 +975,14 @@ void AAHCombatAIController::DebugDrawAI() const
 		if (CurrentTarget.IsValid())
 		{
 			DrawDebugLine(GetWorld(), Combatant->GetActorLocation(), CurrentTarget->GetActorLocation(), FColor::Red, false, 0.2f, 0, 2.0f);
+		}
+		if (UAHTacticalPositionSubsystem::IsDrawEnabled() && bHasCachedTacticalLocation)
+		{
+			DrawDebugLine(GetWorld(), Combatant->GetActorLocation(), CachedTacticalLocation, FColor::Green, false, 0.2f, 0, 2.5f);
+			DrawDebugSphere(GetWorld(), CachedTacticalLocation, 55.0f, 12, FColor::Green, false, 0.2f, 0, 2.0f);
+			DrawDebugString(GetWorld(), Combatant->GetActorLocation() + FVector(0.0f, 0.0f, 120.0f),
+				FString::Printf(TEXT("%s %.2f"), AHTacticalScoring::IntentToString(CurrentTacticalIntent), CachedTacticalScore),
+				nullptr, FColor::Green, 0.2f, true);
 		}
 	}
 #endif

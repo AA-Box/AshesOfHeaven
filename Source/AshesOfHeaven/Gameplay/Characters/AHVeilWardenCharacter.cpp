@@ -1,9 +1,6 @@
 #include "Gameplay/Characters/AHVeilWardenCharacter.h"
 #include "Gameplay/AI/AHCombatAIController.h"
-#include "Gameplay/Combat/AHInventoryComponent.h"
-#include "Gameplay/Combat/AHArmorComponent.h"
-#include "Gameplay/Combat/AHHealthComponent.h"
-#include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -12,27 +9,29 @@
 
 AAHVeilWardenCharacter::AAHVeilWardenCharacter()
 {
-	Faction = EAHFaction::Veil;
-	HealthComponent->MaxHealth = 220.0f;
-	ArmorComponent->MaxArmor = 110.0f;
-	bDestroyOnDeath = true;
-	AIControllerClass = AAHCombatAIController::StaticClass();
-	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
-	GetCharacterMovement()->MaxWalkSpeed = 220.0f;
-	WeaponClass = AAHWeaponBase::StaticClass();
-	HeadshotMultiplier = 1.5f;
-	// The Warden has to read as the heavy from across the battlefield. Scale grows from the
-	// mesh origin, which sits at the feet, so the silhouette gets taller without floating.
-	GetMesh()->SetRelativeScale3D(FVector(1.18f));
 }
 
 void AAHVeilWardenCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	if (WeaponClass && InventoryComponent && InventoryComponent->GetWeapons().IsEmpty())
+}
+
+void AAHVeilWardenCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
+{
+	Super::ApplyEnemyDefinition(Definition);
+	if (!Definition)
 	{
-		InventoryComponent->AddWeaponClass(WeaponClass);
+		return;
 	}
+	if (const float* Value = Definition->Difficulty.AbilityScalars.Find(TEXT("ShieldCycleSeconds"))) ShieldCycleSeconds = *Value;
+	if (const float* Value = Definition->Difficulty.AbilityScalars.Find(TEXT("ShieldDamageMultiplier"))) ShieldDamageMultiplier = *Value;
+	if (const float* Value = Definition->Difficulty.AbilityScalars.Find(TEXT("TeleportCycleSeconds"))) TeleportCycleSeconds = *Value;
+	if (const float* Value = Definition->Difficulty.AbilityScalars.Find(TEXT("TeleportDistance"))) TeleportDistance = *Value;
+}
+
+FPrimaryAssetId AAHVeilWardenCharacter::GetDefaultEnemyDefinitionId() const
+{
+	return AHEnemyAssets::EnemyId(TEXT("Warden"));
 }
 
 void AAHVeilWardenCharacter::Tick(float DeltaSeconds)
