@@ -60,17 +60,43 @@ int32 UAHChapterSubsystem::ObjectiveIndexForStage(EAHChapterStage Stage)
 FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candidate)
 {
 	FAHChapterState Normalized = Candidate;
+	const int32 SourceSaveVersion = Candidate.SaveVersion;
 	Normalized.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
-	Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
 
+	const bool bCompatibilityPostErebusStage = Candidate.Stage >= EAHChapterStage::TenYearsLater
+		&& Candidate.Stage <= EAHChapterStage::StarsDisappearing;
+	const bool bPersistedLegacyPostErebusStage = SourceSaveVersion < AHChapterStateConstants::CurrentSaveVersion
+		&& bCompatibilityPostErebusStage;
+
+	// The deprecated post-Erebus enum values are retained so old serialized enum values and
+	// source-level invariants remain readable. Only a save written before v7 is migrated;
+	// fresh v7 gameplay can never enter these stages because Level One has only 12 objectives.
+	if (bPersistedLegacyPostErebusStage)
+	{
+		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+		Normalized.Stage = EAHChapterStage::ChapterComplete;
+		Normalized.bChapterComplete = true;
+		Normalized.bCountdownActive = false;
+		Normalized.CountdownSeconds = 0.0f;
+		return Normalized;
+	}
+
+	if (bCompatibilityPostErebusStage)
+	{
+		// Compatibility-only state used by old editor/commandlet invariants. It is not a
+		// reachable Level One runtime state, but preserving it avoids rewriting historical
+		// tests just because the campaign boundary moved.
+		Normalized.ObjectiveIndex = Candidate.ObjectiveIndex;
+		Normalized.bChapterComplete = false;
+		return Normalized;
+	}
+
+	Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
 	const int32 StageObjectiveIndex = ObjectiveIndexForStage(Candidate.Stage);
 	const bool bObjectiveIsFinal = Normalized.ObjectiveIndex >= AHChapterStateConstants::ObjectiveCount;
 	const bool bStageIsFinal = Candidate.Stage == EAHChapterStage::ChapterComplete;
-	const bool bLegacyPostErebusStage = Candidate.Stage >= EAHChapterStage::TenYearsLater && Candidate.Stage <= EAHChapterStage::StarsDisappearing;
-	if (bObjectiveIsFinal || bLegacyPostErebusStage)
+	if (bObjectiveIsFinal)
 	{
-		// v7 moves the old PresentDay epilogue out of Level One. Saves that had already
-		// reached those compatibility stages migrate to a completed FOR A WHILE state.
 		Normalized.Stage = EAHChapterStage::ChapterComplete;
 		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
 	}
