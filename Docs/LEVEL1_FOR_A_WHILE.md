@@ -69,12 +69,26 @@ This avoids duplicating progression logic in a second director while letting the
 Three rules keep that integration from failing silently:
 
 - **Binding happens at `OnWorldBeginPlay`.** `UAHDialogueSubsystem` is a world subsystem and `UAHChapterSubsystem` lives on the game instance, which is not guaranteed to be attached when world subsystems initialize. `UWorld::BeginPlay` runs world-subsystem begin-play before any actor's `BeginPlay`, so the stage delegate is always bound before the director starts its first stage.
-- **Stage-entry beats queue, they are never dropped.** A stage change that lands while a director sequence is talking is held in `PendingStageEntries` and played when the channel frees. The one-shot guard still prevents a replay.
+- **Stage-entry beats queue, they are never dropped.** A stage change that lands while a director sequence is talking is held in `PendingStageEntries` and played when the channel frees. A beat that is *already playing* when a director sequence preempts it is put back on the queue and resumes on the line it was cut off on, instead of being discarded unheard and never marked complete. The one-shot guard still prevents a replay.
+- **A dialogue beat that finishes late never rewinds the chapter.** `AdvanceStageFromDialogue` only advances while the chapter is still on the stage that started the beat. `Ch01_Sael` used to call `StartStage(SaelTransmission)` unconditionally, so confirming the terminal during that beat dragged the chapter back out of `Escape` and every later trigger was rejected.
 - **The destruction hold is derived, not hand-fitted.** `AHLevelOneNarrative::GetErebusDestructionHoldSeconds()` is the finale sequence's own length plus reading margin (7 s floor), and the director's `FinishDestructionSequence` timer uses it. If the finale started late because another sequence held the channel, `FinishDestructionSequence` waits for it (bounded at twice the hold) instead of completing the objective over the closing Nysa transmission.
+
+## Objective completers
+
+Every one of the 12 objectives needs something that can complete it, and
+`AshesOfHeaven.LevelOne.ObjectiveCompleters` asserts it against the director's real spawned triggers.
+
+The Cathedral doorway trigger `EnterCathedral` belongs to `FailsafeOrder`, not `CathedralApproach`. The director's `Tick` completes REACH THE CATHEDRAL APPROACH as soon as the player or the Manticore passes X=13700, several hundred units before the trigger box at X 14300-15100, so a trigger authored for `CathedralApproach` could only ever be overlapped once the chapter had already moved to `FailsafeOrder` — where `AAHChapterTrigger` rejects it. ACTIVATE PLANETARY FAILSAFE had no other completer, so the level could not be finished past the Cathedral ramp.
+
+The stages completed by something other than a trigger are: `OpeningBattle` (encounter), `VeilRevelation` (dialogue completion), `ManticoreSection` (boarding), `CathedralApproach` (the X=13700 tick threshold), `FailsafeTerminal` (terminal confirmation) and `ErebusDestruction` (the destruction hold).
 
 ## Save migration
 
-Level One now has 12 gameplay objectives. Save version 7 migrates any old Level One state already in `TenYearsLater` through `StarsDisappearing` to `ChapterComplete` rather than replaying those deprecated epilogue stages.
+Level One now has 12 gameplay objectives. Save version 7 migrates any Level One state in `TenYearsLater` through `StarsDisappearing` to `ChapterComplete` rather than replaying those deprecated epilogue stages.
+
+The migration is **not** version-gated. Gating it on `SaveVersion < 7` let a v7 write put the state straight back: `UAHCheckpointSubsystem::CaptureCheckpoint` stamps the checkpoint's own stage onto the saved chapter state, and `ChapterComplete`'s checkpoint (`Ch01_PresentDay`) carries `Stage=TenYearsLater`, so the boot after a migration restored into the removed epilogue with no objective and no way forward.
+
+`CampaignProgress` divides by `AHChapterStateConstants::ObjectiveCount`, not the retired 17.
 
 ## Acceptance criteria
 
@@ -97,14 +111,17 @@ A Level One implementation is not considered complete unless all of these hold i
 
 `Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than four `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
 
-Two tests inherited from the enemy-asset-streaming change fail on `main` as well:
-`AshesOfHeaven.Combat.CombatantIsShootable` and `AshesOfHeaven.Combat.CorpseIsLootable`. Both spawn a combatant into a bare `UWorld` with no game instance, so `AAHCombatantCharacter::BeginPlay` cannot reach `UAHEnemyAssetSubsystem` and the body never receives its mesh or loadout. They are listed in `AH_KNOWN_FAILURES` so the gate is usable, and the runner fails if a listed test starts passing, which forces the list to shrink. Fixing them means porting both onto a latent game-instance fixture of the kind `AHEnemyAssetTests` already uses.
+`Scripts/AuthorErebusStormCloud.py` authors `MI_Erebus_StormCloud` from the engine cloud master; it fails loudly if the engine renames a parameter rather than writing nothing.
+
+`AshesOfHeaven.Combat.CombatantIsShootable` and `AshesOfHeaven.Combat.CorpseIsLootable` were failing on `main` as well: both spawned a combatant into a bare `UWorld` with no game instance, so `AAHCombatantCharacter::BeginPlay` could not reach `UAHEnemyAssetSubsystem` and the body never received its mesh, physics asset or loadout. Both are now latent tests on a standalone game-instance world that wait for the streamed definition, so the whole suite passes with an empty `AH_KNOWN_FAILURES`. That escape hatch stays available for a future inherited failure, and the runner fails if a listed test starts passing, so the list cannot rot.
 
 `.github/workflows/cross-platform.yml` runs `source-validation`, `automation-tests` and `macos-shipping` on every pull request; the Windows/Android/iOS packages stay `workflow_dispatch`. `automation-tests` and `macos-shipping` need the self-hosted UE5 macOS runner and the `UNREAL_ENGINE_MAC_ROOT` repository variable, so treat them as required status checks — a repository without that runner configured skips them, and a skipped job is not a passing gate.
 
 The Level One contract tests are:
 
 - `AshesOfHeaven.LevelOne.NarrativeContract` — canonical lines, the exact casualty count, the Nysa closer, and the destruction-hold-covers-the-finale invariant.
-- `AshesOfHeaven.LevelOne.ProgressionContract` — 12 objectives, stage/objective mapping, pre-v7 epilogue migration, and objective-index clamping.
-- `AshesOfHeaven.LevelOne.StageDialogueQueue` — a stage change landing mid-sequence queues its beat and plays it when the channel frees.
-- `AshesOfHeaven.LevelOne.UnrealMaterialContract` — the eight required material instances resolve. `Scripts/Validate-CrossPlatform.sh` also asserts those files exist, so a deletion is caught on any runner.
+- `AshesOfHeaven.LevelOne.ProgressionContract` — 12 objectives, stage/objective mapping, epilogue migration at any save version, and objective-index clamping.
+- `AshesOfHeaven.LevelOne.StageDialogueQueue` — canonical lines replace a director's inline copy; a stage change landing mid-sequence queues its beat; a preempted beat resumes where it was cut.
+- `AshesOfHeaven.LevelOne.ObjectiveCompleters` — every objective has a completer, and the Cathedral doorway trigger belongs to `FailsafeOrder`.
+- `AshesOfHeaven.LevelOne.DialogueDoesNotRewindStage` — a late `Ch01_Sael` does not drag the chapter backwards, and an on-time one still advances.
+- `AshesOfHeaven.LevelOne.UnrealMaterialContract` — every material the runtime loads by path resolves, including `MI_Erebus_StormCloud` for the cloud deck. A by-path load that returns null does not crash; it leaves the engine default material on the surface, which is how the Erebus sky was rendering on the stock volumetric cloud shader. `Scripts/Validate-CrossPlatform.sh` also asserts the material-instance files exist, so a deletion is caught on any runner.

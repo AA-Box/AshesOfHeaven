@@ -27,6 +27,7 @@ bool FAHLevelOneNarrativeContractTest::RunTest(const FString& Parameters)
 
 	Lines.Reset();
 	TestTrue(TEXT("Failsafe order resolves"), AHLevelOneNarrative::ResolveDirectorSequence(FName(TEXT("Ch01_Order")), Lines));
+	TestFalse(TEXT("A sequence the director owns outright is not canonical data"), AHLevelOneNarrative::ResolveDirectorSequence(FName(TEXT("Ch01_NotALevelOneSequence")), Lines));
 	TestTrue(TEXT("Failsafe explains outbound carrier"), Lines.ContainsByPredicate([](const FAHDialogueLine& Line)
 	{
 		return Line.Subtitle.ToString().Contains(TEXT("eight minutes, forty-two seconds"), ESearchCase::IgnoreCase);
@@ -76,18 +77,25 @@ bool FAHLevelOneProgressionContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("v6 post-Erebus save migrates to complete"), Migrated.Stage, EAHChapterStage::ChapterComplete);
 	TestTrue(TEXT("Migrated save is complete"), Migrated.bChapterComplete);
 
-	// A current-version save sitting on a compatibility stage is not migrated, but the
-	// sanitizer still has to bound its objective index.
-	FAHChapterState CorruptCompatibility;
-	CorruptCompatibility.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
-	CorruptCompatibility.Stage = EAHChapterStage::StarsDisappearing;
-	CorruptCompatibility.ObjectiveIndex = 9999;
-	const FAHChapterState Sanitized = UAHChapterSubsystem::NormalizeState(CorruptCompatibility);
-	TestEqual(TEXT("Compatibility stage objective index is clamped"), Sanitized.ObjectiveIndex, AHChapterStateConstants::ObjectiveCount);
+	// A retired post-Erebus stage is migrated whatever version wrote it. Version-gating this
+	// let a v7 checkpoint recapture (which stamps Ch01_PresentDay's Stage=TenYearsLater onto the
+	// saved chapter state) put the player back into the removed epilogue on the next boot.
+	FAHChapterState CurrentVersionEpilogue;
+	CurrentVersionEpilogue.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	CurrentVersionEpilogue.Stage = EAHChapterStage::StarsDisappearing;
+	CurrentVersionEpilogue.ObjectiveIndex = 9999;
+	const FAHChapterState Sanitized = UAHChapterSubsystem::NormalizeState(CurrentVersionEpilogue);
+	TestEqual(TEXT("A current-version epilogue stage migrates to completion"), Sanitized.Stage, EAHChapterStage::ChapterComplete);
+	TestTrue(TEXT("The migrated state is complete"), Sanitized.bChapterComplete);
+	TestEqual(TEXT("Objective index lands on the terminal objective"), Sanitized.ObjectiveIndex, AHChapterStateConstants::ObjectiveCount);
 
-	CorruptCompatibility.ObjectiveIndex = -5;
-	const FAHChapterState SanitizedLow = UAHChapterSubsystem::NormalizeState(CorruptCompatibility);
-	TestEqual(TEXT("Negative compatibility objective index is clamped"), SanitizedLow.ObjectiveIndex, 0);
+	// Ordinary states still get their index bounded rather than passed through.
+	FAHChapterState CorruptInLevel;
+	CorruptInLevel.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	CorruptInLevel.Stage = EAHChapterStage::Escape;
+	CorruptInLevel.ObjectiveIndex = -5;
+	const FAHChapterState SanitizedLow = UAHChapterSubsystem::NormalizeState(CorruptInLevel);
+	TestEqual(TEXT("Negative objective index is clamped"), SanitizedLow.ObjectiveIndex, 0);
 	return true;
 }
 
@@ -129,6 +137,18 @@ bool FAHLevelOneStageDialogueQueueTest::RunTest(const FString& Parameters)
 	Dialogue->StartSequence(FName(TEXT("Test_DirectorBeat")), {Holding}, false);
 	TestTrue(TEXT("Director sequence owns the channel"), Dialogue->HasActiveDialogue());
 
+	// The canonical substitution is what actually reaches the player: a director calling
+	// StartSequence with its own legacy lines must hear the authored Level One ones instead.
+	FAHDialogueLine LegacyLine;
+	LegacyLine.Speaker = FName(TEXT("LUCIAN"));
+	LegacyLine.Subtitle = FText::FromString(TEXT("legacy director copy"));
+	LegacyLine.Duration = 5.0f;
+	Dialogue->StartSequence(FName(TEXT("Ch01_Opening")), {LegacyLine}, false);
+	TestEqual(TEXT("Canonical Level One lines replace the director's inline copy"),
+		Dialogue->GetCurrentSubtitle().ToString(), FString(TEXT("Did we win?")));
+	Dialogue->SkipCurrentSequence();
+	Dialogue->StartSequence(FName(TEXT("Test_DirectorBeat")), {Holding}, false);
+
 	// A timer set outside FTimerManager::Tick is Pending and only becomes Active at the end
 	// of the following Tick, and Tick early-outs once per frame. Two frames per pump is the
 	// minimum that actually executes a 0.05s timer.
@@ -150,6 +170,19 @@ bool FAHLevelOneStageDialogueQueueTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Queued stage beat plays when the channel frees"), Dialogue->GetCurrentSequence(), FName(TEXT("Ch01_ErebusOpeningBriefing")));
 	TestEqual(TEXT("Queue is drained"), Dialogue->GetPendingStageEntryCount(), 0);
 
+	// A director sequence still takes the channel immediately - progression depends on it - but
+	// the stage beat it interrupts has to come back, resuming on the line it was cut on.
+	Dialogue->Advance();
+	Dialogue->Advance();
+	const FString CutLine = Dialogue->GetCurrentSubtitle().ToString();
+	TestEqual(TEXT("Advanced into the stage beat"), CutLine, FString(TEXT("That's usually considered an excuse.")));
+	Dialogue->StartSequence(FName(TEXT("Test_DirectorPreempt")), {Holding}, false);
+	TestEqual(TEXT("Preempting director sequence owns the channel"), Dialogue->GetCurrentSequence(), FName(TEXT("Test_DirectorPreempt")));
+	TestEqual(TEXT("Preempted stage beat is requeued, not discarded"), Dialogue->GetPendingStageEntryCount(), 1);
+	Dialogue->SkipCurrentSequence();
+	TestEqual(TEXT("Preempted stage beat resumes"), Dialogue->GetCurrentSequence(), FName(TEXT("Ch01_ErebusOpeningBriefing")));
+	TestEqual(TEXT("It resumes on the line it was cut on"), Dialogue->GetCurrentSubtitle().ToString(), CutLine);
+
 	// A stage change with the channel free starts immediately, no queue involved.
 	Dialogue->SkipCurrentSequence();
 	Chapter->SetStage(EAHChapterStage::TransitStation);
@@ -167,16 +200,31 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneUnrealMaterialContractTest, "AshesOf
 bool FAHLevelOneUnrealMaterialContractTest::RunTest(const FString& Parameters)
 {
 	// Level One presentation must remain inside Unreal's authored material/material-instance
-	// pipeline. These are representative families required by Erebus, Transit and Cathedral.
+	// pipeline. This is every material the runtime loads BY PATH: a by-path load that resolves
+	// to null does not crash, it silently leaves the engine default material on the surface,
+	// which is exactly how the Erebus sky ended up on the stock volumetric cloud shader. Keep
+	// this list equal to the "/Game/Ashes/Materials/..." string literals under Source.
 	const TArray<FString> RequiredMaterials = {
-		TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"),
-		TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark"),
 		TEXT("/Game/Ashes/Materials/Instances/MI_CathedralMatter_Dark.MI_CathedralMatter_Dark"),
-		TEXT("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black"),
+		TEXT("/Game/Ashes/Materials/Instances/MI_Concrete_Wet.MI_Concrete_Wet"),
 		TEXT("/Game/Ashes/Materials/Instances/MI_EmissiveGlyph_Cyan.MI_EmissiveGlyph_Cyan"),
 		TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_BannerCloth.MI_Erebus_BannerCloth"),
 		TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_BannerEmblem.MI_Erebus_BannerEmblem"),
-		TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_CathedralSilhouette.MI_Erebus_CathedralSilhouette")
+		TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_CathedralSilhouette.MI_Erebus_CathedralSilhouette"),
+		TEXT("/Game/Ashes/Materials/Instances/MI_Erebus_StormCloud.MI_Erebus_StormCloud"),
+		TEXT("/Game/Ashes/Materials/Instances/MI_FireGlow_Orange.MI_FireGlow_Orange"),
+		TEXT("/Game/Ashes/Materials/Instances/MI_HumanMetal_Dark.MI_HumanMetal_Dark"),
+		TEXT("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black"),
+		TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite"),
+		TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft"),
+		TEXT("/Game/Ashes/Materials/M_CathedralMatter.M_CathedralMatter"),
+		TEXT("/Game/Ashes/Materials/M_Concrete.M_Concrete"),
+		TEXT("/Game/Ashes/Materials/M_EmissiveGlyph.M_EmissiveGlyph"),
+		TEXT("/Game/Ashes/Materials/M_Glass.M_Glass"),
+		TEXT("/Game/Ashes/Materials/M_Grime.M_Grime"),
+		TEXT("/Game/Ashes/Materials/M_HumanArmor.M_HumanArmor"),
+		TEXT("/Game/Ashes/Materials/M_HumanMetal.M_HumanMetal"),
+		TEXT("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian")
 	};
 
 	for (const FString& MaterialPath : RequiredMaterials)

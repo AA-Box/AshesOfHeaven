@@ -29,7 +29,7 @@ LOG_FILE="${AH_TEST_LOG:-$PROJECT_ROOT/Saved/Logs/AutomationRun.log}"
 MCP_PORT="${AH_MCP_PORT:-18085}"
 # Fewer than this many AshesOfHeaven.LevelOne.* results means the filter silently matched
 # nothing, which must fail instead of reporting a green run.
-MIN_LEVEL_ONE_TESTS="${AH_MIN_LEVEL_ONE_TESTS:-4}"
+MIN_LEVEL_ONE_TESTS="${AH_MIN_LEVEL_ONE_TESTS:-6}"
 # Comma-separated test paths allowed to fail. A test listed here that PASSES also fails
 # the run, so the list cannot quietly outlive the bug it documents. Empty by default.
 export AH_KNOWN_FAILURES="${AH_KNOWN_FAILURES:-}"

@@ -72,7 +72,7 @@ void UAHDialogueSubsystem::HandleChapterStageChanged(EAHChapterStage Stage)
 		false);
 }
 
-void UAHDialogueSubsystem::StartStageEntrySequence(EAHChapterStage Stage)
+void UAHDialogueSubsystem::StartStageEntrySequence(EAHChapterStage Stage, int32 ResumeLineIndex)
 {
 	if (!GetWorld())
 	{
@@ -86,19 +86,57 @@ void UAHDialogueSubsystem::StartStageEntrySequence(EAHChapterStage Stage)
 		return;
 	}
 
+	const int32 ResumeFrom = FMath::Clamp(ResumeLineIndex, 0, Lines.Num());
+	if (ResumeFrom >= Lines.Num())
+	{
+		// Nothing left to say; treat the beat as delivered.
+		return;
+	}
+	if (ResumeFrom > 0)
+	{
+		Lines.RemoveAt(0, ResumeFrom);
+	}
+
 	if (HasActiveDialogue())
 	{
 		// Never drop a stage beat because another sequence is talking: queue it and play it
 		// when the channel frees up. The one-shot guard in StartSequence still prevents
 		// replaying a beat that already ran.
-		PendingStageEntries.AddUnique(Stage);
+		if (!PendingStageEntries.ContainsByPredicate([Stage](const FAHPendingStageEntry& Entry) { return Entry.Stage == Stage; }))
+		{
+			PendingStageEntries.Add({Stage, ResumeFrom});
+		}
 		#if !UE_BUILD_SHIPPING
-		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] queue_stage_entry sequence=%s behind=%s pending=%d"), *SequenceId.ToString(), *CurrentSequenceId.ToString(), PendingStageEntries.Num());
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] queue_stage_entry sequence=%s resume=%d behind=%s pending=%d"), *SequenceId.ToString(), ResumeFrom, *CurrentSequenceId.ToString(), PendingStageEntries.Num());
 		#endif
 		return;
 	}
 
 	StartSequence(SequenceId, Lines, true);
+	if (bActive && CurrentSequenceId == SequenceId)
+	{
+		// Remember which beat owns the channel so a preempting director sequence can put it
+		// back rather than truncating it.
+		bActiveSequenceIsStageEntry = true;
+		ActiveStageEntryStage = Stage;
+		ActiveStageEntryResumeBase = ResumeFrom;
+	}
+}
+
+void UAHDialogueSubsystem::RequeueActiveStageEntry()
+{
+	if (!bActive || !bActiveSequenceIsStageEntry)
+	{
+		return;
+	}
+	// Resume on the line that was cut off: the player only heard part of it. The beat has not
+	// been marked complete, so the one-shot guard still lets it play.
+	const int32 ResumeLineIndex = ActiveStageEntryResumeBase + FMath::Max(0, CurrentLineIndex);
+	PendingStageEntries.RemoveAll([this](const FAHPendingStageEntry& Entry) { return Entry.Stage == ActiveStageEntryStage; });
+	PendingStageEntries.Insert({ActiveStageEntryStage, ResumeLineIndex}, 0);
+	#if !UE_BUILD_SHIPPING
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] requeue_preempted sequence=%s resume=%d"), *CurrentSequenceId.ToString(), ResumeLineIndex);
+	#endif
 }
 
 void UAHDialogueSubsystem::DrainPendingStageEntries()
@@ -107,9 +145,9 @@ void UAHDialogueSubsystem::DrainPendingStageEntries()
 	// already completed (StartSequence returns without taking the channel).
 	while (!bActive && PendingStageEntries.Num() > 0)
 	{
-		const EAHChapterStage Stage = PendingStageEntries[0];
+		const FAHPendingStageEntry Entry = PendingStageEntries[0];
 		PendingStageEntries.RemoveAt(0);
-		StartStageEntrySequence(Stage);
+		StartStageEntrySequence(Entry.Stage, Entry.ResumeLineIndex);
 	}
 }
 
@@ -137,6 +175,11 @@ void UAHDialogueSubsystem::StartSequence(FName SequenceId, const TArray<FAHDialo
 
 	TArray<FAHDialogueLine> CanonicalLines;
 	const bool bCanonicalLevelOneSequence = AHLevelOneNarrative::ResolveDirectorSequence(SequenceId, CanonicalLines);
+
+	// A director sequence takes the channel immediately - progression depends on it. If it is
+	// cutting off a stage beat, put that beat back in the queue instead of discarding it.
+	RequeueActiveStageEntry();
+	bActiveSequenceIsStageEntry = false;
 
 	GetWorld()->GetTimerManager().ClearTimer(LineTimer);
 	QueuedLines = bCanonicalLevelOneSequence ? MoveTemp(CanonicalLines) : Lines;
@@ -215,6 +258,7 @@ void UAHDialogueSubsystem::FinishSequence()
 
 	const FName CompletedSequence = CurrentSequenceId;
 	bActive = false;
+	bActiveSequenceIsStageEntry = false;
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] complete sequence=%s"), *CompletedSequence.ToString());
 	#endif
