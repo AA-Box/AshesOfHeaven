@@ -14,6 +14,9 @@ class ASHESOFHEAVEN_API UAHDialogueSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+
 	UPROPERTY(BlueprintAssignable, Category="Dialogue")
 	FAHDialogueLineChangedDelegate OnLineChanged;
 
@@ -42,6 +45,10 @@ public:
 	FName GetCurrentSequence() const { return CurrentSequenceId; }
 
 private:
+	UFUNCTION()
+	void HandleChapterStageChanged(EAHChapterStage Stage);
+
+	void StartStageEntrySequence(EAHChapterStage Stage);
 	void ShowNextLine();
 	void FinishSequence();
 
@@ -51,4 +58,5 @@ private:
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bActive = false;
 	FTimerHandle LineTimer;
+	FTimerHandle StageEntryTimer;
 };
