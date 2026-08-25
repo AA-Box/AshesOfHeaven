@@ -62,6 +62,13 @@ ARCHETYPES = {
             "minimum_range": 650.0,
             "burst_rounds": 4,
         },
+        "locomotion": {
+            "idle": "Stalker/AS_Stalker_Idle",
+            "walk": "Stalker/AS_Stalker_Walk",
+            "run": "Stalker/AS_Stalker_Run",
+            "attack": "Stalker/AS_Stalker_Attack",
+            "death": "Stalker/AS_Stalker_Death",
+        },
         "abilities": {},
     },
     "Warden": {
@@ -81,14 +88,25 @@ ARCHETYPES = {
         # The heavy body gets the heavy bank, so the Revenant is audibly a different threat from
         # the skirmishers before the player has picked it out of the fog.
         "shot_cue": "SC_SciFi_LazerHeavy",
-        "ranged": {
+        # No rifle. Only the Stalker - the archetype this roster started from - carries one now;
+        # the other three close and strike. This body was modelled around its claws (its own
+        # mesh parts are named CLAWS, claws_head, claws_hip) and the .blend it came from has a
+        # walk cycle and no weapon pose at all, so a rifle in its hands was always a placeholder.
+        # 62 damage on a 1.9s cadence is roughly 33 dps: slower than a hound pack but survivable
+        # only for a few seconds, which is the pressure a heavy is meant to apply.
+        "melee": {
+            "damage": 62.0,
+            "range": 235.0,
+            "radius": 52.0,
+            "cooldown": 1.9,
             "sight_range": 4500.0,
-            "accuracy": 0.78,
-            "max_aim_error": 6.0,
-            "prefer_cover": False,
-            "preferred_range": 1200.0,
-            "minimum_range": 650.0,
-            "burst_rounds": 5,
+        },
+        "locomotion": {
+            "idle": "Ravager/AS_Ravager_Idle",
+            "walk": "Ravager/AS_Ravager_Walk",
+            "run": "Ravager/AS_Ravager_Run",
+            "attack": "Ravager/AS_Ravager_Attack",
+            "death": "Ravager/AS_Ravager_Death",
         },
         "abilities": {
             "ShieldCycleSeconds": 8.0,
@@ -116,6 +134,13 @@ ARCHETYPES = {
         # which is survivable long enough to back off and shoot them.
         # Six takes ship with this model; this is the one it stands and moves in.
         "loop_clip": "Idle_Aggressive",
+        "locomotion": {
+            "idle": "Hound/SKM_HoundAlien-Animal_1_5_01_Idle_Aggressive",
+            "walk": "Hound/AS_Hound_Walk",
+            "run": "Hound/SKM_HoundAlien-Animal_1_5_01_Run-Cycle",
+            "attack": "Hound/SKM_HoundAlien-Animal_1_5_01_Attack_Bite_B",
+            "death": "Hound/SKM_HoundAlien-Animal_1_5_01_Die_1",
+        },
         "melee": {
             "damage": 22.0,
             "range": 180.0,
@@ -139,6 +164,20 @@ ARCHETYPES = {
         "currency": 18,
         "marker_color": (0.20, 0.80, 0.70, 1.0),
         "voice": "Robo",
+        # This body faces -Y, unlike the other three; +90 turns it down +X with the rest.
+        "mesh_yaw": 90.0,
+        # Measured from the authored stance rather than the bind pose. The bind pose has one leg
+        # folded under the belly and another stretched flat out behind, so its bounds describe a
+        # 783cm box that no pose the creature ever holds actually fills - fitting to it left the
+        # body scaled small and floating.
+        "pose_bounds": "spider_stance",
+        "locomotion": {
+            "idle": "Spider/AS_Spider_Idle",
+            "walk": "Spider/AS_Spider_Walk",
+            "run": "Spider/AS_Spider_Run",
+            "attack": "Spider/AS_Spider_Attack",
+            "death": "Spider/AS_Spider_Death",
+        },
         "melee": {
             "damage": 34.0,
             "range": 210.0,
@@ -224,7 +263,20 @@ def _read_manifest():
         return json.load(handle)
 
 
-def _body_fit(entry, target_height_cm, capsule_radius):
+ENEMY_CONTENT_ROOT = "/Game/Ashes/Enemies"
+ANIM_REPORT_PATH = unreal.Paths.convert_relative_path_to_full(
+    os.path.join(unreal.Paths.project_saved_dir(), "CreatureAnimations.json"))
+
+
+def _read_anim_report():
+    if not os.path.isfile(ANIM_REPORT_PATH):
+        raise RuntimeError("animation report missing - run Scripts/AuthorCreatureAnimations.py "
+                           "first: " + ANIM_REPORT_PATH)
+    with open(ANIM_REPORT_PATH) as handle:
+        return json.load(handle)
+
+
+def _body_fit(entry, target_height_cm, capsule_radius, pose=None):
     """Mesh scale, capsule and body offset for one imported model.
 
     The imported bounds are the only source of truth for how big a model actually is, and the Z
@@ -238,16 +290,49 @@ def _body_fit(entry, target_height_cm, capsule_radius):
     plainly in the crosshair. These models are authored with the pivot at the body root, which is
     what the capsule wants anyway.
     """
-    source_height = max(1.0, float(entry["height_cm"]))
+    if pose:
+        # A stance authored after import describes the body better than the bind pose it was
+        # delivered in. Same arithmetic, different bottom and top.
+        lowest = float(pose["foot_plane"])
+        source_height = max(1.0, float(pose["top"]) - lowest)
+    else:
+        lowest = float(entry["origin"][2]) - float(entry["extent"][2])
+        source_height = max(1.0, float(entry["height_cm"]))
     scale = target_height_cm / source_height
     half_height = target_height_cm * 0.5
-    origin = [float(value) for value in entry["origin"]]
-    extent_z = float(entry["extent"][2])
     # Rotated, because the component's relative location is expressed in capsule space while the
     # bounds are in mesh space, and the mesh is turned to face down +X on the way. Yaw leaves Z
     # alone, so the vertical term survives the rotation unchanged.
-    offset = unreal.Vector(0.0, 0.0, -half_height - (origin[2] - extent_z) * scale)
+    offset = unreal.Vector(0.0, 0.0, -half_height - lowest * scale)
     return scale, half_height, capsule_radius, offset
+
+
+def _locomotion_payload(name, spec, definition):
+    """The five takes AAHCombatantCharacter swaps between, plus the speeds it swaps at.
+
+    AnimationSet only ever loops its first entry, which is why the roster used to walk on the
+    spot: a hound sprinting at 640 cm/s played the same aggressive-idle it stood in. These are
+    named clips instead, selected on ground speed.
+    """
+    clips = spec["locomotion"]
+    # Read off the asset, not constructed fresh: EditDefaultsOnly fields reject
+    # set_editor_property on a standalone struct, the same reason _set_struct works the way
+    # it does.
+    payload = definition.get_editor_property("visuals").get_editor_property("locomotion")
+    for field in ("idle", "walk", "run", "attack", "death"):
+        relative = clips.get(field)
+        if not relative:
+            continue
+        path = "%s/%s" % (ENEMY_CONTENT_ROOT, relative)
+        clip = _load(path)
+        if not clip:
+            raise RuntimeError("%s locomotion take missing: %s" % (name, path))
+        payload.set_editor_property(field, clip)
+    # Walk starts as soon as the body is meaningfully moving; the run takes over just under the
+    # archetype's own top speed, so a creature at full tilt is always in its run.
+    payload.set_editor_property("walk_speed", 40.0)
+    payload.set_editor_property("run_speed", max(80.0, spec["speed"] * 0.62))
+    return payload
 
 
 def _author_enemy(name, spec, manifest):
@@ -261,8 +346,10 @@ def _author_enemy(name, spec, manifest):
     # Keyword arguments on purpose: unreal.Rotator's positional order is (roll, pitch, yaw), so
     # Rotator(0, -90, 0) sets PITCH and lays every creature face-down on the ground.
     mesh_rotation = unreal.Rotator(pitch=0.0, yaw=mesh_yaw, roll=0.0)
+    pose_key = spec.get("pose_bounds")
     scale, half_height, radius, offset = _body_fit(
-        entry, spec["target_height_cm"], spec["capsule_radius"])
+        entry, spec["target_height_cm"], spec["capsule_radius"],
+        _read_anim_report().get(pose_key) if pose_key else None)
     melee = spec.get("melee")
     ranged = spec.get("ranged")
     voice = spec["voice"]
@@ -369,6 +456,8 @@ def _author_enemy(name, spec, manifest):
             else:
                 unreal.log_error("[Enemies] %s loop clip %r not among %s" % (name, loop_clip, paths))
         visuals["animation_set"] = [_load(path) for path in paths]
+    if spec.get("locomotion"):
+        visuals["locomotion"] = _locomotion_payload(name, spec, definition)
     _set_struct(definition, "visuals", **visuals)
 
     # Desktop is authored empty on purpose. The previous roster overrode its material slot with

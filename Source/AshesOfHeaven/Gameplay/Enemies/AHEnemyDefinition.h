@@ -13,6 +13,7 @@ class UAHEnemyDefinition;
 class UAHAudioPaletteData;
 class UAnimInstance;
 class UAnimationAsset;
+class UAnimSequenceBase;
 class UBehaviorTree;
 class UCurveFloat;
 class UMaterialInterface;
@@ -141,6 +142,66 @@ struct ASHESOFHEAVEN_API FAHEnemyAISettings
 	float MeleeCooldown = 1.1f;
 };
 
+/** Which authored take a creature body is playing. */
+UENUM(BlueprintType)
+enum class EAHCreatureAnimState : uint8
+{
+	Idle,
+	Walk,
+	Run,
+	Attack,
+	Death
+};
+
+/** Named locomotion and reaction takes for a body with no AnimBlueprint.
+
+ *  The imported creatures each carry their own skeleton, so the mannequin AnimBlueprint cannot
+ *  drive any of them and authoring four AnimBlueprints by hand is four graphs to maintain for
+ *  what is a five-clip state machine. The character plays these through the single-node
+ *  instance instead and picks between them on speed, which is the whole of what these bodies
+ *  need: they walk, they run, they bite, they fall over. */
+USTRUCT(BlueprintType)
+struct ASHESOFHEAVEN_API FAHCreatureAnimationSet
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Idle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Walk;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Run;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Attack;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Death;
+
+	/** Ground speed at which the body stops idling and starts walking, cm/s. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
+	float WalkSpeed = 40.0f;
+
+	/** Ground speed at which the walk gives way to the run, cm/s. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
+	float RunSpeed = 340.0f;
+
+	bool IsEmpty() const;
+};
+
+namespace AHCreatureLocomotion
+{
+	/** Which take a body moving at this ground speed should be playing.
+	 *
+	 *  Free function, and deliberately knows nothing about actors or worlds, because the thing
+	 *  worth testing here is the hysteresis: without it a body decelerating through a threshold
+	 *  swaps clip on alternate frames and reads as a stutter instead of a gait change. */
+	ASHESOFHEAVEN_API EAHCreatureAnimState SelectLocomotionState(
+		const FAHCreatureAnimationSet& Set, float GroundSpeed, EAHCreatureAnimState Current);
+}
+
 /** Mesh, animation, physics, and material payload for one presentation tier. */
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
@@ -155,6 +216,11 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	TArray<TSoftObjectPtr<UAnimationAsset>> AnimationSet;
+
+	/** Preferred over AnimationSet when it names anything: AnimationSet only ever loops its
+	 *  first entry, which is a body that walks on the spot while it charges you. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FAHCreatureAnimationSet Locomotion;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	TSoftObjectPtr<UPhysicsAsset> PhysicsAsset;

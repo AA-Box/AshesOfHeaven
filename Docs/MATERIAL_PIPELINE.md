@@ -25,9 +25,12 @@ missing optional content asset cannot break gameplay construction.
 
 The masters above are flat tints with no texture inputs, which is why the mannequin enemies read
 as untextured no matter which one was applied. `M_EnemyCreature` is the textured character master
-the four imported enemy bodies use: `BaseColorTex`, `NormalTex`, `RoughnessTex` and `EmissiveMask`
-texture parameters, each gated by a `Use*`/`*Strength` scalar so a model that shipped without a
-given map falls back to `BaseTint` and the scalar roughness instead of sampling a white square.
+the four imported enemy bodies use: `BaseColorTex`, `NormalTex`, `RoughnessTex`, `MetallicTex`,
+`AOTex` and `EmissiveMask` texture parameters, each gated by a `Use*`/`*Strength` scalar so a model
+that shipped without a given map falls back to `BaseTint` and the scalar instead of sampling a
+white square. Metallic takes a map as well as a scalar because the quadruped ships a real metal
+mask - plating over hide - and collapsing that to one value turns the whole animal into either
+rubber or a mirror depending on which way the scalar is pushed.
 It carries `used_with_skeletal_mesh`, without which a character body silently renders as the
 engine default grey and only logs a warning.
 
@@ -35,6 +38,9 @@ Instances are generated one per material slot (`MI_<Model>_NN`) by `Scripts/Impo
 The slot's own name, taken from the source FBX, decides which texture set dresses it and whether
 it is the part that glows - `LIGHT_EYE` and `Red-Eye-Alien-Animal` get the emissive treatment,
 `rock` and `LEATHER` get their own maps.
+
+`Docs/ENEMY_CREATURE_PIPELINE.md` covers where those maps come from and the order the authoring
+scripts have to run in.
 
 ## Niagara family
 

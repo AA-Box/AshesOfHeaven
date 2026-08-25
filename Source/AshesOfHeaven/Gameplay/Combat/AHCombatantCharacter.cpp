@@ -15,6 +15,7 @@
 #include "Platform/AHPlatformManagerSubsystem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimationAsset.h"
+#include "Animation/AnimSequenceBase.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PointLightComponent.h"
@@ -221,6 +222,7 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 			? Definition->CombatDefaults.CapsuleRadius : Capsule->GetUnscaledCapsuleRadius();
 		Capsule->SetCapsuleSize(Radius, HalfHeight, true);
 	}
+	ApplyBodyFillLightToCapsule();
 	if (UClass* ControllerClass = Definition->AISettings.ControllerClass.Get())
 	{
 		AIControllerClass = ControllerClass;
@@ -246,13 +248,22 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 		{
 			Body->SetAnimInstanceClass(AnimClass);
 		}
-		else if (UAnimationAsset* Clip = Visuals.AnimationSet.IsEmpty() ? nullptr : Visuals.AnimationSet[0].Get())
+		else if (!Visuals.Locomotion.IsEmpty())
 		{
 			// Creature meshes arrive with their own skeleton, so the mannequin AnimBP cannot
-			// drive them and there is no retarget to borrow. Loop the archetype's first authored
-			// clip in single-node mode: a moving body beats a T-pose.
-			// ponytail: no state machine, so no hit reacts or attack poses. Author a per-skeleton
-			// AnimBP when a creature needs to visibly telegraph its bite.
+			// drive them and there is no retarget to borrow. The archetype's own takes are
+			// played through the single-node instance and swapped on speed instead - see
+			// UpdateCreatureAnimation. No blending between clips: a single-node instance has
+			// nowhere to blend, and the gait change lands on a footfall often enough to pass.
+			CreatureAnimations = Visuals.Locomotion;
+			CreatureAnimState = EAHCreatureAnimState::Idle;
+			CreatureAnimHoldSeconds = 0.0f;
+			Body->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+			PlayCreatureClip(EAHCreatureAnimState::Idle, true);
+		}
+		else if (UAnimationAsset* Clip = Visuals.AnimationSet.IsEmpty() ? nullptr : Visuals.AnimationSet[0].Get())
+		{
+			// Older archetypes that only ever named one clip. Looping it beats a bind pose.
 			Body->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 			Body->PlayAnimation(Clip, true);
 		}
@@ -373,6 +384,8 @@ void AAHCombatantCharacter::Tick(float DeltaSeconds)
 
 	const UCharacterMovementComponent* Movement = GetCharacterMovement();
 	const float GroundSpeed = GetVelocity().Size2D();
+	// Before the footstep early-out below: a body standing still still has an idle to play.
+	UpdateCreatureAnimation(DeltaSeconds);
 	if (IsCombatantDead() || !Movement || !Movement->IsMovingOnGround() || GroundSpeed <= FootstepMinimumSpeed)
 	{
 		// Owe a third of a stride on the next start: the first step lands promptly when the body
@@ -558,8 +571,13 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 
 	if (BodyFillLight)
 	{
-		// Faction reads off the fill colour: human issue lighting is warm, Veil is cold.
-		BodyFillLight->SetLightColor(Faction == EAHFaction::Veil ? FLinearColor(0.62f, 0.82f, 1.0f) : FLinearColor(1.0f, 0.94f, 0.84f));
+		// One warm fill for both factions. Tinting the Veil's cold was measured doing the
+		// opposite of what it was for: on the enemy bench the bodies came back at RGB
+		// (81, 84, 83) against a road at (28, 25, 22) - neutral-to-cool objects in a scene
+		// where every other surface is warm, and three and a half times its brightness. The
+		// faction read comes from the archetype's own body now, which is an alien, an
+		// armoured brute, a hound or a spider; it does not need a coloured lamp to carry it.
+		BodyFillLight->SetLightColor(BodyFillColor);
 		BodyFillLight->SetIntensity(BodyFillIntensity);
 	}
 	if (EnemyDefinition)
@@ -580,6 +598,81 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 		{
 			ApplyBodyPaint(Body, SlotIndex, SkinMaterial);
 		}
+	}
+}
+
+void AAHCombatantCharacter::ApplyBodyFillLightToCapsule()
+{
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (!BodyFillLight || !Capsule)
+	{
+		return;
+	}
+	// The offset was authored against a 96uu mannequin half-height. A hound is 44uu tall at the
+	// capsule, so a light pinned at z=125 sits above and behind its back with the body inside
+	// the near field of an inverse-square falloff - which is why the quadruped measured three
+	// and a half times the brightness of the road it stood on while every tint knob said it
+	// should be darker than the road.
+	const float HalfHeight = FMath::Max(20.0f, Capsule->GetScaledCapsuleHalfHeight());
+	const float Radius = FMath::Max(10.0f, Capsule->GetScaledCapsuleRadius());
+	BodyFillLight->SetRelativeLocation(FVector(Radius + 35.0f, 0.0f, HalfHeight * 1.15f));
+	BodyFillLight->SetAttenuationRadius(FMath::Clamp(HalfHeight * 6.0f, 260.0f, 900.0f));
+}
+
+void AAHCombatantCharacter::PlayCreatureClip(EAHCreatureAnimState State, bool bLooping)
+{
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body || Body->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
+	{
+		return;
+	}
+	UAnimSequenceBase* Clip = nullptr;
+	switch (State)
+	{
+	case EAHCreatureAnimState::Walk:   Clip = CreatureAnimations.Walk.Get(); break;
+	case EAHCreatureAnimState::Run:    Clip = CreatureAnimations.Run.Get(); break;
+	case EAHCreatureAnimState::Attack: Clip = CreatureAnimations.Attack.Get(); break;
+	case EAHCreatureAnimState::Death:  Clip = CreatureAnimations.Death.Get(); break;
+	default:                           Clip = CreatureAnimations.Idle.Get(); break;
+	}
+	if (!Clip)
+	{
+		return;
+	}
+	CreatureAnimState = State;
+	Body->PlayAnimation(Clip, bLooping);
+}
+
+void AAHCombatantCharacter::PlayCreatureAttack()
+{
+	UAnimSequenceBase* Clip = CreatureAnimations.Attack.Get();
+	if (!Clip || IsCombatantDead() || CreatureAnimState == EAHCreatureAnimState::Death)
+	{
+		return;
+	}
+	PlayCreatureClip(EAHCreatureAnimState::Attack, false);
+	CreatureAnimHoldSeconds = FMath::Clamp(Clip->GetPlayLength(), 0.1f, 2.5f);
+}
+
+void AAHCombatantCharacter::UpdateCreatureAnimation(float DeltaSeconds)
+{
+	if (CreatureAnimations.IsEmpty() || CreatureAnimState == EAHCreatureAnimState::Death)
+	{
+		return;
+	}
+	if (CreatureAnimHoldSeconds > 0.0f)
+	{
+		// A one-shot take owns the body until it finishes, or a creature that keeps walking
+		// while it bites re-selects a locomotion clip on the very next frame and the bite is
+		// never seen.
+		CreatureAnimHoldSeconds -= DeltaSeconds;
+		return;
+	}
+	const EAHCreatureAnimState Wanted = AHCreatureLocomotion::SelectLocomotionState(
+		CreatureAnimations, GetVelocity().Size2D(), CreatureAnimState);
+	if (Wanted != CreatureAnimState)
+	{
+		PlayCreatureClip(Wanted, true);
 	}
 }
 
@@ -950,7 +1043,21 @@ void AAHCombatantCharacter::OnDeathStarted()
 		CombatComponent->DisableCombat();
 	}
 	// Without this the body keeps standing in its idle loop and a kill reads as a bug.
-	StartRagdoll();
+	// An archetype with an authored death take plays it first and goes limp afterwards; a
+	// ragdoll that starts on the frame of the killing shot throws the body around before the
+	// player has read that it died. Bodies with no take - every mannequin combatant, and every
+	// test fixture - ragdoll immediately, exactly as before.
+	if (UAnimSequenceBase* DeathClip = CreatureAnimations.Death.Get())
+	{
+		PlayCreatureClip(EAHCreatureAnimState::Death, false);
+		const float Hold = FMath::Clamp(DeathClip->GetPlayLength(), 0.1f, 3.0f);
+		FTimerHandle RagdollHandle;
+		GetWorldTimerManager().SetTimer(RagdollHandle, this, &AAHCombatantCharacter::StartRagdoll, Hold, false);
+	}
+	else
+	{
+		StartRagdoll();
+	}
 	OnCombatantDeath.Broadcast();
 	if (DeathEffect)
 	{

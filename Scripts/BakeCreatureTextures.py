@@ -80,6 +80,64 @@ def bake_carapace():
     write_png(f"{OUT}/T_Creature_Carapace_AO.png", to_u8(np.clip(cavity * 0.80 + 0.20, 0, 1)))
 
 
+PREPARED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "Saved", "CreatureSource")
+
+
+def _read_gray(path, size):
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    image = Image.open(path).convert("L").resize((size, size), Image.LANCZOS)
+    return np.asarray(image, dtype=np.float32) / 255.0
+
+
+def composite_spider():
+    """Fold the spider's own baked occlusion and cavity into its procedural carapace.
+
+    The procedural maps are tileable noise. Sampled through the model's UVs they are the same
+    soft blobs everywhere, which is exactly the clay look the body had - the detail is not
+    wrong, it is simply not attached to anything. Blender bakes occlusion and pointiness from
+    the mesh into that same UV layout, so multiplying the two lands the dark in the model's own
+    creases and the light on its own edges.
+
+    Skipped rather than failed when the bakes are absent: Scripts/PrepareCreatureSources.py
+    needs Blender, and the procedural set alone still produces a usable body.
+    """
+    ao_path = os.path.join(PREPARED, "Spider_AO.png")
+    cavity_path = os.path.join(PREPARED, "Spider_Cavity.png")
+    if not (os.path.isfile(ao_path) and os.path.isfile(cavity_path)):
+        print("skip composite: run Scripts/PrepareCreatureSources.py -- bakes first")
+        return False
+
+    size = 2048
+    ao = _read_gray(ao_path, size)
+    cavity = _read_gray(cavity_path, size)
+    base = _read_gray(f"{OUT}/T_Creature_Carapace_D.png", size)
+    rough = _read_gray(f"{OUT}/T_Creature_Carapace_R.png", size)
+
+    # Occlusion at full strength would crush the whole body; these weights keep the detail
+    # readable rather than turning every crease black.
+    shade = np.clip(0.45 + 0.55 * ao, 0, 1) * np.clip(0.70 + 0.30 * cavity, 0, 1)
+
+    # The procedural albedo is written as raw linear values into an sRGB-tagged PNG, so the
+    # numbers in the file are already about a stop and a half darker than they read as. Passing
+    # them through and multiplying by occlusion on top landed this body at 0.0055 linear - black
+    # - and everything visible on it was specular sheen, which is exactly the smooth pale plastic
+    # the model was reading as. Renormalise into an explicit sRGB band instead.
+    detail = base - base.min()
+    detail = detail / max(detail.max(), 1e-6)
+    albedo = np.clip((0.21 + 0.23 * detail) * (0.55 + 0.45 * shade), 0, 1)
+    write_png(f"{OUT}/T_Spider_Composite_D.png",
+              np.stack([to_u8(albedo * 0.96), to_u8(albedo * 0.99), to_u8(albedo)], axis=-1))
+    # Exposed edges wear smooth, sheltered creases stay dusty. Floored well above the source
+    # map's 0.47 average: a shell this smooth at 0.47 is a mirror for the one light on it.
+    write_png(f"{OUT}/T_Spider_Composite_R.png",
+              to_u8(np.clip(0.62 + 0.33 * rough * (0.5 + 0.5 * (1.0 - cavity)), 0, 1)))
+    write_png(f"{OUT}/T_Spider_Composite_AO.png", to_u8(np.clip(ao * 0.85 + 0.15, 0, 1)))
+    print("composited spider maps from", PREPARED)
+    return True
+
+
 def bake_detail_normal():
     """High-frequency skin/scale normal, sampled at a tighter UV tile by every creature.
 
@@ -94,9 +152,10 @@ if __name__ == "__main__":
     bake_chitin()
     bake_carapace()
     bake_detail_normal()
+    composited = composite_spider()
     import glob
     files = sorted(glob.glob(OUT + "/*.png"))
-    assert len(files) == 9, files
+    assert len(files) == (12 if composited else 9), files
     for f in files:
         assert os.path.getsize(f) > 20000, (f, os.path.getsize(f))
     print("OK", len(files), "creature textures ->", OUT)
