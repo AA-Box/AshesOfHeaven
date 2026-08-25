@@ -518,6 +518,119 @@ bool FAHEncounterConfigurationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+namespace AHCombatantWorldTests
+{
+	// A spawned combatant dresses itself asynchronously: AAHCombatantCharacter::BeginPlay hands its
+	// default enemy definition id to UAHEnemyAssetSubsystem, and that subsystem lives on the GAME
+	// INSTANCE. A world from UWorld::CreateWorld has no game instance, so the request is dropped in
+	// silence and the body keeps nothing but its capsule - no skeletal mesh, no physics asset, no
+	// loadout weapon, and no way to shoot or loot it. Anything that exercises a real combatant
+	// therefore needs a game-instance-backed world and a latent wait for the streamed definition,
+	// the same fixture shape as AshesOfHeaven.Assets.Enemies.AsyncLifecycle.
+	struct FState
+	{
+		FAutomationTestBase* Test = nullptr;
+		TObjectPtr<UGameInstance> GameInstance = nullptr;
+		TObjectPtr<UWorld> World = nullptr;
+		TObjectPtr<AAHCombatPlayerCharacter> Looter = nullptr;
+		TObjectPtr<AAHVeilPilgrimCharacter> Combatant = nullptr;
+		TFunction<void(FState&)> Assertions;
+		FName WorldName;
+		bool bSpawnLooter = false;
+		int32 Stage = 0;
+		double Deadline = 0.0;
+
+		void Teardown()
+		{
+			if (World)
+			{
+				for (TActorIterator<AAHCombatantCharacter> It(World); It; ++It) It->Destroy();
+				if (GEngine) GEngine->DestroyWorldContext(World);
+				World->DestroyWorld(false);
+				World = nullptr;
+			}
+			Looter = nullptr;
+			Combatant = nullptr;
+			if (GameInstance)
+			{
+				// Without Shutdown() the instance's subsystem collection outlives the world and the
+				// next GC purge asserts in the instance destructor, taking the whole test queue down.
+				GameInstance->Shutdown();
+				GameInstance->RemoveFromRoot();
+				GameInstance = nullptr;
+			}
+		}
+	};
+
+	class FLatentCommand final : public IAutomationLatentCommand
+	{
+	public:
+		explicit FLatentCommand(TSharedRef<FState> InState) : State(MoveTemp(InState)) {}
+
+		virtual bool Update() override
+		{
+			FState& S = *State;
+			switch (S.Stage)
+			{
+			case 0:
+			{
+				S.GameInstance = NewObject<UGameInstance>(GEngine);
+				S.GameInstance->AddToRoot();
+				S.GameInstance->InitializeStandalone(S.WorldName);
+				S.World = S.GameInstance->GetWorld();
+				S.Test->TestNotNull(TEXT("A game-instance-backed test world is created"), S.World.Get());
+				if (!S.World)
+				{
+					S.Teardown();
+					return true;
+				}
+				// AActor::ProcessEvent silently drops every script event until the world reports its
+				// actors as initialised, so BeginPlay before this reaches nobody.
+				S.World->InitializeActorsForPlay(FURL());
+				if (AWorldSettings* Settings = S.World->GetWorldSettings()) Settings->NotifyBeginPlay();
+				S.World->BeginPlay();
+
+				FActorSpawnParameters SpawnParameters;
+				SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				if (S.bSpawnLooter)
+				{
+					S.Looter = S.World->SpawnActor<AAHCombatPlayerCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
+					S.Test->TestNotNull(TEXT("A looter can be spawned"), S.Looter.Get());
+				}
+				// The world has already begun play, so the spawn itself dispatches BeginPlay.
+				S.Combatant = S.World->SpawnActor<AAHVeilPilgrimCharacter>(
+					S.bSpawnLooter ? FVector(300.0f, 0.0f, 0.0f) : FVector::ZeroVector,
+					FRotator::ZeroRotator, SpawnParameters);
+				S.Test->TestNotNull(TEXT("A combatant can be spawned"), S.Combatant.Get());
+				if (!S.Combatant || (S.bSpawnLooter && !S.Looter))
+				{
+					S.Teardown();
+					return true;
+				}
+				S.Stage = 1;
+				S.Deadline = FPlatformTime::Seconds() + 20.0;
+				return false;
+			}
+			case 1:
+				if (!S.Combatant || !S.Combatant->GetEnemyDefinition())
+				{
+					if (FPlatformTime::Seconds() <= S.Deadline) return false;
+					S.Test->AddError(TEXT("the spawned combatant never received its streamed enemy definition"));
+					S.Teardown();
+					return true;
+				}
+				S.Assertions(S);
+				S.Teardown();
+				return true;
+			}
+			return true;
+		}
+
+	private:
+		TSharedRef<FState> State;
+	};
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHCombatantIsShootableTest, "AshesOfHeaven.Combat.CombatantIsShootable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHCombatantIsShootableTest::RunTest(const FString& Parameters)
 {
@@ -525,88 +638,48 @@ bool FAHCombatantIsShootableTest::RunTest(const FString& Parameters)
 	// shot at all, because the Pawn profile ignores that channel - which is exactly how every
 	// enemy in the chapter became immortal. This test fires the real trace at a real spawned
 	// combatant and then kills it through the real damage path.
-	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
-		.InitializeScenes(true)
-		.AllowAudioPlayback(false)
-		.RequiresHitProxies(false)
-		.CreatePhysicsScene(true)
-		.CreateNavigation(false)
-		.CreateAISystem(false)
-		.ShouldSimulatePhysics(false)
-		.EnableTraceCollision(true)
-		.SetTransactional(false)
-		.CreateFXSystem(false);
-	UWorld* TestWorld = UWorld::CreateWorld(
-		EWorldType::Game,
-		false,
-		FName(TEXT("AHShootableTestWorld")),
-		nullptr,
-		true,
-		ERHIFeatureLevel::Num,
-		&WorldInitialization,
-		false);
-	TestNotNull(TEXT("Shootable test world is created"), TestWorld);
-	if (!TestWorld)
+	TSharedRef<AHCombatantWorldTests::FState> State = MakeShared<AHCombatantWorldTests::FState>();
+	State->Test = this;
+	State->WorldName = FName(TEXT("AHShootableTestWorld"));
+	State->Assertions = [](AHCombatantWorldTests::FState& S)
 	{
-		return false;
-	}
+		AAHVeilPilgrimCharacter* Target = S.Combatant;
+		USkeletalMeshComponent* Body = Target->GetMesh();
+		S.Test->TestNotNull(TEXT("A combatant has a body mesh component"), Body);
+		if (!Body)
+		{
+			return;
+		}
+		S.Test->TestNotNull(TEXT("The body has a skeletal mesh asset"), Body->GetSkeletalMeshAsset());
+		S.Test->TestNotNull(TEXT("The body has a physics asset, so hits resolve to a bone"), Body->GetPhysicsAsset());
+		S.Test->TestEqual(TEXT("The body blocks the channel weapons trace on"),
+			Body->GetCollisionResponseToChannel(ECC_Visibility), ECR_Block);
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AAHVeilPilgrimCharacter* Target = TestWorld->SpawnActor<AAHVeilPilgrimCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
-	TestNotNull(TEXT("A combatant can be spawned"), Target);
-	if (!Target)
-	{
-		TestWorld->DestroyWorld(false);
-		return false;
-	}
-	// AActor::ProcessEvent silently drops every script event until the world reports its actors
-	// as initialised, and BeginPlay is not dispatched to actors spawned into a bare world.
-	TestWorld->InitializeActorsForPlay(FURL());
-	TestWorld->SetBegunPlay(true);
-	TestWorld->BeginPlay();
-	// Without this the health component would still be sitting on its zero default and every
-	// damage assertion below would pass for the wrong reason.
-	Target->DispatchBeginPlay();
+		// Chest height, fired from in front, exactly like AAHWeaponBase::FireShot.
+		const FVector ChestOffset(0.0f, 0.0f, 55.0f);
+		const FVector TraceStart = Target->GetActorLocation() + ChestOffset + FVector(600.0f, 0.0f, 0.0f);
+		const FVector TraceEnd = Target->GetActorLocation() + ChestOffset - FVector(600.0f, 0.0f, 0.0f);
+		FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(AHShootableTest), true);
+		FHitResult Hit;
+		const bool bHit = S.World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
+		S.Test->TestTrue(TEXT("A visibility trace at chest height hits the combatant"), bHit && Hit.GetActor() == Target);
+		S.Test->TestTrue(TEXT("The hit resolves to a named bone, which the headshot multiplier needs"), !Hit.BoneName.IsNone());
 
-	USkeletalMeshComponent* Body = Target->GetMesh();
-	TestNotNull(TEXT("A combatant has a body mesh component"), Body);
-	if (!Body)
-	{
-		TestWorld->DestroyWorld(false);
-		return false;
-	}
-	TestNotNull(TEXT("The body has a skeletal mesh asset"), Body->GetSkeletalMeshAsset());
-	TestNotNull(TEXT("The body has a physics asset, so hits resolve to a bone"), Body->GetPhysicsAsset());
-	TestEqual(TEXT("The body blocks the channel weapons trace on"),
-		Body->GetCollisionResponseToChannel(ECC_Visibility), ECR_Block);
-
-	// Chest height, fired from in front, exactly like AAHWeaponBase::FireShot.
-	const FVector ChestOffset(0.0f, 0.0f, 55.0f);
-	const FVector TraceStart = Target->GetActorLocation() + ChestOffset + FVector(600.0f, 0.0f, 0.0f);
-	const FVector TraceEnd = Target->GetActorLocation() + ChestOffset - FVector(600.0f, 0.0f, 0.0f);
-	FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(AHShootableTest), true);
-	FHitResult Hit;
-	const bool bHit = TestWorld->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, TraceParams);
-	TestTrue(TEXT("A visibility trace at chest height hits the combatant"), bHit && Hit.GetActor() == Target);
-	TestTrue(TEXT("The hit resolves to a named bone, which the headshot multiplier needs"), !Hit.BoneName.IsNone());
-
-	// Same damage event the weapon builds, applied until the health pool is spent.
-	const float StartingHealth = Target->GetHealthComponent()->GetHealth();
-	TestTrue(TEXT("The combatant starts alive"), !Target->IsCombatantDead());
-	TestTrue(TEXT("The combatant starts on a full health pool"), StartingHealth > 0.0f);
-	int32 Shots = 0;
-	while (!Target->IsCombatantDead() && Shots < 200)
-	{
-		++Shots;
-		UGameplayStatics::ApplyPointDamage(Target, 24.0f, (TraceEnd - TraceStart).GetSafeNormal(), Hit, nullptr, nullptr, nullptr);
-	}
-	TestTrue(TEXT("Rifle damage through the hit result eventually kills the combatant"), Target->IsCombatantDead());
-	TestTrue(TEXT("Killing the combatant takes a bounded number of rounds"), Shots > 0 && Shots < 200);
-	TestTrue(TEXT("Damage actually drained the health pool"), Target->GetHealthComponent()->GetHealth() < StartingHealth);
-
-	Target->Destroy();
-	TestWorld->DestroyWorld(false);
+		// Same damage event the weapon builds, applied until the health pool is spent.
+		const float StartingHealth = Target->GetHealthComponent()->GetHealth();
+		S.Test->TestTrue(TEXT("The combatant starts alive"), !Target->IsCombatantDead());
+		S.Test->TestTrue(TEXT("The combatant starts on a full health pool"), StartingHealth > 0.0f);
+		int32 Shots = 0;
+		while (!Target->IsCombatantDead() && Shots < 200)
+		{
+			++Shots;
+			UGameplayStatics::ApplyPointDamage(Target, 24.0f, (TraceEnd - TraceStart).GetSafeNormal(), Hit, nullptr, nullptr, nullptr);
+		}
+		S.Test->TestTrue(TEXT("Rifle damage through the hit result eventually kills the combatant"), Target->IsCombatantDead());
+		S.Test->TestTrue(TEXT("Killing the combatant takes a bounded number of rounds"), Shots > 0 && Shots < 200);
+		S.Test->TestTrue(TEXT("Damage actually drained the health pool"), Target->GetHealthComponent()->GetHealth() < StartingHealth);
+	};
+	ADD_LATENT_AUTOMATION_COMMAND(AHCombatantWorldTests::FLatentCommand(State));
 	return true;
 }
 
@@ -625,90 +698,53 @@ bool FAHEncounterCompletesWhenEnemiesAreKilledTest::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHCorpseIsLootableTest, "AshesOfHeaven.Combat.CorpseIsLootable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHCorpseIsLootableTest::RunTest(const FString& Parameters)
 {
-	const UWorld::InitializationValues WorldInitialization = UWorld::InitializationValues()
-		.InitializeScenes(true)
-		.AllowAudioPlayback(false)
-		.RequiresHitProxies(false)
-		.CreatePhysicsScene(true)
-		.CreateNavigation(false)
-		.CreateAISystem(false)
-		.ShouldSimulatePhysics(false)
-		.EnableTraceCollision(true)
-		.SetTransactional(false)
-		.CreateFXSystem(false);
-	UWorld* TestWorld = UWorld::CreateWorld(
-		EWorldType::Game,
-		false,
-		FName(TEXT("AHLootTestWorld")),
-		nullptr,
-		true,
-		ERHIFeatureLevel::Num,
-		&WorldInitialization,
-		false);
-	TestNotNull(TEXT("Loot test world is created"), TestWorld);
-	if (!TestWorld)
+	TSharedRef<AHCombatantWorldTests::FState> State = MakeShared<AHCombatantWorldTests::FState>();
+	State->Test = this;
+	State->WorldName = FName(TEXT("AHLootTestWorld"));
+	State->bSpawnLooter = true;
+	State->Assertions = [](AHCombatantWorldTests::FState& S)
 	{
-		return false;
-	}
-	TestWorld->InitializeActorsForPlay(FURL());
-	TestWorld->SetBegunPlay(true);
-	TestWorld->BeginPlay();
+		AAHCombatPlayerCharacter* Looter = S.Looter;
+		AAHVeilPilgrimCharacter* Victim = S.Combatant;
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AAHCombatPlayerCharacter* Looter = TestWorld->SpawnActor<AAHCombatPlayerCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
-	AAHVeilPilgrimCharacter* Victim = TestWorld->SpawnActor<AAHVeilPilgrimCharacter>(FVector(300.0f, 0.0f, 0.0f), FRotator::ZeroRotator, SpawnParameters);
-	TestNotNull(TEXT("A looter can be spawned"), Looter);
-	TestNotNull(TEXT("A victim can be spawned"), Victim);
-	if (!Looter || !Victim)
-	{
-		TestWorld->DestroyWorld(false);
-		return false;
-	}
-	Looter->DispatchBeginPlay();
-	Victim->DispatchBeginPlay();
+		S.Test->TestTrue(TEXT("A living enemy offers no loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+		S.Test->TestNull(TEXT("A living enemy exposes no lootable weapon"), Victim->GetLootableWeapon());
 
-	TestTrue(TEXT("A living enemy offers no loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
-	TestNull(TEXT("A living enemy exposes no lootable weapon"), Victim->GetLootableWeapon());
+		AAHWeaponBase* VictimWeapon = Victim->GetInventoryComponent()->GetCurrentWeapon();
+		AAHWeaponBase* LooterWeapon = Looter->GetInventoryComponent()->GetCurrentWeapon();
+		S.Test->TestNotNull(TEXT("The victim starts armed"), VictimWeapon);
+		S.Test->TestNotNull(TEXT("The looter starts armed"), LooterWeapon);
+		if (!VictimWeapon || !LooterWeapon)
+		{
+			return;
+		}
+		const FAHAmmoState VictimAmmo = VictimWeapon->GetAmmoState();
+		// Leave room in the reserve, or a full pool would hide the transfer behind its own clamp.
+		LooterWeapon->SetAmmoState(FAHAmmoState{VictimAmmo.MagazineCapacity, 0, VictimAmmo.MagazineCapacity, VictimAmmo.ReserveCapacity});
+		S.Test->TestEqual(TEXT("The looter's reserve is emptied for the test"), LooterWeapon->GetAmmoState().Reserve, 0);
 
-	AAHWeaponBase* VictimWeapon = Victim->GetInventoryComponent()->GetCurrentWeapon();
-	AAHWeaponBase* LooterWeapon = Looter->GetInventoryComponent()->GetCurrentWeapon();
-	TestNotNull(TEXT("The victim starts armed"), VictimWeapon);
-	TestNotNull(TEXT("The looter starts armed"), LooterWeapon);
-	if (!VictimWeapon || !LooterWeapon)
-	{
-		TestWorld->DestroyWorld(false);
-		return false;
-	}
-	const FAHAmmoState VictimAmmo = VictimWeapon->GetAmmoState();
-	// Leave room in the reserve, or a full pool would hide the transfer behind its own clamp.
-	LooterWeapon->SetAmmoState(FAHAmmoState{VictimAmmo.MagazineCapacity, 0, VictimAmmo.MagazineCapacity, VictimAmmo.ReserveCapacity});
-	TestEqual(TEXT("The looter's reserve is emptied for the test"), LooterWeapon->GetAmmoState().Reserve, 0);
+		int32 Rounds = 0;
+		while (!Victim->IsCombatantDead() && Rounds < 200)
+		{
+			++Rounds;
+			Victim->TakeDamage(24.0f, FDamageEvent(), nullptr, nullptr);
+		}
+		S.Test->TestTrue(TEXT("The victim can be killed"), Victim->IsCombatantDead());
 
-	int32 Rounds = 0;
-	while (!Victim->IsCombatantDead() && Rounds < 200)
-	{
-		++Rounds;
-		Victim->TakeDamage(24.0f, FDamageEvent(), nullptr, nullptr);
-	}
-	TestTrue(TEXT("The victim can be killed"), Victim->IsCombatantDead());
+		S.Test->TestNotNull(TEXT("A corpse exposes the weapon it was holding"), Victim->GetLootableWeapon());
+		S.Test->TestFalse(TEXT("A corpse offers a loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
 
-	TestNotNull(TEXT("A corpse exposes the weapon it was holding"), Victim->GetLootableWeapon());
-	TestFalse(TEXT("A corpse offers a loot prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+		IAHInteractable::Execute_Interact(Victim, Looter);
 
-	IAHInteractable::Execute_Interact(Victim, Looter);
-
-	// A reserve pool is capped, so a full corpse tops the looter out rather than overfilling.
-	const int32 ExpectedReserve = FMath::Min(VictimAmmo.Magazine + VictimAmmo.Reserve, VictimAmmo.ReserveCapacity);
-	TestEqual(TEXT("Looting moves the dead soldier's rounds to the looter"),
-		LooterWeapon->GetAmmoState().Reserve, ExpectedReserve);
-	TestTrue(TEXT("The looter gained ammunition it did not have"), ExpectedReserve > 0);
-	TestNull(TEXT("A stripped corpse has nothing left to loot"), Victim->GetLootableWeapon());
-	TestTrue(TEXT("A stripped corpse stops offering a prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
-
-	Looter->Destroy();
-	Victim->Destroy();
-	TestWorld->DestroyWorld(false);
+		// A reserve pool is capped, so a full corpse tops the looter out rather than overfilling.
+		const int32 ExpectedReserve = FMath::Min(VictimAmmo.Magazine + VictimAmmo.Reserve, VictimAmmo.ReserveCapacity);
+		S.Test->TestEqual(TEXT("Looting moves the dead soldier's rounds to the looter"),
+			LooterWeapon->GetAmmoState().Reserve, ExpectedReserve);
+		S.Test->TestTrue(TEXT("The looter gained ammunition it did not have"), ExpectedReserve > 0);
+		S.Test->TestNull(TEXT("A stripped corpse has nothing left to loot"), Victim->GetLootableWeapon());
+		S.Test->TestTrue(TEXT("A stripped corpse stops offering a prompt"), IAHInteractable::Execute_GetInteractionPrompt(Victim).IsEmpty());
+	};
+	ADD_LATENT_AUTOMATION_COMMAND(AHCombatantWorldTests::FLatentCommand(State));
 	return true;
 }
 
