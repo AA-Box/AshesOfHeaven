@@ -1083,9 +1083,10 @@ bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
 void AAHChapterOneDirector::BuildErebusZoneEffects()
 {
 	// Every sprite system here is an authored NS_Erebus_* (Fountain-template
-	// duplicate with re-authored module parameters and soft unlit sprite
-	// materials). The factory NS_AshField/NS_SmokeColumn/NS_FireLarge fountains
-	// rendered as giant opaque square-sprite clouds and are no longer spawned.
+	// duplicate with re-authored module parameters and soft age-driven sprite
+	// materials: additive unlit fire, lit translucent smoke). The factory
+	// NS_AshField/NS_SmokeColumn/NS_FireLarge fountains rendered as giant opaque
+	// square-sprite clouds and are no longer spawned.
 	// Ambient airborne ash over the corridor (SpawnVisualDust spawned the factory
 	// NS_DustSheet fountain — giant opaque square sprites — and is gone for good).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_AshAmbient.NS_Erebus_AshAmbient"), FVector(-400.0f, 0.0f, 420.0f), FVector(1.0f));
@@ -1094,6 +1095,9 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	// Near fires, each on an authored visible source (barrel, crater, wreck, pipe).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-1120.0f, -560.0f, 30.0f), FVector(1.0f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-1120.0f, -560.0f, 50.0f), FVector(1.0f));
+	// Every fire gets its own smoke: a flame with no column above it reads as a
+	// decal, not combustion. These two were the only fires without one.
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-1120.0f, -560.0f, 60.0f), FVector(0.9f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(-650.0f, -560.0f, -42.0f), FVector(0.9f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(-650.0f, -560.0f, -28.0f), FVector(1.1f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(-650.0f, -560.0f, -18.0f), FVector(1.0f));
@@ -1106,6 +1110,7 @@ void AAHChapterOneDirector::BuildErebusZoneEffects()
 	// route destination carries its own light pool (visible source: GateBarrel).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"), FVector(3300.0f, 620.0f, 90.0f), FVector(1.2f));
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"), FVector(3300.0f, 620.0f, 110.0f), FVector(1.0f));
+	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(3300.0f, 620.0f, 120.0f), FVector(1.0f));
 
 	// Phase 4.7 hero wrecks: the crashed gunship burns, the tank and truck smolder.
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"), FVector(2120.0f, -520.0f, 40.0f), FVector(1.1f));
@@ -1918,8 +1923,37 @@ void AAHChapterOneDirector::SpawnPresentDayScene()
 void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotator& Rotation)
 {
 	TeleportPlayer(Location, Rotation);
+	// FREEZE the pawn as well as re-asserting the pose. The 0.5s re-assert below holds the
+	// camera to within half a second of the mark, but gravity runs in between, so the vantage
+	// still creeps: measured against a static wall region in packaged footage, frame-to-frame
+	// motion sat at +0.47 above the codec noise floor with a ~0.9s rhythm. A still cannot show
+	// that - one frame taken anywhere in the cycle looks correct - but any per-frame statistic
+	// can, because a fixed screen-space ROI over a creeping vantage measures the vantage rather
+	// than the thing under test. With movement disabled the same measurement reads -0.17, i.e.
+	// the wall is now stabler than the codec noise floor and the vantage is genuinely static.
+	// OPT-IN, via -ArtFreeze. Freezing changes what the review camera SEES: without it the
+	// pawn falls and every acceptance pose ends up at the grounded eye height (Z=112.21 for
+	// all of them, whatever -ArtCam asked for), and every historical baseline in
+	// Saved/Acceptance was captured that way. Freezing makes -ArtCam's Z actually take
+	// effect - shot1 went 112.21 -> 364.06 - which is more correct but silently re-frames
+	// every comparison shot. A motion capture needs the static vantage; the stills gate
+	// needs continuity with its baselines. So the stills keep the old behaviour and only
+	// CaptureErebusMotion.py asks for the freeze.
+	if (FParse::Param(FCommandLine::Get(), TEXT("ArtFreeze")))
+	{
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+		{
+			if (UCharacterMovementComponent* Movement = Player->GetCharacterMovement())
+			{
+				Movement->StopMovementImmediately();
+				Movement->GravityScale = 0.0f;
+				Movement->DisableMovement();
+			}
+		}
+	}
 	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding
-	// the pose is the whole contract. It used to stop after 12 reps - six seconds - while the
+	// the pose is the whole contract. With movement disabled above it only has to beat recoil
+	// and spatial recovery, not gravity. It used to stop after 12 reps - six seconds - while the
 	// acceptance harness projects its review regions at twelve seconds and screenshots at about
 	// thirty, so recoil and spatial recovery walked the camera off the subject and the capture
 	// still came back looking like a valid frame. It now holds for the life of the process; this
