@@ -128,9 +128,12 @@ bool UAHChapterSubsystem::SetStage(EAHChapterStage NewStage)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] stage=%s"), *UEnum::GetValueAsString(NewStage));
 	#endif
 	State.CompletedSections.AddUnique(FName(*UEnum::GetValueAsString(NewStage)));
-	if (NewStage == EAHChapterStage::ChapterComplete)
+	// Derived, not latched. NormalizeState already defines bChapterComplete as "the stage is
+	// ChapterComplete"; latching it here left a debug or -ArtTarget jump backwards with the flag
+	// stuck true, which silently froze TickCountdown for the rest of the session.
+	State.bChapterComplete = NewStage == EAHChapterStage::ChapterComplete;
+	if (State.bChapterComplete)
 	{
-		State.bChapterComplete = true;
 		State.bCountdownActive = false;
 	}
 	OnStageChanged.Broadcast(NewStage);
@@ -206,10 +209,11 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 		LastCountdownMilestone = CurrentMilestone;
 		if (CurrentMilestone % 60 == 0 || CurrentMilestone <= 10)
 		{
+			// Log only. There is deliberately no milestone delegate: nothing in Source or Content
+			// ever bound one, and the failsafe clock has no authored expiry consequence to raise.
 			#if !UE_BUILD_SHIPPING
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] milestone seconds=%d"), CurrentMilestone);
 			#endif
-			OnCountdownMilestone.Broadcast(CurrentMilestone);
 		}
 	}
 	if (State.CountdownSeconds <= 0.0f)

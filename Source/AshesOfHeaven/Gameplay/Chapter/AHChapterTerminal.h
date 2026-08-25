@@ -45,6 +45,8 @@ public:
 	virtual float GetObjectiveInteractionPriority_Implementation() const override;
 
 	bool IsConfirmed() const { return bConfirmed; }
+	/** Writes one of the authored WBP_TerminalWorld text blocks. Returns false if it is missing. */
+	bool SetScreenText(FName WidgetName, const FText& Value);
 	bool IsInspected() const { return bInspected; }
 	void SetPersistentId(const FGuid& PersistentId);
 

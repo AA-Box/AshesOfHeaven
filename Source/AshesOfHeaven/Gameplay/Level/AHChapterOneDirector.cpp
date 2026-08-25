@@ -19,6 +19,7 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Presentation/AHPresentationData.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -248,6 +249,14 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
 	{
 		DestructionFadeAlpha = FMath::Clamp(StageElapsed / 6.0f, 0.0f, 1.0f);
+	}
+	// The alpha used to be computed and consumed by nobody, so the destruction ending was
+	// dialogue over an unchanged view. Manual camera fade darkens the scene render only, so the
+	// Ch01_ErebusFinale subtitles stay readable as Erebus goes black. StartStage resets the alpha,
+	// so this is inert outside the destruction stage.
+	if (APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0))
+	{
+		CameraManager->SetManualCameraFade(DestructionFadeAlpha, FLinearColor::Black, false);
 	}
 	if (GetCurrentStage() == EAHChapterStage::FleetDeparture && StageElapsed > 5.0f)
 	{
@@ -599,6 +608,15 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		if (!bSaelSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Sael"))))
 		{
 			bSaelSequenceStarted = true;
+			// The beat that plays here is the Other Lucian first encounter (Ch01_Sael resolves to
+			// the canonical Other-Lucian lines). Nothing used to be spawned for it, so the player
+			// heard "You invaded my world" with an empty corridor in front of him. A visual
+			// character actor: no AI, no collision, cannot fall off the walkway.
+			SpawnVisualCharacter(
+				TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+				TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+				FVector(17300.0f, 0.0f, AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior).GameplayFloorZ),
+				FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 			StartDialogueSequence(FName(TEXT("Ch01_Sael")), SaelLines());
 		}
 		break;
@@ -609,7 +627,18 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		SpawnEscapeEncounter();
 		break;
 	case EAHChapterStage::OtherLucian:
-		SpawnFriendly(AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation + FVector(0.0f, -260.0f, 0.0f), FName(TEXT("OtherLucian")));
+		// The silent second sighting is a figure, not a combatant: SpawnFriendly put a gravity- and
+		// AI-driven soldier beside the escape route, which is both the wrong character and free to
+		// walk or fall out of frame. Same visual actor as the first encounter, on the route, at the
+		// authored floor height.
+		SpawnVisualCharacter(
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+			TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+			FVector(
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation.X + 700.0f,
+				260.0f,
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).GameplayFloorZ),
+			FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 		if (!bOtherLucianSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_OtherLucian"))))
 		{
 			bOtherLucianSequenceStarted = true;

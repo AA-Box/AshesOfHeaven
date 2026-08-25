@@ -99,6 +99,23 @@ bool FAHLevelOneProgressionContractTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneCompletionFlagTest, "AshesOfHeaven.LevelOne.CompletionFlagFollowsStage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneCompletionFlagTest::RunTest(const FString& Parameters)
+{
+	// bChapterComplete used to latch. A debug or -ArtTarget jump backwards then left it stuck true,
+	// and the only runtime reader (TickCountdown) stops ticking the failsafe clock when it is set.
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GetTransientPackage());
+	UAHChapterSubsystem* Chapter = NewObject<UAHChapterSubsystem>(GameInstance);
+	Chapter->SetObjectiveIndex(AHChapterStateConstants::ObjectiveCount);
+	TestTrue(TEXT("The chapter reaches completion"), Chapter->SetStage(EAHChapterStage::ChapterComplete));
+	TestTrue(TEXT("Completion is flagged at the terminal stage"), Chapter->GetState().bChapterComplete);
+
+	TestTrue(TEXT("A later stage change is accepted"), Chapter->SetStage(EAHChapterStage::Escape));
+	TestFalse(TEXT("Leaving the terminal stage clears the completion flag"), Chapter->GetState().bChapterComplete);
+	TestFalse(TEXT("IsChapterComplete agrees with the flag"), Chapter->IsChapterComplete());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneStageDialogueQueueTest, "AshesOfHeaven.LevelOne.StageDialogueQueue", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHLevelOneStageDialogueQueueTest::RunTest(const FString& Parameters)
 {

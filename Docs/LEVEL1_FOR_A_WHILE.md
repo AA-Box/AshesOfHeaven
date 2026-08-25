@@ -107,6 +107,21 @@ A Level One implementation is not considered complete unless all of these hold i
 - no visible Engine cube/checker material is used as normal runtime presentation;
 - Mac packaged build and automated Level One narrative/progression/material tests pass before merge.
 
+## Presentation and content gaps closed
+
+- **The Other Lucian is on screen.** The first encounter (`CathedralInterior`) and the silent second sighting both spawn a `SpawnVisualCharacter` figure — no AI, no collision, so it cannot walk or fall out of frame. The second sighting used to be a `SpawnFriendly` soldier placed beside the escape route.
+- **The destruction fade is applied.** `DestructionFadeAlpha` was computed every tick and read by nobody, so the ending was dialogue over an unchanged view. It now drives `SetManualCameraFade`, which darkens the scene render only, leaving the finale subtitles readable.
+- **The terminal displays the count.** `CasualtyText` (`11,407,231`) is written into the authored `TerminalIntel` text block at `BeginPlay`, and `ConfirmationText` into `TerminalStatus` on confirmation. Both were unread properties; the screen showed the widget's placeholder.
+- **Enemy bodies are project materials on both tiers.** The mobile visual payload pointed at `/Engine/BasicShapes/BasicShapeMaterial`, which the engine substitutes with a default material; it is now `MI_VeilObsidian_Black` (an instance, so the mobile bundle stays disjoint from the desktop one, which `AHEnemyAssetValidationCommandlet` requires).
+- **`bChapterComplete` is derived from the stage,** not latched. A debug or `-ArtTarget` jump backwards used to leave it true, and `TickCountdown` refuses to run while it is set.
+- **The countdown milestone delegate is gone.** Nothing in `Source` or `Content` ever bound it. The `[Phase3.2][Countdown] milestone` log remains.
+
+## Known gaps (decided, not defects)
+
+- The 08:42 clock has **no expiry consequence**: reaching 00:00 hides the HUD counter and nothing else. Adding stakes is a design decision, not a fix.
+- **Completion is never persisted.** Every disk write goes through `UAHCheckpointSubsystem::CaptureCheckpoint`, whose callers are checkpoint actors and the boot fallback; the last checkpoint on the route is `Ch01_Escape`. Finish the level, quit, relaunch, and the save still says Escape. Nothing consumes a persisted completion yet.
+- **Queued stage beats have no staleness bound.** A beat can play one stage late (e.g. `Ch01_EscapeStart` behind the ~30 s terminal beat). Bounding it means deciding which authored lines may be thrown away.
+
 ## Verification
 
 `Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than four `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
@@ -124,4 +139,8 @@ The Level One contract tests are:
 - `AshesOfHeaven.LevelOne.StageDialogueQueue` — canonical lines replace a director's inline copy; a stage change landing mid-sequence queues its beat; a preempted beat resumes where it was cut.
 - `AshesOfHeaven.LevelOne.ObjectiveCompleters` — every objective has a completer, and the Cathedral doorway trigger belongs to `FailsafeOrder`.
 - `AshesOfHeaven.LevelOne.DialogueDoesNotRewindStage` — a late `Ch01_Sael` does not drag the chapter backwards, and an on-time one still advances.
+- `AshesOfHeaven.LevelOne.CompletionFlagFollowsStage` — `bChapterComplete` tracks the stage instead of latching, so a debug jump backwards cannot freeze the failsafe clock.
+- `AshesOfHeaven.LevelOne.TerminalShowsCasualtyCount` — `CasualtyText` reaches the authored `TerminalIntel` block on the terminal screen, and the figure is `11,407,231`.
+- `AshesOfHeaven.Assets.Enemies.BodyMaterialsAreProjectAssets` — no enemy body material on either tier comes from `/Engine/`.
+- `AshesOfHeaven.Chapter.ObjectiveChain` — now names index 11 `Ch01_SurviveDestruction`, so it measures the epilogue truncation instead of dodging it with synthetic ids.
 - `AshesOfHeaven.LevelOne.UnrealMaterialContract` — every material the runtime loads by path resolves, including `MI_Erebus_StormCloud` for the cloud deck. A by-path load that returns null does not crash; it leaves the engine default material on the surface, which is how the Erebus sky was rendering on the stock volumetric cloud shader. `Scripts/Validate-CrossPlatform.sh` also asserts the material-instance files exist, so a deletion is caught on any runner.
