@@ -2,6 +2,15 @@ name: Cross-platform validation
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+# Every job only reads the repository: checkout needs contents:read, and
+# actions/upload-artifact uses the Actions runtime token rather than GITHUB_TOKEN.
+# Jobs inherit this, so no job needs its own block.
+permissions:
+  contents: read
 
 jobs:
   source-validation:
@@ -11,8 +20,29 @@ jobs:
       - name: Validate shared source/configuration
         run: ./Scripts/Validate-CrossPlatform.sh
 
+  # The merge gate for gameplay contracts. Every AshesOfHeaven.* automation test is
+  # EditorContext|CommandletContext, so only an editor/commandlet run executes them.
+  automation-tests:
+    if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Unreal automation suite
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_MAC_ROOT }}
+        run: ./Scripts/Run-AutomationTests.sh
+      - name: Upload automation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-report
+          path: |
+            Saved/AutomationReport
+            Saved/Logs/AutomationRun.log
+          if-no-files-found: warn
+
   windows-shipping:
-    if: ${{ vars.UNREAL_ENGINE_WINDOWS_ROOT != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.UNREAL_ENGINE_WINDOWS_ROOT != '' }}
     runs-on: [self-hosted, Windows, UE5]
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +63,7 @@ jobs:
         run: ./Scripts/Build-Mac.sh
 
   android-shipping:
-    if: ${{ vars.UNREAL_ENGINE_ANDROID_ROOT != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.UNREAL_ENGINE_ANDROID_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5, Android]
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +73,7 @@ jobs:
         run: ./Scripts/Build-Android.sh
 
   ios-shipping:
-    if: ${{ vars.UNREAL_ENGINE_IOS_ROOT != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.UNREAL_ENGINE_IOS_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5, iOS]
     steps:
       - uses: actions/checkout@v4

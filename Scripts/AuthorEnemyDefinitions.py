@@ -129,10 +129,15 @@ def _author_enemy(name, combat_class, display_name, health, armor, speed, headsh
         spawn_effect=_load("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"),
         death_effect=_load("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"),
     )
+    # Mobile bodies were authored to the engine's BasicShapeMaterial, which UE substitutes with
+    # an engine default at runtime - an engine material presenting a character on the whole mobile
+    # tier. MI_VeilObsidian_Black is the cheap project instance for it, and being an instance
+    # rather than M_VeilObsidian keeps the mobile bundle disjoint from the desktop one, which
+    # AHEnemyAssetValidationCommandlet requires.
     _set_struct(
         definition,
         "mobile_visuals",
-        materials=[_load("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")],
+        materials=[_load("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black")],
     )
     _set_struct(
         definition,

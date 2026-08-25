@@ -13,8 +13,46 @@
 #include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AHEnemyAssetValidationCommandlet.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHEnemyBodyMaterialsAreProjectAssetsTest,
+	"AshesOfHeaven.Assets.Enemies.BodyMaterialsAreProjectAssets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHEnemyBodyMaterialsAreProjectAssetsTest::RunTest(const FString& Parameters)
+{
+	// The mobile tier used to author enemy bodies to /Engine/BasicShapes/BasicShapeMaterial, which
+	// UE substitutes with an engine default at runtime: an engine material presenting a character
+	// on every mobile device. Surfaces must come from authored /Game materials on both tiers.
+	const TArray<FString> DefinitionPaths = {
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Pilgrim.DA_Enemy_Pilgrim"),
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Warden.DA_Enemy_Warden")
+	};
+	for (const FString& DefinitionPath : DefinitionPaths)
+	{
+		UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr, *DefinitionPath);
+		TestNotNull(*FString::Printf(TEXT("enemy definition resolves: %s"), *DefinitionPath), Definition);
+		if (!Definition)
+		{
+			continue;
+		}
+		for (const bool bMobile : {false, true})
+		{
+			const FAHEnemyVisualPayload Payload = Definition->ResolveVisuals(bMobile);
+			for (const TSoftObjectPtr<UMaterialInterface>& Material : Payload.Materials)
+			{
+				const FString MaterialPath = Material.ToSoftObjectPath().ToString();
+				TestFalse(*FString::Printf(TEXT("%s %s body material is not an engine asset: %s"),
+					*DefinitionPath, bMobile ? TEXT("mobile") : TEXT("desktop"), *MaterialPath),
+					MaterialPath.StartsWith(TEXT("/Engine/")));
+			}
+		}
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAHEnemyAssetManifestTest,

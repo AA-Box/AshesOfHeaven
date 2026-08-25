@@ -420,16 +420,20 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		TArray<FAHObjectiveDefinition> Definitions;
 		for (int32 Index = 0; Index < 17; ++Index)
 		{
-			Definitions.Add({FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1)), FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
+			const FName Id = Index == AHChapterStateConstants::ObjectiveCount - 1
+				? FName(TEXT("Ch01_SurviveDestruction"))
+				: FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1));
+			Definitions.Add({Id, FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
 		}
 		Objectives->ConfigureObjectives(Definitions, 0);
-		Expect(TestName, TEXT("Chapter objective chain contains all seventeen objectives"), Objectives->GetObjectiveCount() == 17);
-		for (const FAHObjectiveDefinition& Definition : Definitions)
+		Expect(TestName, TEXT("the retired epilogue tail is dropped"), Objectives->GetObjectiveCount() == AHChapterStateConstants::ObjectiveCount);
+		for (int32 Index = 0; Index < AHChapterStateConstants::ObjectiveCount; ++Index)
 		{
-			Expect(TestName, TEXT("each Chapter objective completes in order"), Objectives->CompleteObjective(Definition.Id));
+			Expect(TestName, TEXT("each Chapter objective completes in order"), Objectives->CompleteObjective(Definitions[Index].Id));
 		}
+		Expect(TestName, TEXT("a dropped epilogue objective cannot be completed"), !Objectives->CompleteObjective(Definitions[AHChapterStateConstants::ObjectiveCount].Id));
 		Expect(TestName, TEXT("Chapter completion state is reachable"), Objectives->IsMissionComplete());
-		Expect(TestName, TEXT("completed Chapter objective history is complete"), Objectives->GetCompletedObjectiveIds().Num() == 17);
+		Expect(TestName, TEXT("completed Chapter objective history is complete"), Objectives->GetCompletedObjectiveIds().Num() == AHChapterStateConstants::ObjectiveCount);
 		FinishTest(TestName, FailureCountBefore, FailureCount);
 		++RunCount;
 	}
@@ -584,10 +588,16 @@ int32 UAHCombatVerificationCommandlet::Main(const FString& Params)
 		const FString TestName = TEXT("AshesOfHeaven.Chapter.CompletionOnlyAfterFinalStage");
 		const int32 FailureCountBefore = FailureCount;
 		FAHChapterState BeforeFinal;
-		BeforeFinal.Stage = EAHChapterStage::StarsDisappearing;
-		BeforeFinal.ObjectiveIndex = 16;
+		BeforeFinal.Stage = EAHChapterStage::Escape;
+		BeforeFinal.ObjectiveIndex = 10;
 		const FAHChapterState PreCompletion = UAHChapterSubsystem::NormalizeState(BeforeFinal);
-		Expect(TestName, TEXT("StarsDisappearing remains pre-completion"), PreCompletion.Stage == EAHChapterStage::StarsDisappearing && !PreCompletion.bChapterComplete);
+		Expect(TestName, TEXT("Escape remains pre-completion"), PreCompletion.Stage == EAHChapterStage::Escape && !PreCompletion.bChapterComplete);
+		FAHChapterState CurrentVersionEpilogue;
+		CurrentVersionEpilogue.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+		CurrentVersionEpilogue.Stage = EAHChapterStage::TenYearsLater;
+		CurrentVersionEpilogue.ObjectiveIndex = 12;
+		const FAHChapterState MigratedEpilogue = UAHChapterSubsystem::NormalizeState(CurrentVersionEpilogue);
+		Expect(TestName, TEXT("a current-version epilogue state migrates to completion"), MigratedEpilogue.Stage == EAHChapterStage::ChapterComplete && MigratedEpilogue.bChapterComplete);
 		FAHChapterState Final;
 		Final.Stage = EAHChapterStage::ChapterComplete;
 		Final.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
