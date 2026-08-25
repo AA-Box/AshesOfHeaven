@@ -696,6 +696,14 @@ void UAHEncounterDirectorSubsystem::ApplyEnemyTacticalProfile(AAHCombatantCharac
 	if (AAHCombatAIController* AI = Cast<AAHCombatAIController>(Enemy->GetController()))
 	{
 		AI->ApplyEnemySettings(Archetype.AISettings);
+			// A directed encounter is troops despatched to a place, so they arrive knowing where
+			// the player was - otherwise a fight that spawns beyond sight range never starts.
+			// They still have to see the player to engage, and awareness still decays, so
+			// breaking contact works here exactly as it does anywhere else.
+			if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+			{
+				AI->AlertToLocation(PlayerPawn->GetActorLocation());
+			}
 		const float DifficultyMultiplier = ActiveDefinition
 			? ActiveDefinition->GetDifficultyModifier(ActiveDifficulty).AISophisticationMultiplier
 			: 1.0f;

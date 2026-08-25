@@ -17,6 +17,14 @@
 
 AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 {
+	// ACharacter::Crouch() silently early-outs unless the movement component opts in, so every
+	// crouch so far changed walk speed and footstep volume while the capsule and the eye stayed
+	// at full height - the player ducked behind a crate and was still visible over it.
+	GetCharacterMovement()->NavAgentProps.bCanCrouch = true;
+	// Engine default crouched half height is 40, which drops a 1.92m capsule to 0.8m - a 56cm
+	// view snap that reads as falling over. 62 is a crouch.
+	GetCharacterMovement()->SetCrouchedHalfHeight(62.0f);
+
 	Faction = EAHFaction::Player;
 	bDestroyOnDeath = false;
 	HealthComponent->MaxHealth = 100.0f;

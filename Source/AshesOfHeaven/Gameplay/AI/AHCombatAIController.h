@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AIController.h"
+#include "Gameplay/AI/AHPerceptionTypes.h"
 #include "Gameplay/AI/AHTacticalPositionTypes.h"
 #include "AHCombatAIController.generated.h"
 
@@ -86,6 +87,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Melee", meta=(ClampMin=40.0))
 	float MeleeReach = 165.0f;
 
+	/** Half-angle of the sight cone used to NOTICE a target. Acquisition only: an alerted AI
+	 *  turns to face, and gating retention on the cone would make it forget what it is turning
+	 *  towards. Matches the 105 degree peripheral vision the sense config always claimed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Perception", meta=(ClampMin=5.0, ClampMax=180.0))
+	float ViewConeHalfAngleDegrees = 52.5f;
+
+	/** Awareness ramp tuning. Editable so a stealth-oriented encounter can be slower to notice
+	 *  without changing every archetype's SightRange. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Perception")
+	float AwarenessGainRate = 1.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Perception")
+	float AwarenessDecayRate = 0.28f;
+
+	UFUNCTION(BlueprintPure, Category="AI|Perception")
+	float GetAwareness() const { return Awareness; }
+
+	UFUNCTION(BlueprintPure, Category="AI|Perception")
+	EAHAwarenessState GetAwarenessState() const { return AwarenessState; }
+
+	/** A shot heard nearby. Does not reveal the shooter - it raises suspicion and sends the AI
+	 *  to look, which is what lets a player be found after firing without being seen. */
+	void ReactToGunshot(const FVector& ShotLocation, AActor* Shooter);
+
+	/** Forces Alert on the next awareness step. Called when this combatant takes damage. */
+	void AlertToDamage(AActor* Instigator);
+
+	/** Seeds this AI as already suspicious of a location without handing it a target.
+	 *  A directed encounter is troops being sent somewhere: they should advance on where the
+	 *  player was, and still have to actually see them before engaging - which is what keeps
+	 *  breaking contact possible even in a scripted fight. */
+	void AlertToLocation(const FVector& Location);
+
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -122,6 +156,11 @@ protected:
 	void HandlePawnDeath();
 
 	void UpdateTarget();
+	/** Advances Awareness against the best candidate and returns the target to hold, or null.
+	 *  This is the only thing that acquires or drops a target. */
+	AActor* UpdateAwareness(float DeltaSeconds);
+	FAHAwarenessTuning MakeAwarenessTuning() const;
+	bool IsWithinViewCone(const AActor* Target) const;
 	void UpdateCombatBehavior(float DeltaSeconds, bool bPerceptionDue = true, bool bTacticalDue = true,
 		bool bMovementDue = true, bool bCombatDue = true, bool bAimDue = true);
 	void UpdateDistantBattlefieldSimulation(float SimulatedDeltaSeconds);
@@ -184,6 +223,14 @@ protected:
 	float NextRepositionTime = 0.0f;
 	float NextSearchTime = 0.0f;
 	bool bHasSeenTarget = false;
+	/** 0 = has not noticed anything, 1 = acquired. */
+	float Awareness = 0.0f;
+	EAHAwarenessState AwarenessState = EAHAwarenessState::Unaware;
+	/** The candidate awareness is currently accumulating against, which is not yet a target. */
+	TWeakObjectPtr<AActor> AwarenessCandidate;
+	/** Set by damage or a heard shot; consumed by the next awareness step. */
+	bool bForcedAlertPending = false;
+	float LastAwarenessStepTime = 0.0f;
 	bool bInvestigating = false;
 	bool bHasCachedTacticalLocation = false;
 	bool bCachedTacticalFallback = false;

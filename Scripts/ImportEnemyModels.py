@@ -29,6 +29,11 @@ SOURCE_ROOT = os.environ.get("AH_ENEMY_SOURCE", os.path.expanduser("~/Downloads/
 # instead of against the external model drop.
 BAKED_ROOT = unreal.Paths.convert_relative_path_to_full(
     os.path.join(unreal.Paths.project_saved_dir(), "CreatureTextureSource"))
+# Files written by Scripts/PrepareCreatureSources.py under Blender: the armoured figure's
+# skinned re-export and its takes, and the quadruped's 4K maps unpacked from its .blend. A
+# path prefixed "prepared:" resolves here.
+PREPARED_ROOT = unreal.Paths.convert_relative_path_to_full(
+    os.path.join(unreal.Paths.project_saved_dir(), "CreatureSource"))
 ENEMY_ROOT = "/Game/Ashes/Enemies"
 MATERIAL_DIR = "/Game/Ashes/Materials"
 MASTER_PATH = MATERIAL_DIR + "/M_EnemyCreature"
@@ -48,19 +53,16 @@ MEL = unreal.MaterialEditingLibrary
 # FBX's own material names against those sets, which is the only way to tell the armoured
 # figure's rock plates from its leather straps - the model ships five materials in one body.
 MODELS = {
-    # The old Pilgrim body. Humanoid alien, ships one idle take, carries a rifle.
-    # Untextured at source (FBX 6000, no image references), so it shades from the tint alone.
+    # The old Pilgrim body. Humanoid alien on a 3ds Max Biped skeleton, and the only archetype
+    # that still carries a rifle. Untextured at source (FBX 6000, no image references), so it
+    # shades from baked procedural maps.
     "Stalker": {
         "fbx": "1/x-com+alien+180601@idel+1-221.FBX",
         "import_animations": True,
         "target_height_cm": 190.0,
-        # Tint is a multiplier over a real albedo now, so it sits near white; the darkness lives
-        # in the baked map. Metallic 0: this is a shell, and a metallic organic body is exactly
-        # what made it read as painted plastic.
-        # Measured, not picked. At tint 0.95 this body sat at luma 0.24 against a road at 0.13 -
-        # twice the scene it stands in - and blue-shifted, because the white per-body fill light
-        # is the dominant term and Erebus is orange. The tint is scaled to bring the body to scene
-        # luminance and warmed to put it in the same light as everything around it.
+        # Tint is a multiplier over a real albedo, so it sits near white; the darkness lives in
+        # the baked map. Metallic 0: this is a shell, and a metallic organic body is exactly what
+        # made it read as painted plastic.
         "tint": (0.44, 0.40, 0.32),
         "roughness": 1.0,
         "metallic": 0.0,
@@ -78,66 +80,83 @@ MODELS = {
         "slot_sets": [],
         "default_set": "body",
     },
-    # The biter. Quadruped, six animation takes, no weapon - it closes and bites.
-    # Its FBX points at ..\..\textures\*.jpg; the same files ship in the GLTF export folder.
+    # The biter. Quadruped, six authored takes, no weapon - it closes and bites.
+    # Its maps come from the .blend rather than the glTF folder beside it. The glTF export packs
+    # metallic and roughness into one image in the glTF convention (occlusion in red, roughness
+    # in green, metal in blue); the roughness sampler reads red, which is 1.0 nearly everywhere,
+    # so the map did nothing and the body had one flat roughness. The .blend still holds the
+    # separate 4096 originals.
     "Hound": {
         "fbx": "2/Alien-Animal_1_5_Baked.fbx",
         "import_animations": True,
         "target_height_cm": 115.0,
-        # 0.32 crushed a real albedo into mud; 0.55 keeps the map's own value range and lets the
-        # roughness map do the work instead of the tint.
-        # This model's albedo map means 0.316 where the baked creature maps mean 0.10, so it needs
-        # roughly a third of their tint to land on the same surface value. It also presents a wide
-        # flat chest straight at the camera, which returns more of the body fill than the others.
-        "tint": (0.14, 0.13, 0.115),
-        "roughness": 0.92,
-        "metallic": 0.0,
+        # This model's albedo means 0.316 where the baked creature maps mean 0.10, so it needs
+        # roughly a third of their tint to land on the same surface value.
+        "tint": (0.105, 0.098, 0.088),
+        "roughness": 0.95,
+        "metallic": 1.0,          # a real metallic map now drives this, so leave the scalar open
         "specular": 0.22,
         "emissive": (1.0, 0.20, 0.12),
         "emissive_strength": 3.5,
         "texture_sets": {
             "body": {
-                "color": "2/ GLTF_SEPARATE/Alien-Animal-Base-Color.jpg",
-                "normal": "2/ GLTF_SEPARATE/Alien-Animal-Base-Nor.jpg",
-                # One image holding metallic and roughness together, as the .mtl describes it.
-                "roughness": "2/ GLTF_SEPARATE/Alien-Animal-Base-Metallic-Alien-Animal-Base-Ro.jpg",
+                "color": "prepared:Hound_Color.png",
+                "normal": "prepared:Hound_Normal.png",
+                "roughness": "prepared:Hound_Roughness.png",
+                "metallic": "prepared:Hound_Metallic.png",
             },
-            "eye": {"emissive": "2/ GLTF_SEPARATE/Alien-Animal_eye.jpg"},
+            "eye": {"emissive": "prepared:Hound_Eye.png"},
         },
         "slot_sets": [("eye", "eye"), ("saliva", "body")],
         "default_set": "body",
     },
-    # Bio-mech crawler. Skinned but ships no takes and no textures, so it holds its bind pose
-    # and shades from the tint.
+    # Bio-mech crawler. Skinned, ships no takes and no textures; both are authored - the takes by
+    # Scripts/AuthorCreatureAnimations.py, the maps by folding occlusion and cavity baked from
+    # this mesh into the procedural carapace so the detail lands in the model's own creases.
     "Spider": {
         "fbx": "4/BioMechSpider.fbx",
         "import_animations": False,
         "target_height_cm": 140.0,
-        "tint": (0.46, 0.47, 0.48),
+        # KNOWN: this body's maps do not reach its surface. Every texture parameter is wired
+        # and every map imports, but the mesh renders perfectly smooth and flat at any tint -
+        # 0.155 gave a uniform dark grey, 0.88 a uniform near-white - which is what a sampler
+        # reading one texel looks like. Its five source meshes each carry a UV layout (Blender
+        # bakes occlusion into them cleanly), so the loss is somewhere in the merge Unreal does
+        # when it folds them into one skeletal mesh. Until that is found, the tint is this
+        # body's whole albedo, so it is set as an albedo rather than as a multiplier: a dark
+        # bio-mech shell that sits just above the road it stands on.
+        "tint": (0.190, 0.196, 0.205),
         "roughness": 1.0,
-        "specular": 0.30,
+        "specular": 0.16,
         # Low, not zero: a bio-mech shell has some conductor in it, but 0.60 made the whole body
         # a mirror with nothing to reflect except fog, which reads as a bright grey blob.
-        "metallic": 0.12,
+        "metallic": 0.06,
         "emissive": (0.25, 0.85, 0.75),
         "emissive_strength": 2.5,
         "texture_sets": {
             "body": {
-                "color": "baked:T_Creature_Carapace_D.png",
+                "color": "baked:T_Spider_Composite_D.png",
                 "normal": "baked:T_Creature_Carapace_N.png",
-                "roughness": "baked:T_Creature_Carapace_R.png",
-                "ao": "baked:T_Creature_Carapace_AO.png",
+                "roughness": "baked:T_Spider_Composite_R.png",
+                "ao": "baked:T_Spider_Composite_AO.png",
             },
         },
         "slot_sets": [],
         "default_set": "body",
     },
-    # The old Warden body. Rigid multi-part armoured figure - no skin cluster anywhere - with an
-    # external metal/leather/rock texture set sitting next to the FBX.
+    # The old Warden body. Re-exported from the .blend beside the model, because the FBX that
+    # ships next to the textures has no skin cluster: Unreal imports it as sixteen rigid parts
+    # named after the mesh pieces, which is a pile of armour plates standing in bind position,
+    # not a figure. The .blend has the same body on a Rigify rig with a hand-keyed walk cycle.
     "Ravager": {
-        "fbx": "3/FBX+only+model/MODEL FBx.fbx",
+        "fbx": "prepared:Ravager_Mesh.fbx",
         "import_animations": False,
-        "rigid": True,
+        "anim_files": {
+            "Walk": "prepared:Ravager_Walk.fbx",
+            "Idle": "prepared:Ravager_Idle.fbx",
+            "Attack": "prepared:Ravager_Attack.fbx",
+            "Death": "prepared:Ravager_Death.fbx",
+        },
         "target_height_cm": 235.0,
         # This body went nearly black in Erebus at 0.30 over already-dark rock and leather.
         "tint": (0.28, 0.26, 0.23),
@@ -183,6 +202,15 @@ def _fail(message):
 
 def _load(path):
     return unreal.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else None
+
+
+def _resolve_source(relative):
+    """Resolve a model-table path against the right root for its prefix."""
+    if relative.startswith("baked:"):
+        return os.path.join(BAKED_ROOT, relative[len("baked:"):])
+    if relative.startswith("prepared:"):
+        return os.path.join(PREPARED_ROOT, relative[len("prepared:"):])
+    return os.path.join(SOURCE_ROOT, relative)
 
 
 def _assets_under(folder):
@@ -322,7 +350,19 @@ def author_creature_master():
     connect(rough_mul, "", rough_lerp, "B")
     connect(use_rough, "", rough_lerp, "Alpha")
 
-    metallic = scalar("Metallic", 0.1, -600, 160)
+    # Metallic gets a map as well as a scalar. The quadruped ships a real metal mask - plating
+    # over hide - and collapsing that to one value is what turned the whole animal into either
+    # rubber or a mirror depending on which way the scalar was pushed.
+    metal_tex = tex_param("MetallicTex", unreal.MaterialSamplerType.SAMPLERTYPE_MASKS, -1120, 200, flat_mask)
+    metal_scalar = scalar("Metallic", 0.1, -1400, 160)
+    use_metal = scalar("UseMetallicTex", 0.0, -1400, 250)
+    metal_mul = expr("MaterialExpressionMultiply", -820, 200)
+    connect(metal_tex, "R", metal_mul, "A")
+    connect(metal_scalar, "", metal_mul, "B")
+    metallic = expr("MaterialExpressionLinearInterpolate", -600, 160)
+    connect(metal_scalar, "", metallic, "A")
+    connect(metal_mul, "", metallic, "B")
+    connect(use_metal, "", metallic, "Alpha")
     # 0.5 is the dielectric default and it is too hot for a body standing under a dedicated fill
     # light: the specular lobe, not the albedo, is what made these read as wet plastic.
     specular = scalar("Specular", 0.32, -600, 230)
@@ -439,7 +479,7 @@ def _build_options(spec):
 
 
 def import_model(name, spec):
-    source = os.path.join(SOURCE_ROOT, spec["fbx"])
+    source = _resolve_source(spec["fbx"])
     if not os.path.isfile(source):
         _fail("source missing for %s: %s" % (name, source))
         return None
@@ -498,8 +538,65 @@ def import_model(name, spec):
 
     if spec.get("import_animations"):
         import_animations(name, spec, body, destination)
+    if spec.get("anim_files"):
+        import_animation_files(name, spec, body, destination)
     _log("%s imported %d object(s) from %s" % (name, len(imported), spec["fbx"]))
     return body
+
+
+def import_animation_files(name, spec, mesh, destination):
+    """One take per file, for a model whose animation was re-exported alongside its mesh.
+
+    Separate files rather than one multi-take FBX because Unreal's importer only reliably picks
+    up the first take from a Blender export, and a silently dropped take here is a creature that
+    never bites.
+    """
+    skeleton = mesh.get_editor_property("skeleton")
+    if not skeleton:
+        _fail("%s has no skeleton to import takes against" % name)
+        return []
+
+    options = unreal.FbxImportUI()
+    options.set_editor_property("import_mesh", False)
+    options.set_editor_property("import_as_skeletal", True)
+    options.set_editor_property("import_materials", False)
+    options.set_editor_property("import_textures", False)
+    options.set_editor_property("import_animations", True)
+    options.set_editor_property("skeleton", skeleton)
+    options.set_editor_property("mesh_type_to_import", unreal.FBXImportType.FBXIT_ANIMATION)
+    anim_data = options.get_editor_property("anim_sequence_import_data")
+    anim_data.set_editor_property("import_bone_tracks", True)
+    anim_data.set_editor_property("remove_redundant_keys", True)
+    anim_data.set_editor_property("convert_scene", True)
+
+    written = []
+    for take, relative in sorted(spec["anim_files"].items()):
+        source = _resolve_source(relative)
+        if not os.path.isfile(source):
+            raise RuntimeError("%s take %s missing: %s (run Scripts/PrepareCreatureSources.py)"
+                               % (name, take, source))
+        asset_name = "AS_%s_%s" % (name, take)
+        full = "%s/%s" % (destination, asset_name)
+        task = unreal.AssetImportTask()
+        task.set_editor_property("filename", source)
+        task.set_editor_property("destination_path", destination)
+        task.set_editor_property("destination_name", asset_name)
+        task.set_editor_property("automated", True)
+        task.set_editor_property("replace_existing", True)
+        task.set_editor_property("save", False)
+        task.set_editor_property("options", options)
+        TOOLS.import_asset_tasks([task])
+        clip = _load(full)
+        if not isinstance(clip, unreal.AnimSequence):
+            raise RuntimeError("%s take %s did not import as an AnimSequence" % (name, take))
+        # A take that arrives with a single key is a take that did not arrive: the exporter
+        # wrote the file, the importer accepted it, and the body stands still.
+        if clip.get_play_length() < 0.1:
+            raise RuntimeError("%s take %s is %.3fs long" % (name, take, clip.get_play_length()))
+        unreal.EditorAssetLibrary.save_asset(full, only_if_is_dirty=False)
+        written.append(full)
+        _log("%s take %s -> %s (%.2fs)" % (name, take, asset_name, clip.get_play_length()))
+    return written
 
 
 def import_animations(name, spec, mesh, destination):
@@ -531,7 +628,7 @@ def import_animations(name, spec, mesh, destination):
     anim_data.set_editor_property("convert_scene", True)
 
     task = unreal.AssetImportTask()
-    task.set_editor_property("filename", os.path.join(SOURCE_ROOT, spec["fbx"]))
+    task.set_editor_property("filename", _resolve_source(spec["fbx"]))
     task.set_editor_property("destination_path", destination)
     task.set_editor_property("destination_name", "A_" + name)
     task.set_editor_property("automated", True)
@@ -558,8 +655,7 @@ def import_textures(name, spec):
     for set_name, maps in (spec.get("texture_sets") or {}).items():
         resolved = {}
         for kind, relative in maps.items():
-            source = (os.path.join(BAKED_ROOT, relative[len("baked:"):]) if relative.startswith("baked:")
-                      else os.path.join(SOURCE_ROOT, relative))
+            source = _resolve_source(relative)
             if not os.path.isfile(source):
                 _fail("%s texture missing: %s" % (name, source))
                 continue
@@ -626,6 +722,7 @@ def build_material_instances(name, spec, mesh, texture_sets):
         "NormalTex": unreal.TextureCompressionSettings.TC_NORMALMAP,
         "DetailNormalTex": unreal.TextureCompressionSettings.TC_NORMALMAP,
         "RoughnessTex": unreal.TextureCompressionSettings.TC_MASKS,
+        "MetallicTex": unreal.TextureCompressionSettings.TC_MASKS,
         "AOTex": unreal.TextureCompressionSettings.TC_MASKS,
     }
 
@@ -683,8 +780,12 @@ def build_material_instances(name, spec, mesh, texture_sets):
         MEL.set_material_instance_scalar_parameter_value(instance, "UseRoughnessTex", 1.0 if rough else 0.0)
         if rough:
             set_texture(instance, "RoughnessTex", rough)
+        metal = None if is_glow_slot else (_load(maps["metallic"]) if maps.get("metallic") else None)
         MEL.set_material_instance_scalar_parameter_value(
             instance, "Metallic", 0.0 if is_glow_slot else spec["metallic"])
+        MEL.set_material_instance_scalar_parameter_value(instance, "UseMetallicTex", 1.0 if metal else 0.0)
+        if metal:
+            set_texture(instance, "MetallicTex", metal)
         MEL.set_material_instance_scalar_parameter_value(
             instance, "Specular", spec.get("specular", 0.28))
 
@@ -822,8 +923,11 @@ def main():
     # drop that is missing one FBX would otherwise destroy that archetype's content, rewrite the
     # manifest without it, and exit 0 - with the failure only surfacing in the next script, after
     # the assets are already gone.
-    missing = [spec["fbx"] for spec in MODELS.values()
-               if not os.path.isfile(os.path.join(SOURCE_ROOT, spec["fbx"]))]
+    missing = []
+    for spec in MODELS.values():
+        for relative in [spec["fbx"]] + list((spec.get("anim_files") or {}).values()):
+            if not os.path.isfile(_resolve_source(relative)):
+                missing.append(relative)
     if not os.path.isdir(BAKED_ROOT):
         raise RuntimeError("run Scripts/BakeCreatureTextures.py first: " + BAKED_ROOT)
     if missing:
