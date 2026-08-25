@@ -1931,13 +1931,24 @@ void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotat
 	// can, because a fixed screen-space ROI over a creeping vantage measures the vantage rather
 	// than the thing under test. With movement disabled the same measurement reads -0.17, i.e.
 	// the wall is now stabler than the codec noise floor and the vantage is genuinely static.
-	if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+	// OPT-IN, via -ArtFreeze. Freezing changes what the review camera SEES: without it the
+	// pawn falls and every acceptance pose ends up at the grounded eye height (Z=112.21 for
+	// all of them, whatever -ArtCam asked for), and every historical baseline in
+	// Saved/Acceptance was captured that way. Freezing makes -ArtCam's Z actually take
+	// effect - shot1 went 112.21 -> 364.06 - which is more correct but silently re-frames
+	// every comparison shot. A motion capture needs the static vantage; the stills gate
+	// needs continuity with its baselines. So the stills keep the old behaviour and only
+	// CaptureErebusMotion.py asks for the freeze.
+	if (FParse::Param(FCommandLine::Get(), TEXT("ArtFreeze")))
 	{
-		if (UCharacterMovementComponent* Movement = Player->GetCharacterMovement())
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
 		{
-			Movement->StopMovementImmediately();
-			Movement->GravityScale = 0.0f;
-			Movement->DisableMovement();
+			if (UCharacterMovementComponent* Movement = Player->GetCharacterMovement())
+			{
+				Movement->StopMovementImmediately();
+				Movement->GravityScale = 0.0f;
+				Movement->DisableMovement();
+			}
 		}
 	}
 	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding

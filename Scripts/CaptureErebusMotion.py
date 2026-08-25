@@ -44,6 +44,9 @@ SAVE.unlink(missing_ok=True)
 
 argv = [str(EXE), "-freshchapter", f"-ArtTarget={TARGET}",
         "-ArtCam=" + ",".join(str(v) for v in POSE),
+        # Motion capture needs a vantage that cannot creep; the stills gate deliberately
+        # does not pass this, so its baselines stay comparable. See HoldReviewPose.
+        "-ArtFreeze",
         "-windowed", "-ResX=1280", "-ResY=720", "-WinX=100", "-WinY=100",
         "-stdout", "-FullStdOutLogOutput"]
 with open(log_path, "wb") as log:
