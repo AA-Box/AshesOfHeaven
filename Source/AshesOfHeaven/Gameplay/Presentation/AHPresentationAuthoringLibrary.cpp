@@ -550,6 +550,13 @@ namespace
 		float GravityZ = 0.0f;
 		float Drag = 1.0f;
 		float ShapeRadius = 30.0f;
+		// Per-particle quad roll, degrees. Fountain exposes InitializeParticle's
+		// "Sprite Rotation Angle Min/Max" as rapid-iteration parameters, so this
+		// costs nothing but the two matcher branches below. Smoke wants it; fire
+		// must NOT have it, because rolling a flame sprite rolls the direction its
+		// noise pans and the licks stop pointing up.
+		float RotationMin = 0.0f;
+		float RotationMax = 0.0f;
 		FLinearColor Color = FLinearColor::White;
 	};
 
@@ -692,6 +699,14 @@ namespace
 			{
 				bSet = SetRapidIterationFloat(Store, Var, Recipe.ShapeRadius);
 			}
+			else if (Input == TEXT("spriterotationanglemin"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.RotationMin);
+			}
+			else if (Input == TEXT("spriterotationanglemax"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.RotationMax);
+			}
 			if (bSet)
 			{
 				++Applied;
@@ -719,19 +734,24 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Fire.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Fire.bLocalSpace = true;
 		Fire.Bounds = 280.0f;
-		Fire.SpawnRate = 70.0f;
-		Fire.LifeMin = 0.30f; Fire.LifeMax = 0.65f;
-		// Real fire licks: the 6-14uu sprites of the last pass were matchheads,
+		// A flame is a CONTINUOUS body. 70/s at half-second lives left ~35 particles
+		// spread over 1.5m, which is why the last pass read as orange popcorn with
+		// gaps between every puff. Density is the fix that no material can fake.
+		Fire.SpawnRate = 260.0f;
+		Fire.LifeMin = 0.32f; Fire.LifeMax = 0.72f;
+		// Real fire licks: the 6-14uu sprites of an earlier pass were matchheads,
 		// invisible past 3m (visual gate 4.8 - fires must read as fires).
-		Fire.SizeMin = 16.0f; Fire.SizeMax = 38.0f;
-		Fire.VelMin = 30.0f; Fire.VelMax = 70.0f;
-		// Wide cone + wide shape = a burning pool that hugs its source instead of
-		// the vertical flame tornado the tight jet produced next to the camera.
-		Fire.ConeAngle = 35.0f;
+		Fire.SizeMin = 20.0f; Fire.SizeMax = 46.0f;
+		Fire.VelMin = 50.0f; Fire.VelMax = 105.0f;
+		// A 35-degree cone over a 40uu pool fanned the flame out sideways and read as
+		// a pile of burning leaves. Real flame is a column: narrow cone, tight base.
+		Fire.ConeAngle = 22.0f;
 		Fire.GravityZ = 0.0f;
-		Fire.Drag = 1.2f;
-		Fire.ShapeRadius = 40.0f;
-		Fire.Color = FLinearColor(5.2f, 1.8f, 0.42f, 1.0f);
+		Fire.Drag = 1.6f;
+		Fire.ShapeRadius = 26.0f;
+		// Near-white multiplier: M_AH_FireSprite owns the hot->orange->dying-red
+		// ramp now, so a saturated ParticleColor here would tint the ramp twice.
+		Fire.Color = FLinearColor(3.4f, 2.8f, 2.2f, 1.0f);
 		Recipes.Add(Fire);
 
 		FAHNearVFXRecipe Wreck;
@@ -739,14 +759,14 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Wreck.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Wreck.bLocalSpace = true;
 		Wreck.Bounds = 520.0f;
-		Wreck.SpawnRate = 90.0f;
-		Wreck.LifeMin = 0.5f; Wreck.LifeMax = 1.1f;
-		Wreck.SizeMin = 34.0f; Wreck.SizeMax = 80.0f;
-		Wreck.VelMin = 90.0f; Wreck.VelMax = 210.0f;
-		Wreck.ConeAngle = 24.0f;
-		Wreck.Drag = 1.0f;
-		Wreck.ShapeRadius = 60.0f;
-		Wreck.Color = FLinearColor(4.8f, 1.5f, 0.36f, 1.0f);
+		Wreck.SpawnRate = 320.0f;
+		Wreck.LifeMin = 0.42f; Wreck.LifeMax = 0.95f;
+		Wreck.SizeMin = 40.0f; Wreck.SizeMax = 110.0f;
+		Wreck.VelMin = 100.0f; Wreck.VelMax = 230.0f;
+		Wreck.ConeAngle = 18.0f;
+		Wreck.Drag = 1.3f;
+		Wreck.ShapeRadius = 55.0f;
+		Wreck.Color = FLinearColor(3.5f, 2.9f, 2.3f, 1.0f);
 		Recipes.Add(Wreck);
 
 		FAHNearVFXRecipe Embers;
@@ -754,9 +774,9 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Embers.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_FireSprite.M_AH_FireSprite");
 		Embers.bLocalSpace = false;
 		Embers.Bounds = 520.0f;
-		Embers.SpawnRate = 4.0f;
+		Embers.SpawnRate = 14.0f;
 		Embers.LifeMin = 0.8f; Embers.LifeMax = 1.8f;
-		Embers.SizeMin = 1.0f; Embers.SizeMax = 2.2f;
+		Embers.SizeMin = 1.4f; Embers.SizeMax = 3.4f;
 		// Slower, wider drift: the old 200uu/s jets stacked embers into a sourceless
 		// vertical string over every fire in the comparison frame.
 		Embers.VelMin = 50.0f; Embers.VelMax = 120.0f;
@@ -764,7 +784,7 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Embers.GravityZ = -20.0f;
 		Embers.Drag = 0.6f;
 		Embers.ShapeRadius = 60.0f;
-		Embers.Color = FLinearColor(5.0f, 1.8f, 0.5f, 1.0f);
+		Embers.Color = FLinearColor(2.2f, 1.7f, 1.3f, 1.0f);
 		Recipes.Add(Embers);
 
 		FAHNearVFXRecipe Smoke;
@@ -772,14 +792,20 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Smoke.MaterialPath = TEXT("/Game/Ashes/Materials/M_AH_SmokeSoft.M_AH_SmokeSoft");
 		Smoke.bLocalSpace = false;
 		Smoke.Bounds = 700.0f;
-		Smoke.SpawnRate = 12.0f;
-		Smoke.LifeMin = 3.0f; Smoke.LifeMax = 6.0f;
-		Smoke.SizeMin = 90.0f; Smoke.SizeMax = 220.0f;
-		Smoke.VelMin = 55.0f; Smoke.VelMax = 110.0f;
-		Smoke.ConeAngle = 14.0f;
+		Smoke.SpawnRate = 34.0f;
+		Smoke.LifeMin = 3.5f; Smoke.LifeMax = 7.5f;
+		// Sizes are the FINAL size: M_AH_SmokeSoft grows the visible mass inside the
+		// quad from 15% to 50% of it over life, so a puff billows out instead of
+		// popping in as a full-size disc.
+		Smoke.SizeMin = 170.0f; Smoke.SizeMax = 420.0f;
+		Smoke.VelMin = 60.0f; Smoke.VelMax = 130.0f;
+		Smoke.ConeAngle = 22.0f;
 		Smoke.Drag = 0.8f;
 		Smoke.ShapeRadius = 45.0f;
-		Smoke.Color = FLinearColor(0.055f, 0.055f, 0.06f, 0.55f);
+		// The smoke master is LIT now, so ParticleColor is an albedo tint, not the
+		// final colour - a near-black tint here would kill all light response.
+		Smoke.RotationMin = 0.0f; Smoke.RotationMax = 360.0f;
+		Smoke.Color = FLinearColor(1.0f, 1.0f, 1.0f, 0.62f);
 		Recipes.Add(Smoke);
 
 		FAHNearVFXRecipe Column;
@@ -789,14 +815,18 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		// The reference's sky is carried by massive dark plumes; the previous thin
 		// wisps disappeared entirely at 60m+ in every packaged capture.
 		Column.Bounds = 9000.0f;
-		Column.SpawnRate = 24.0f;
+		// Rate is deliberately LOW for the size: overlapping translucent 2000uu quads
+		// accumulate alpha, and a few hundred of them on one column piled up into a
+		// solid egg brighter than the sky. A plume needs depth, not opacity.
+		Column.SpawnRate = 18.0f;
 		Column.LifeMin = 10.0f; Column.LifeMax = 16.0f;
-		Column.SizeMin = 700.0f; Column.SizeMax = 1500.0f;
+		Column.SizeMin = 900.0f; Column.SizeMax = 2000.0f;
 		Column.VelMin = 240.0f; Column.VelMax = 420.0f;
 		Column.ConeAngle = 11.0f;
 		Column.Drag = 0.4f;
 		Column.ShapeRadius = 300.0f;
-		Column.Color = FLinearColor(0.045f, 0.045f, 0.050f, 0.9f);
+		Column.RotationMin = 0.0f; Column.RotationMax = 360.0f;
+		Column.Color = FLinearColor(1.0f, 1.0f, 1.0f, 0.62f);
 		Recipes.Add(Column);
 
 		FAHNearVFXRecipe Ash;
@@ -806,13 +836,14 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Ash.Bounds = 1400.0f;
 		Ash.SpawnRate = 26.0f;
 		Ash.LifeMin = 4.0f; Ash.LifeMax = 8.0f;
-		Ash.SizeMin = 1.8f; Ash.SizeMax = 4.5f;
+		Ash.SizeMin = 2.2f; Ash.SizeMax = 5.0f;
 		Ash.VelMin = 20.0f; Ash.VelMax = 50.0f;
 		Ash.ConeAngle = 70.0f;
 		Ash.GravityZ = -28.0f;
 		Ash.Drag = 0.5f;
 		Ash.ShapeRadius = 900.0f;
-		Ash.Color = FLinearColor(0.020f, 0.020f, 0.022f, 0.55f);
+		Ash.RotationMin = 0.0f; Ash.RotationMax = 360.0f;
+		Ash.Color = FLinearColor(0.30f, 0.29f, 0.27f, 0.50f);
 		Recipes.Add(Ash);
 	}
 
@@ -864,7 +895,9 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 			EmitterData->CalculateBoundsMode = ENiagaraEmitterCalculateBoundMode::Fixed;
 			EmitterData->FixedBounds = FBox(FVector(-Recipe.Bounds), FVector(Recipe.Bounds));
 			EmitterData->AllocationMode = EParticleAllocationMode::ManualEstimate;
-			EmitterData->PreAllocationCount = 128;
+			// Fire now runs 260-320 spawns/s against ~0.7s lives; a 128 estimate
+			// would force a realloc every frame on the densest emitters.
+			EmitterData->PreAllocationCount = 384;
 
 			UMaterialInterface* EffectMaterial = LoadObject<UMaterialInterface>(nullptr, Recipe.MaterialPath);
 			for (UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
