@@ -49,6 +49,7 @@ ARCHETYPES = {
         "threat": 1.0,
         "currency": 10,
         "marker_color": (0.55, 0.08, 0.85, 1.0),
+        "voice": "Alien",
         "ranged": {
             "sight_range": 2400.0,
             "accuracy": 0.68,
@@ -73,6 +74,10 @@ ARCHETYPES = {
         "threat": 4.0,
         "currency": 35,
         "marker_color": (0.85, 0.22, 0.10, 1.0),
+        "voice": "Robo",
+        # The heavy body gets the heavy bank, so the Revenant is audibly a different threat from
+        # the skirmishers before the player has picked it out of the fog.
+        "shot_cue": "SC_SciFi_LazerHeavy",
         "ranged": {
             "sight_range": 2800.0,
             "accuracy": 0.78,
@@ -102,6 +107,7 @@ ARCHETYPES = {
         "threat": 1.5,
         "currency": 8,
         "marker_color": (0.95, 0.30, 0.15, 1.0),
+        "voice": "Alien",
         # A pack of these is the pressure that makes the player stop holding a firing line. Fast,
         # fragile, and 22 damage every 1.15s - two hounds in contact is roughly a rifle's DPS,
         # which is survivable long enough to back off and shoot them.
@@ -129,6 +135,7 @@ ARCHETYPES = {
         "threat": 2.5,
         "currency": 18,
         "marker_color": (0.20, 0.80, 0.70, 1.0),
+        "voice": "Robo",
         "melee": {
             "damage": 34.0,
             "range": 210.0,
@@ -255,6 +262,8 @@ def _author_enemy(name, spec, manifest):
         entry, spec["target_height_cm"], spec["capsule_radius"])
     melee = spec.get("melee")
     ranged = spec.get("ranged")
+    voice = spec["voice"]
+    shot_cue = spec.get("shot_cue", "SC_SciFi_Lazer")
 
     definition = _create_or_load("DA_Enemy_" + name, ENEMY_PATH, unreal.AHEnemyDefinition)
     definition.set_editor_property("enemy_id", name)
@@ -321,7 +330,7 @@ def _author_enemy(name, spec, manifest):
             weapon_material=_load("/Game/Weapons/Rifle/Materials/M_Rifle.M_Rifle"),
             capacitor_mesh=_load("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"),
             capacitor_material=_load("/Game/Ashes/Materials/M_VeilObsidian.M_VeilObsidian"),
-            shot_sound=_load("/Game/Ashes/Audio/Weapons/M91/SC_M91_Fire.SC_M91_Fire"),
+            shot_sound=_load("/Game/Ashes/Audio/Cues/%s.%s" % (shot_cue, shot_cue)),
             reload_sound=_load("/Game/Ashes/Audio/Weapons/M91/SC_M91_Reload.SC_M91_Reload"),
             empty_sound=_load("/Game/Ashes/Audio/Weapons/M91/SC_M91_Empty.SC_M91_Empty"),
             impact_sound=_load("/Game/Ashes/Audio/Weapons/M91/SC_M91_Impact.SC_M91_Impact"),
@@ -374,13 +383,17 @@ def _author_enemy(name, spec, manifest):
         materials=[_load("/Game/Ashes/Materials/Instances/MI_VeilObsidian_Black.MI_VeilObsidian_Black")],
     )
 
+    # Voice per archetype, not per faction. The roster is two organic bodies and two mechanical
+    # ones, and the biters are the archetypes the player most needs to identify by ear - a hound
+    # closing from behind is a sound before it is a silhouette. Armour is still the shared cue:
+    # it is the plate reacting, not the creature.
     _set_struct(
         definition,
         "audio",
         voice_palette=_load("/Game/Ashes/Audio/DA_AudioPalette_Veil.DA_AudioPalette_Veil"),
-        hurt_sound=_load("/Game/Ashes/Audio/Cues/SC_Combat_Hurt.SC_Combat_Hurt"),
+        hurt_sound=_load("/Game/Ashes/Audio/Cues/SC_SciFi_%sHurt.SC_SciFi_%sHurt" % (voice, voice)),
         armor_damage_sound=_load("/Game/Ashes/Audio/Cues/SC_Combat_Armor.SC_Combat_Armor"),
-        death_sound=_load("/Game/Ashes/Audio/Cues/SC_Combat_Death.SC_Combat_Death"),
+        death_sound=_load("/Game/Ashes/Audio/Cues/SC_SciFi_%sDeath.SC_SciFi_%sDeath" % (voice, voice)),
     )
     _set_struct(
         definition,

@@ -214,7 +214,7 @@ def import_shared_textures():
     texture.set_editor_property("srgb", False)
     texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
     texture.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_CHARACTER_NORMAL_MAP)
-    unreal.EditorAssetLibrary.save_asset(full)
+    unreal.EditorAssetLibrary.save_asset(full, only_if_is_dirty=False)
     _log("imported shared " + full)
     return full
 
@@ -398,7 +398,7 @@ def author_creature_master():
     # Without this the body renders as the engine default grey and only logs a warning.
     material.set_editor_property("used_with_skeletal_mesh", True)
     MEL.recompile_material(material)
-    unreal.EditorAssetLibrary.save_asset(MASTER_PATH)
+    unreal.EditorAssetLibrary.save_asset(MASTER_PATH, only_if_is_dirty=False)
     _log("authored master " + MASTER_PATH)
     return material
 
@@ -589,7 +589,7 @@ def import_textures(name, spec):
             else:
                 texture.set_editor_property("srgb", True)
                 texture.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_CHARACTER)
-            unreal.EditorAssetLibrary.save_asset(full)
+            unreal.EditorAssetLibrary.save_asset(full, only_if_is_dirty=False)
             resolved[kind] = full
         sets[set_name] = resolved
     return sets
@@ -695,7 +695,7 @@ def build_material_instances(name, spec, mesh, texture_sets):
         if is_glow_slot and emissive:
             set_texture(instance, "EmissiveMask", emissive)
 
-        unreal.EditorAssetLibrary.save_asset(full)
+        unreal.EditorAssetLibrary.save_asset(full, only_if_is_dirty=False)
         # MaterialInterface, not Material: the FBX importer's translations arrive as
         # MaterialInstanceConstant parented to the engine's FBXLegacyPhongSurfaceMaterial, so an
         # isinstance check against Material never matched and they were left behind to cook.
@@ -758,7 +758,7 @@ def ensure_physics_asset(name, mesh):
         unreal.EditorAssetLibrary.rename_asset(created_path, full)
         physics = _load(full) or physics
     subsystem.assign_physics_asset(mesh, physics)
-    unreal.EditorAssetLibrary.save_asset(full)
+    unreal.EditorAssetLibrary.save_asset(full, only_if_is_dirty=False)
     return full
 
 
