@@ -30,10 +30,45 @@ namespace AHEnemyAssets
 	}
 }
 
+bool FAHCreatureAnimationSet::IsEmpty() const
+{
+	return Idle.IsNull() && Walk.IsNull() && Run.IsNull() && Attack.IsNull() && Death.IsNull();
+}
+
+EAHCreatureAnimState AHCreatureLocomotion::SelectLocomotionState(
+	const FAHCreatureAnimationSet& Set, float GroundSpeed, EAHCreatureAnimState Current)
+{
+	// A fifth either side of each threshold. Enemies spend most of a fight accelerating and
+	// braking, so they sit on these boundaries constantly; a bare comparison flickers there.
+	constexpr float Band = 0.2f;
+	const bool bWasRunning = (Current == EAHCreatureAnimState::Run);
+	const bool bWasMoving = bWasRunning || (Current == EAHCreatureAnimState::Walk);
+
+	const float WalkThreshold = FMath::Max(1.0f, Set.WalkSpeed) * (bWasMoving ? 1.0f - Band : 1.0f + Band);
+	const float RunThreshold = FMath::Max(WalkThreshold,
+		Set.RunSpeed * (bWasRunning ? 1.0f - Band : 1.0f + Band));
+
+	if (GroundSpeed < WalkThreshold)
+	{
+		return EAHCreatureAnimState::Idle;
+	}
+	if (GroundSpeed >= RunThreshold && !Set.Run.IsNull())
+	{
+		return EAHCreatureAnimState::Run;
+	}
+	// A body that has only one movement take uses it for every speed rather than standing still.
+	if (!Set.Walk.IsNull())
+	{
+		return EAHCreatureAnimState::Walk;
+	}
+	return Set.Run.IsNull() ? EAHCreatureAnimState::Idle : EAHCreatureAnimState::Run;
+}
+
 bool FAHEnemyVisualPayload::HasAnyAssetOverride() const
 {
 	return !SkeletalMesh.IsNull() || !AnimClass.IsNull() || !AnimationSet.IsEmpty()
-		|| !PhysicsAsset.IsNull() || !Materials.IsEmpty();
+		|| !PhysicsAsset.IsNull() || !Materials.IsEmpty() || bOverrideMeshTransform
+		|| !Locomotion.IsEmpty();
 }
 
 void FAHEnemyVisualPayload::OverlayOnto(FAHEnemyVisualPayload& Target) const
@@ -41,9 +76,16 @@ void FAHEnemyVisualPayload::OverlayOnto(FAHEnemyVisualPayload& Target) const
 	if (!SkeletalMesh.IsNull()) Target.SkeletalMesh = SkeletalMesh;
 	if (!AnimClass.IsNull()) Target.AnimClass = AnimClass;
 	if (!AnimationSet.IsEmpty()) Target.AnimationSet = AnimationSet;
+	if (!Locomotion.IsEmpty()) Target.Locomotion = Locomotion;
 	if (!PhysicsAsset.IsNull()) Target.PhysicsAsset = PhysicsAsset;
 	if (!Materials.IsEmpty()) Target.Materials = Materials;
 	if (!MeshScale.Equals(FVector::OneVector)) Target.MeshScale = MeshScale;
+	if (bOverrideMeshTransform)
+	{
+		Target.MeshOffset = MeshOffset;
+		Target.MeshRotation = MeshRotation;
+		Target.bOverrideMeshTransform = true;
+	}
 }
 
 bool FAHEnemyAudioPayload::HasAnyAssetOverride() const
@@ -113,9 +155,21 @@ EDataValidationResult UAHEnemyDefinition::IsDataValid(FDataValidationContext& Co
 	if (EnemyId.IsNone()) Error(TEXT("EnemyId must be set so the Primary Asset ID survives asset renames."));
 	if (CombatClass.IsNull()) Error(TEXT("CombatClass is required in the Core bundle."));
 	if (Visuals.SkeletalMesh.IsNull()) Error(TEXT("A base skeletal mesh is required in the Visual bundle."));
-	if (Visuals.AnimClass.IsNull()) Error(TEXT("A base animation class is required in the Visual bundle."));
+	// Creature archetypes ship their own skeleton, so there is no mannequin AnimBP to point at and
+	// AAHCombatantCharacter falls back to looping the first clip in AnimationSet. A body with
+	// neither still renders, so this is a warning about a bind-pose enemy, not a broken asset.
+	if (Visuals.AnimClass.IsNull() && Visuals.AnimationSet.IsEmpty() && Visuals.Locomotion.IsEmpty())
+	{
+		Context.AddWarning(FText::FromString(FString::Printf(
+			TEXT("%s has no animation class and no animation set; it will spawn in its bind pose."),
+			*EnemyId.ToString())));
+	}
 	if (Visuals.PhysicsAsset.IsNull()) Error(TEXT("A physics asset is required for hit zones and ragdolls."));
-	if (Loadout.WeaponClasses.IsEmpty()) Error(TEXT("At least one soft weapon class is required in the Core bundle."));
+	// A melee archetype is weaponless on purpose - that is what bMeleeOnly declares.
+	if (!AISettings.bMeleeOnly && Loadout.WeaponClasses.IsEmpty())
+	{
+		Error(TEXT("At least one soft weapon class is required in the Core bundle unless AISettings.bMeleeOnly is set."));
+	}
 
 	TArray<FSoftObjectPath> SoftReferences;
 	UAssetManager::Get().ExtractSoftObjectPaths(GetClass(), this, SoftReferences);

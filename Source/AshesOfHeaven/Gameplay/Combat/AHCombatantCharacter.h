@@ -75,6 +75,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance", meta=(ClampMin=0.0))
 	float BodyFillIntensity = 15.0f;
 
+	/** Colour of that fill. White is what made every body look pasted into the shot rather than
+	 *  standing in it: Erebus is lit by an orange sun through orange fog and every surface in the
+	 *  scene is warm, so a neutral key on the one object that carries its own light reads as a
+	 *  cool cut-out. Measured against the frame - road and wall sit around R>G>B, and the bodies
+	 *  came back B>G>R until this matched them. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance")
+	FLinearColor BodyFillColor = FLinearColor(1.0f, 0.82f, 0.62f);
+
+	/** Clips this body plays, taken from its archetype. Empty on the mannequin combatants,
+	 *  which still run their own AnimBlueprint. */
+	UPROPERTY(Transient)
+	FAHCreatureAnimationSet CreatureAnimations;
+
+	UPROPERTY(Transient)
+	EAHCreatureAnimState CreatureAnimState = EAHCreatureAnimState::Idle;
+
+	/** Seconds left of a one-shot take before locomotion resumes. */
+	float CreatureAnimHoldSeconds = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	EAHFaction Faction = EAHFaction::Neutral;
 
@@ -200,6 +219,13 @@ public:
 
 	virtual void OnDeathStarted();
 
+	/** Plays the archetype's attack take over the locomotion loop. Called from the combat
+	 *  component so every melee path telegraphs, not only the one an AI controller drives. */
+	void PlayCreatureAttack();
+
+	const FAHCreatureAnimationSet& GetCreatureAnimations() const { return CreatureAnimations; }
+	EAHCreatureAnimState GetCreatureAnimState() const { return CreatureAnimState; }
+
 	UAHHealthComponent* GetHealthComponent() const { return HealthComponent; }
 	UAHArmorComponent* GetArmorComponent() const { return ArmorComponent; }
 	UAHCombatComponent* GetCombatComponent() const { return CombatComponent; }
@@ -236,6 +262,14 @@ protected:
 	float CorpseLifeSpan = 30.0f;
 
 	void ApplyFactionAppearance();
+	/** Places and dims the fill relative to the body it is lighting. A fixed offset points a
+	 *  point light at the chest of a two-metre soldier and buries it inside a hound's back,
+	 *  where inverse-square turns the same intensity into a blowout. */
+	void ApplyBodyFillLightToCapsule();
+	/** Swaps the single-node clip when the body changes gait, and holds one-shot takes to the
+	 *  end. Called every tick; cheap when nothing changes because the swap is state-guarded. */
+	void UpdateCreatureAnimation(float DeltaSeconds);
+	void PlayCreatureClip(EAHCreatureAnimState State, bool bLooping);
 	/** Every body material goes through here: both the faction skins and the definition-driven
 	 * visuals, so the paint cannot be right on one path and stock grey on the other. */
 	void ApplyBodyPaint(USkeletalMeshComponent* Body, int32 SlotIndex, UMaterialInterface* Source);
