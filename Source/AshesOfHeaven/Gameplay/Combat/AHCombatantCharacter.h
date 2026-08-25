@@ -75,6 +75,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance", meta=(ClampMin=0.0))
 	float BodyFillIntensity = 15.0f;
 
+	/** Colour of that fill. White is what made every body look pasted into the shot rather than
+	 *  standing in it: Erebus is lit by an orange sun through orange fog and every surface in the
+	 *  scene is warm, so a neutral key on the one object that carries its own light reads as a
+	 *  cool cut-out. Measured against the frame - road and wall sit around R>G>B, and the bodies
+	 *  came back B>G>R until this matched them. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance")
+	FLinearColor BodyFillColor = FLinearColor(1.0f, 0.82f, 0.62f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat")
 	EAHFaction Faction = EAHFaction::Neutral;
 

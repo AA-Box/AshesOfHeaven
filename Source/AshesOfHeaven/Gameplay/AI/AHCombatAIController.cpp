@@ -42,6 +42,16 @@ void AAHCombatAIController::ApplyEnemySettings(const FAHEnemyAISettings& Setting
 	BurstRounds = Settings.BurstRounds;
 	MinBurstPause = Settings.MinBurstPause;
 	MaxBurstPause = Settings.MaxBurstPause;
+	bMeleeOnly = Settings.bMeleeOnly;
+	MeleeReach = Settings.MeleeRange;
+	if (bMeleeOnly)
+	{
+		// A biter that respects a 650uu minimum range never reaches anything. Its engagement
+		// distances are its own reach, whatever the shared archetype defaults happened to say.
+		PreferredEngagementRange = MeleeReach;
+		MinimumEngagementRange = 0.0f;
+		bPreferCover = false;
+	}
 	if (AIPerception)
 	{
 		if (UAISenseConfig_Sight* Sight = AIPerception->GetSenseConfig<UAISenseConfig_Sight>())
@@ -306,15 +316,72 @@ void AAHCombatAIController::MoveWithFallback(const FVector& Destination, float D
 	// wrong loop. One request per goal, left alone until the goal actually moves or completes.
 	const bool bGoalMoved = !CurrentMoveGoal.Equals(Destination, 150.0f);
 	const bool bIdle = GetMoveStatus() == EPathFollowingStatus::Idle;
-	if (bForceNewRequest || bGoalMoved || bIdle)
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	// The idle case is a retry, and a retry that cannot succeed must not run every frame. A target
+	// standing off the navmesh returns a partial path that completes short of it, so the follower
+	// goes Idle with the goal still out of reach - and a melee chaser re-requests on the very next
+	// frame, at Near tier, which is a synchronous A* per creature per frame for the whole fight.
+	// ponytail: fixed 0.4s backoff. Make it adaptive only if traces still show idle thrash.
+	if (bForceNewRequest || bGoalMoved || (bIdle && Now >= NextMoveRetryTime))
 	{
 		AH_SCOPE_PERFORMANCE(Movement, this);
+		if (bIdle)
+		{
+			NextMoveRetryTime = Now + 0.4f;
+		}
 		CurrentMoveGoal = Destination;
 		MoveToLocation(Destination, 80.0f, true);
 	}
 
 	// Path following steers; this only keeps the body pointed where it is going.
 	FaceLocation(Destination, DeltaSeconds);
+}
+
+void AAHCombatAIController::UpdateMeleeEngagement(AActor* Target, float DeltaSeconds, bool bMovementDue, bool bAimDue, bool bCombatDue)
+{
+	if (!Combatant.IsValid() || !Target)
+	{
+		return;
+	}
+
+	// Nothing tactical to decide: the beast has one plan and it is the target's throat. Leaving
+	// the intent on Hold also keeps ExecuteTacticalMovement and its EQS queries out of the loop.
+	SetTacticalIntent(EAHTacticalIntent::Hold);
+
+	const FVector TargetLocation = Target->GetActorLocation();
+	const float Distance = FVector::Dist(TargetLocation, Combatant->GetActorLocation());
+	// Stop a little short of maximum reach so the sweep still connects while the target drifts,
+	// rather than standing exactly on the edge and whiffing every other bite.
+	const float StopDistance = FMath::Max(60.0f, MeleeReach * 0.7f);
+
+	if (bMovementDue)
+	{
+		if (Distance > StopDistance)
+		{
+			MoveWithFallback(TargetLocation, DeltaSeconds);
+		}
+		else
+		{
+			if (GetMoveStatus() != EPathFollowingStatus::Idle)
+			{
+				StopMovement();
+			}
+			CurrentMoveGoal = FVector::ZeroVector;
+		}
+	}
+	if (bAimDue)
+	{
+		FaceLocation(TargetLocation, DeltaSeconds);
+	}
+	if (bCombatDue && Distance <= MeleeReach)
+	{
+		if (UAHCombatComponent* Combat = Combatant->GetCombatComponent())
+		{
+			// Melee() is a no-op while its own cooldown timer is running, so the cadence is the
+			// archetype's MeleeCooldown and not the AI decision rate.
+			Combat->Melee();
+		}
+	}
 }
 
 void AAHCombatAIController::MaintainWeapon()
@@ -401,6 +468,12 @@ void AAHCombatAIController::UpdateCombatBehavior(float DeltaSeconds, bool bPerce
 			bHasSeenTarget = true;
 			bInvestigating = false;
 			NextSearchTime = 0.0f;
+		}
+
+		if (bMeleeOnly)
+		{
+			UpdateMeleeEngagement(Target, DeltaSeconds, bMovementDue, bAimDue, bCombatDue);
+			return;
 		}
 
 		if (bTacticalDue)
@@ -882,7 +955,11 @@ void AAHCombatAIController::UpdateAttackSlot()
 			continue;
 		}
 		const AAHCombatantCharacter* OtherPawn = Other->Combatant.Get();
-		if (!OtherPawn || OtherPawn->IsCombatantDead())
+		// A biter never spends an aim slot - UpdateMeleeEngagement returns before ApplyAimDiscipline
+		// and UpdateBurstFire ever run - so it must not block one either. It also stands closer to
+		// the target than anything else in the fight, so without this two hounds silently pin every
+		// rifleman in the encounter to suppression spread for the rest of the fight.
+		if (!OtherPawn || OtherPawn->IsCombatantDead() || Other->bMeleeOnly)
 		{
 			continue;
 		}
