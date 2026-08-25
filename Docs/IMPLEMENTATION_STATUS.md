@@ -34,6 +34,8 @@ The runtime stage graph contains all required story beats, in order:
 
 The authored objective chain contains 17 objectives, from reaching the defensive line through the title reveal. Narrative-only stages remain in the stage graph without creating duplicate objective entries.
 
+> **Superseded by Level One: FOR A WHILE.** Level One now has **12** objectives and ends at `ErebusDestruction`; the `TenYearsLater` through `StarsDisappearing` stages are retained only for save compatibility and are not reachable. The stage list and objective count in this Phase 3 record are the historical greybox shape. See `Docs/LEVEL1_FOR_A_WHILE.md` for the current contract.
+
 ### Slice expectations
 
 - Target playtime: approximately 20–30 minutes for a first complete run, depending on combat pace and dialogue timing. This is a design target, not an automated timing result.
@@ -689,3 +691,12 @@ prohibited and untouched):
 
 Status: awaiting HUMAN visual review of Saved/Phase48Evidence packaged
 captures. NOT marked approved.
+
+## LEVEL ONE — FOR A WHILE — 2026-08-25
+
+The Chapter One campaign boundary moved: Level One ends when Erebus is destroyed and Nysa
+transmits `Lucian.`. `AHChapterStateConstants::ObjectiveCount` is 12 and the chapter save version
+is 7. Everything above this line describing 17 objectives, 21 reachable stages, or the ten-years-later
+epilogue is the historical greybox shape, not current behaviour.
+
+Current contract, verification and known gaps: `Docs/LEVEL1_FOR_A_WHILE.md`.

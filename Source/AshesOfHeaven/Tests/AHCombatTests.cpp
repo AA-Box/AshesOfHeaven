@@ -23,6 +23,7 @@
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
+#include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
@@ -898,20 +899,27 @@ bool FAHChapterStageOrderingTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHChapterObjectiveChainTest, "AshesOfHeaven.Chapter.ObjectiveChain", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHChapterObjectiveChainTest::RunTest(const FString& Parameters)
 {
+	// The director still hands over the historical 17-definition chain; ConfigureObjectives drops
+	// everything after Ch01_SurviveDestruction. Naming index 11 with the real terminator is what
+	// makes this test measure that truncation instead of dodging it with synthetic ids.
 	UAHObjectiveSubsystem* Objectives = NewObject<UAHObjectiveSubsystem>();
 	TArray<FAHObjectiveDefinition> Definitions;
 	for (int32 Index = 0; Index < 17; ++Index)
 	{
-		Definitions.Add({FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1)), FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
+		const FName Id = Index == AHChapterStateConstants::ObjectiveCount - 1
+			? FName(TEXT("Ch01_SurviveDestruction"))
+			: FName(*FString::Printf(TEXT("Ch01_Objective_%02d"), Index + 1));
+		Definitions.Add({Id, FText::FromString(FString::Printf(TEXT("CHAPTER OBJECTIVE %02d"), Index + 1)), FText::FromString(TEXT("Greybox verification objective."))});
 	}
 	Objectives->ConfigureObjectives(Definitions, 0);
-	TestEqual(TEXT("Chapter objective chain contains seventeen objectives"), Objectives->GetObjectiveCount(), 17);
-	for (const FAHObjectiveDefinition& Definition : Definitions)
+	TestEqual(TEXT("The retired epilogue tail is dropped"), Objectives->GetObjectiveCount(), AHChapterStateConstants::ObjectiveCount);
+	for (int32 Index = 0; Index < AHChapterStateConstants::ObjectiveCount; ++Index)
 	{
-		TestTrue(*FString::Printf(TEXT("Completes %s"), *Definition.Id.ToString()), Objectives->CompleteObjective(Definition.Id));
+		TestTrue(*FString::Printf(TEXT("Completes %s"), *Definitions[Index].Id.ToString()), Objectives->CompleteObjective(Definitions[Index].Id));
 	}
+	TestFalse(TEXT("A dropped epilogue objective cannot be completed"), Objectives->CompleteObjective(Definitions[AHChapterStateConstants::ObjectiveCount].Id));
 	TestTrue(TEXT("Chapter completion is reachable"), Objectives->IsMissionComplete());
-	TestEqual(TEXT("All Chapter objective history is retained"), Objectives->GetCompletedObjectiveIds().Num(), 17);
+	TestEqual(TEXT("All Chapter objective history is retained"), Objectives->GetCompletedObjectiveIds().Num(), AHChapterStateConstants::ObjectiveCount);
 	return true;
 }
 
@@ -1615,6 +1623,46 @@ bool FAHLevelOneObjectiveCompletersTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no trigger is still bound to the auto-completed CathedralApproach stage"),
 		TriggersByStage.Contains(EAHChapterStage::CathedralApproach));
 
+	Fixture.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneTerminalShowsCasualtyCountTest, "AshesOfHeaven.LevelOne.TerminalShowsCasualtyCount", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneTerminalShowsCasualtyCountTest::RunTest(const FString& Parameters)
+{
+	// The acceptance criterion is that the terminal DISPLAYS 11,407,231. CasualtyText held the
+	// figure and nothing read it, so the screen showed the widget's authored placeholder while the
+	// only automated assertion checked a dialogue array.
+	AHObjective01TestSupport::FChapterOneWorldFixture Fixture;
+	if (!Fixture.Boot())
+	{
+		AddError(TEXT("Chapter One fixture failed to boot"));
+		Fixture.Teardown();
+		return false;
+	}
+
+	// Deferred spawn, exactly like SpawnCathedralTerminal: the world has begun play, so a plain
+	// SpawnActor would run BeginPlay - and register with the world-state subsystem - before the
+	// persistent id exists, which the subsystem logs as an error.
+	const FTransform TerminalTransform(FRotator::ZeroRotator, FVector(18100.0f, 0.0f, 890.0f));
+	AAHChapterTerminal* Terminal = Fixture.World->SpawnActorDeferred<AAHChapterTerminal>(AAHChapterTerminal::StaticClass(), TerminalTransform);
+	TestNotNull(TEXT("A terminal can be spawned"), Terminal);
+	if (!Terminal)
+	{
+		Fixture.Teardown();
+		return false;
+	}
+	Terminal->SetPersistentId(FGuid(0xA11E1001, 0x9A3549B5, 0xB51F9901, 0x00000002));
+	Terminal->FinishSpawning(TerminalTransform);
+
+	TestTrue(TEXT("The casualty count reaches the terminal screen"),
+		Terminal->SetScreenText(FName(TEXT("TerminalIntel")), Terminal->CasualtyText));
+	TestTrue(TEXT("The authored screen carries the exact figure"),
+		Terminal->CasualtyText.ToString().Contains(TEXT("11,407,231")));
+	TestTrue(TEXT("The confirmation line has a screen block too"),
+		Terminal->SetScreenText(FName(TEXT("TerminalStatus")), Terminal->ConfirmationText));
+
+	Terminal->Destroy();
 	Fixture.Teardown();
 	return true;
 }
