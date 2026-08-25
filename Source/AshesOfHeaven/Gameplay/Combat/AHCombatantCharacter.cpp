@@ -817,6 +817,11 @@ void AAHCombatantCharacter::Interact_Implementation(AActor* Interactor)
 
 float AAHCombatantCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
+	if (AAHCombatAIController* AI = Cast<AAHCombatAIController>(GetController()))
+	{
+		AI->AlertToDamage(EventInstigator ? EventInstigator->GetPawn() : DamageCauser);
+	}
+
 	if (IsCombatantDead() || DamageAmount <= 0.0f)
 	{
 		return 0.0f;

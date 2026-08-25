@@ -1,5 +1,6 @@
 #include "Gameplay/AI/AHCombatAIController.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
@@ -104,6 +105,28 @@ void AAHCombatAIController::ApplyEncounterSophistication(float Sophistication)
 	if (Combatant.IsValid())
 	{
 		Combatant->SetAimSpreadPenaltyDegrees((1.0f - Accuracy) * MaxAimErrorDegrees);
+	}
+}
+
+void AAHCombatAIController::AlertToLocation(const FVector& Location)
+{
+	LastKnownLocation = Location;
+	bHasSeenTarget = true;
+	LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
+	// Suspicious, not Alert: they know where to go, not who is there.
+	Awareness = FMath::Max(Awareness, MakeAwarenessTuning().SuspiciousThreshold);
+}
+
+void AAHCombatAIController::AlertToDamage(AActor* Instigator)
+{
+	// Taking a hit is not a sight event and must not be gated by one: being shot from a direction
+	// you cannot see is the exact case where staying unaware is wrong.
+	bForcedAlertPending = true;
+	if (Instigator)
+	{
+		LastKnownLocation = Instigator->GetActorLocation();
+		bHasSeenTarget = true;
+		LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
 	}
 }
 
@@ -213,12 +236,12 @@ void AAHCombatAIController::Tick(float DeltaSeconds)
 void AAHCombatAIController::UpdateTarget()
 {
 	AH_SCOPE_PERFORMANCE(AIPerception, this);
-	if (CurrentTarget.IsValid() && Cast<AAHCombatantCharacter>(CurrentTarget.Get()) && !Cast<AAHCombatantCharacter>(CurrentTarget.Get())->IsCombatantDead())
-	{
-		return;
-	}
+	// No early-out on "already have a living target". That is what made a target impossible to
+	// lose: an AI that saw the player once held them forever, through walls, at any range, so
+	// there was no way to break contact and nothing to sneak past.
 	AActor* const PreviousTarget = CurrentTarget.Get();
-	CurrentTarget = FindBestTarget();
+	CurrentTarget = UpdateAwareness(GetWorld() ? GetWorld()->GetTimeSeconds() - LastAwarenessStepTime : 0.0f);
+	LastAwarenessStepTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	if (CurrentTarget.Get() != PreviousTarget)
 	{
 		// A new target is a new contact, so it gets its own grace window.
@@ -246,6 +269,106 @@ void AAHCombatAIController::UpdateTarget()
 	}
 }
 
+FAHAwarenessTuning AAHCombatAIController::MakeAwarenessTuning() const
+{
+	FAHAwarenessTuning Tuning;
+	Tuning.GainRatePerSecond = AwarenessGainRate;
+	Tuning.DecayRatePerSecond = AwarenessDecayRate;
+	return Tuning;
+}
+
+bool AAHCombatAIController::IsWithinViewCone(const AActor* Target) const
+{
+	if (!Target || !Combatant.IsValid())
+	{
+		return false;
+	}
+	const FVector ToTarget = (Target->GetActorLocation() - Combatant->GetActorLocation()).GetSafeNormal2D();
+	if (ToTarget.IsNearlyZero())
+	{
+		return true;
+	}
+	// Control rotation, not actor rotation: FaceLocation drives the control rotation and
+	// bUseControllerRotationYaw carries it to the body, so this is where the AI is looking.
+	const FVector Facing = GetControlRotation().Vector().GetSafeNormal2D();
+	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(FMath::Clamp(ViewConeHalfAngleDegrees, 5.0f, 180.0f)));
+	return FVector::DotProduct(Facing, ToTarget) >= CosHalfAngle;
+}
+
+void AAHCombatAIController::ReactToGunshot(const FVector& ShotLocation, AActor* Shooter)
+{
+	if (!Combatant.IsValid() || Combatant->IsCombatantDead())
+	{
+		return;
+	}
+	const AAHCombatantCharacter* ShootingCombatant = Cast<AAHCombatantCharacter>(Shooter);
+	if (!ShootingCombatant || !Combatant->IsHostileTo(ShootingCombatant))
+	{
+		return;
+	}
+	// A shot does not hand over the shooter - it hands over a direction. The AI goes to look,
+	// which is what makes firing from concealment a real decision rather than a free reveal.
+	LastKnownLocation = ShotLocation;
+	bHasSeenTarget = true;
+	LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
+	Awareness = FMath::Max(Awareness, MakeAwarenessTuning().SuspiciousThreshold);
+}
+
+AActor* AAHCombatAIController::UpdateAwareness(float DeltaSeconds)
+{
+	if (!Combatant.IsValid() || Combatant->IsCombatantDead())
+	{
+		Awareness = 0.0f;
+		AwarenessState = EAHAwarenessState::Unaware;
+		AwarenessCandidate = nullptr;
+		return nullptr;
+	}
+
+	const FAHAwarenessTuning Tuning = MakeAwarenessTuning();
+	AActor* Candidate = FindBestTarget();
+	// A dead or vanished candidate takes its awareness with it, or the AI keeps hunting a corpse.
+	if (Candidate != AwarenessCandidate.Get())
+	{
+		Awareness = 0.0f;
+		AwarenessCandidate = Candidate;
+	}
+	if (!Candidate)
+	{
+		AwarenessState = EAHAwarenessState::Unaware;
+		return nullptr;
+	}
+
+	FAHAwarenessEvidence Evidence;
+	Evidence.DistanceToTarget = FVector::Dist(Candidate->GetActorLocation(), Combatant->GetActorLocation());
+	Evidence.SightRange = SightRange;
+	Evidence.bHasLineOfSight = HasLineOfSightTo(Candidate);
+	Evidence.bWithinViewCone = IsWithinViewCone(Candidate);
+	Evidence.bForcedAlert = bForcedAlertPending;
+	if (const AAHCombatPlayerCharacter* PlayerTarget = Cast<AAHCombatPlayerCharacter>(Candidate))
+	{
+		Evidence.bTargetCrouched = PlayerTarget->IsCrouchedForCombat();
+		Evidence.bTargetSprinting = PlayerTarget->IsSprinting();
+	}
+	bForcedAlertPending = false;
+
+	const bool bWasAlert = AwarenessState == EAHAwarenessState::Alert;
+	Awareness = AHPerception::StepAwareness(Awareness, Evidence, Tuning, DeltaSeconds);
+	AwarenessState = AHPerception::ResolveState(Awareness, bWasAlert, Tuning);
+
+	if (AwarenessState == EAHAwarenessState::Alert)
+	{
+		return Candidate;
+	}
+	if (AwarenessState == EAHAwarenessState::Suspicious && !LastKnownLocation.IsZero())
+	{
+		// Suspicious is not a target. The AI investigates the last known point through the
+		// existing search behaviour, and holds fire while it does.
+		return nullptr;
+	}
+	bHasSeenTarget = false;
+	return nullptr;
+}
+
 AActor* AAHCombatAIController::FindBestTarget() const
 {
 	AAHCombatantCharacter* Best = nullptr;
@@ -259,6 +382,13 @@ AActor* AAHCombatAIController::FindBestTarget() const
 		}
 
 		const float Distance = FVector::DistSquared(Candidate->GetActorLocation(), Combatant->GetActorLocation());
+		// Out of sight range is not a candidate at all. Without this the sweep nominates a hostile
+		// on the far side of the level and awareness sits at zero against it while a closer,
+		// visible one is never considered.
+		if (Distance > FMath::Square(SightRange))
+		{
+			continue;
+		}
 		const float PlayerBias = Candidate->GetFaction() == EAHFaction::Player ? 0.35f : 1.0f;
 		if (Distance * PlayerBias < BestScore)
 		{

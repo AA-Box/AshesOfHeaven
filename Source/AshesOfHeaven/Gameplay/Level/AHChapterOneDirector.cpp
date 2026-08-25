@@ -2267,6 +2267,22 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 	GetWorldTimerManager().SetTimer(RoiHandle, FTimerDelegate::CreateWeakLambda(this,
 		[this]() { LogArtRoiProjections(); }), 12.0f, false);
 
+#if !UE_BUILD_SHIPPING
+	// Every review target takes its own frame. macOS screencapture returns solid black for a
+	// packaged fullscreen build even when the app is frontmost - it gets its own Space - so a
+	// desktop grab of any of these is worthless. 25s is past the ROI pass and past auto-exposure
+	// settling, and for Battle it is long enough for the opening wave to have started moving.
+	FTimerHandle ArtShotHandle;
+	const FString ShotName = FString::Printf(TEXT("ArtTarget_%s.png"), *TargetName);
+	GetWorldTimerManager().SetTimer(ArtShotHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this, ShotName]()
+		{
+			const FString ShotPath = FPaths::Combine(FPaths::ProjectSavedDir(), ShotName);
+			FScreenshotRequest::RequestScreenshot(ShotPath, false, false);
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] screenshot requested: %s"), *ShotPath);
+		}), 25.0f, false);
+#endif
+
 	// -ArtCam=X,Y,Z[,Pitch[,Yaw]] overrides the review camera for this launch. There is no
 	// synthetic input into a packaged build on this machine, so without a command-line pose the
 	// only vantages that can ever be reviewed are the five hard-coded ones - and when the level

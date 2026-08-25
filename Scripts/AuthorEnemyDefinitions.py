@@ -50,8 +50,11 @@ ARCHETYPES = {
         "currency": 10,
         "marker_color": (0.55, 0.08, 0.85, 1.0),
         "voice": "Alien",
+        # Sight ranges cover the distance the director now spawns at. They were 2400-3200 while
+        # bodies were placed 27-42m out, so nothing could ever notice the player and the fight
+        # never started.
         "ranged": {
-            "sight_range": 2400.0,
+            "sight_range": 4000.0,
             "accuracy": 0.68,
             "max_aim_error": 10.0,
             "prefer_cover": True,
@@ -79,7 +82,7 @@ ARCHETYPES = {
         # the skirmishers before the player has picked it out of the fog.
         "shot_cue": "SC_SciFi_LazerHeavy",
         "ranged": {
-            "sight_range": 2800.0,
+            "sight_range": 4500.0,
             "accuracy": 0.78,
             "max_aim_error": 6.0,
             "prefer_cover": False,
@@ -118,7 +121,7 @@ ARCHETYPES = {
             "range": 180.0,
             "radius": 34.0,
             "cooldown": 1.15,
-            "sight_range": 3200.0,
+            "sight_range": 3800.0,
         },
         "abilities": {},
     },
@@ -141,7 +144,7 @@ ARCHETYPES = {
             "range": 210.0,
             "radius": 46.0,
             "cooldown": 1.7,
-            "sight_range": 2600.0,
+            "sight_range": 3400.0,
         },
         "abilities": {},
     },
