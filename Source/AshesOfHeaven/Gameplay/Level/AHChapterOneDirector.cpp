@@ -1923,8 +1923,26 @@ void AAHChapterOneDirector::SpawnPresentDayScene()
 void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotator& Rotation)
 {
 	TeleportPlayer(Location, Rotation);
+	// FREEZE the pawn as well as re-asserting the pose. The 0.5s re-assert below holds the
+	// camera to within half a second of the mark, but gravity runs in between, so the vantage
+	// still creeps: measured against a static wall region in packaged footage, frame-to-frame
+	// motion sat at +0.47 above the codec noise floor with a ~0.9s rhythm. A still cannot show
+	// that - one frame taken anywhere in the cycle looks correct - but any per-frame statistic
+	// can, because a fixed screen-space ROI over a creeping vantage measures the vantage rather
+	// than the thing under test. With movement disabled the same measurement reads -0.17, i.e.
+	// the wall is now stabler than the codec noise floor and the vantage is genuinely static.
+	if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+	{
+		if (UCharacterMovementComponent* Movement = Player->GetCharacterMovement())
+		{
+			Movement->StopMovementImmediately();
+			Movement->GravityScale = 0.0f;
+			Movement->DisableMovement();
+		}
+	}
 	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding
-	// the pose is the whole contract. It used to stop after 12 reps - six seconds - while the
+	// the pose is the whole contract. With movement disabled above it only has to beat recoil
+	// and spatial recovery, not gravity. It used to stop after 12 reps - six seconds - while the
 	// acceptance harness projects its review regions at twelve seconds and screenshots at about
 	// thirty, so recoil and spatial recovery walked the camera off the subject and the capture
 	// still came back looking like a valid frame. It now holds for the life of the process; this
