@@ -11,10 +11,144 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
+#include "Gameplay/Enemies/AHEncounterDefinition.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Kismet/GameplayStatics.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AHEnemyAssetValidationCommandlet.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHEnemyBodyMaterialsAreProjectAssetsTest,
+	"AshesOfHeaven.Assets.Enemies.BodyMaterialsAreProjectAssets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHEnemyBodyMaterialsAreProjectAssetsTest::RunTest(const FString& Parameters)
+{
+	// The mobile tier used to author enemy bodies to /Engine/BasicShapes/BasicShapeMaterial, which
+	// UE substitutes with an engine default at runtime: an engine material presenting a character
+	// on every mobile device. Surfaces must come from authored /Game materials on both tiers.
+	const TArray<FString> DefinitionPaths = {
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Pilgrim.DA_Enemy_Pilgrim"),
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Warden.DA_Enemy_Warden")
+	};
+	for (const FString& DefinitionPath : DefinitionPaths)
+	{
+		UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr, *DefinitionPath);
+		TestNotNull(*FString::Printf(TEXT("enemy definition resolves: %s"), *DefinitionPath), Definition);
+		if (!Definition)
+		{
+			continue;
+		}
+		for (const bool bMobile : {false, true})
+		{
+			const FAHEnemyVisualPayload Payload = Definition->ResolveVisuals(bMobile);
+			for (const TSoftObjectPtr<UMaterialInterface>& Material : Payload.Materials)
+			{
+				const FString MaterialPath = Material.ToSoftObjectPath().ToString();
+				TestFalse(*FString::Printf(TEXT("%s %s body material is not an engine asset: %s"),
+					*DefinitionPath, bMobile ? TEXT("mobile") : TEXT("desktop"), *MaterialPath),
+					MaterialPath.StartsWith(TEXT("/Engine/")));
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHRosterWeaponAndLocomotionTest,
+	"AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHRosterWeaponAndLocomotionTest::RunTest(const FString& Parameters)
+{
+	// One archetype carries a rifle and the rest close and strike. That is an authored design
+	// decision with nothing in the engine holding it in place - the loadout is a soft array in a
+	// data asset, and re-running the authoring script with a stray "ranged" block would quietly
+	// arm a hound. It is also invisible from a screenshot, because an enemy shooting from 30m
+	// looks like an enemy shooting from 30m whichever archetype it is.
+	const TArray<FString> Names = { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") };
+	int32 Armed = 0;
+	for (const FString& Name : Names)
+	{
+		const FString Path = FString::Printf(
+			TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_%s.DA_Enemy_%s"), *Name, *Name);
+		UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr, *Path);
+		TestNotNull(*FString::Printf(TEXT("%s definition resolves"), *Name), Definition);
+		if (!Definition)
+		{
+			continue;
+		}
+
+		const bool bHasWeapon = !Definition->Loadout.WeaponClasses.IsEmpty();
+		Armed += bHasWeapon ? 1 : 0;
+		TestEqual(*FString::Printf(TEXT("%s is either armed or melee-only, never both or neither"), *Name),
+			bHasWeapon, !Definition->AISettings.bMeleeOnly);
+
+		// Every body needs somewhere to stand, somewhere to walk and somewhere to run. A missing
+		// take is not a crash: AAHCombatantCharacter simply keeps playing the last clip, so a
+		// creature charging at 640 cm/s in its idle loop is the only symptom.
+		const FAHCreatureAnimationSet& Set = Definition->Visuals.Locomotion;
+		TestFalse(*FString::Printf(TEXT("%s has an idle take"), *Name), Set.Idle.IsNull());
+		TestFalse(*FString::Printf(TEXT("%s has a walk take"), *Name), Set.Walk.IsNull());
+		TestFalse(*FString::Printf(TEXT("%s has a run take"), *Name), Set.Run.IsNull());
+		TestFalse(*FString::Printf(TEXT("%s has a death take"), *Name), Set.Death.IsNull());
+		if (Definition->AISettings.bMeleeOnly)
+		{
+			TestFalse(*FString::Printf(TEXT("%s bites with something the player can see"), *Name),
+				Set.Attack.IsNull());
+		}
+		TestTrue(*FString::Printf(TEXT("%s run threshold sits above its walk threshold"), *Name),
+			Set.RunSpeed > Set.WalkSpeed);
+	}
+	TestEqual(TEXT("exactly one archetype in the roster carries a weapon"), Armed, 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHCreatureLocomotionStateTest,
+	"AshesOfHeaven.Assets.Enemies.LocomotionStateHysteresis",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHCreatureLocomotionStateTest::RunTest(const FString& Parameters)
+{
+	using namespace AHCreatureLocomotion;
+
+	FAHCreatureAnimationSet Set;
+	Set.Idle = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/Fake/Idle.Idle")));
+	Set.Walk = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/Fake/Walk.Walk")));
+	Set.Run = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/Fake/Run.Run")));
+	Set.WalkSpeed = 40.0f;
+	Set.RunSpeed = 400.0f;
+
+	TestEqual(TEXT("a standing body idles"),
+		SelectLocomotionState(Set, 0.0f, EAHCreatureAnimState::Idle), EAHCreatureAnimState::Idle);
+	TestEqual(TEXT("a body well past the walk threshold walks"),
+		SelectLocomotionState(Set, 120.0f, EAHCreatureAnimState::Idle), EAHCreatureAnimState::Walk);
+	TestEqual(TEXT("a body well past the run threshold runs"),
+		SelectLocomotionState(Set, 600.0f, EAHCreatureAnimState::Walk), EAHCreatureAnimState::Run);
+
+	// The point of the hysteresis: a body hovering on a threshold must not swap clip every frame.
+	// 380 is under RunSpeed and over RunSpeed*0.8, so it holds whichever state it arrived in.
+	TestEqual(TEXT("a running body holds its run just under the threshold"),
+		SelectLocomotionState(Set, 380.0f, EAHCreatureAnimState::Run), EAHCreatureAnimState::Run);
+	TestEqual(TEXT("a walking body does not break into a run at the same speed"),
+		SelectLocomotionState(Set, 380.0f, EAHCreatureAnimState::Walk), EAHCreatureAnimState::Walk);
+	TestEqual(TEXT("a walking body keeps walking just under the walk threshold"),
+		SelectLocomotionState(Set, 36.0f, EAHCreatureAnimState::Walk), EAHCreatureAnimState::Walk);
+	TestEqual(TEXT("a standing body does not start walking at the same speed"),
+		SelectLocomotionState(Set, 36.0f, EAHCreatureAnimState::Idle), EAHCreatureAnimState::Idle);
+
+	// A body with one movement take uses it at every speed rather than sliding in its idle.
+	FAHCreatureAnimationSet RunOnly;
+	RunOnly.Run = Set.Run;
+	RunOnly.WalkSpeed = 40.0f;
+	RunOnly.RunSpeed = 400.0f;
+	TestEqual(TEXT("a body with only a run take uses it at walking speed"),
+		SelectLocomotionState(RunOnly, 120.0f, EAHCreatureAnimState::Idle), EAHCreatureAnimState::Run);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAHEnemyAssetManifestTest,
@@ -27,6 +161,55 @@ bool FAHEnemyAssetManifestTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Every enemy and encounter manifest entry resolves and is cook-safe"),
 		UAHEnemyAssetValidationCommandlet::ValidateEnemyAssetManifest(*GLog, ValidatedAssets));
 	TestTrue(TEXT("Pilgrim, Warden, and their encounter manifests were validated"), ValidatedAssets >= 4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHEncounterSpawnSequenceTest,
+	"AshesOfHeaven.Assets.Enemies.SpawnSequenceMixesRoster",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHEncounterSpawnSequenceTest::RunTest(const FString& Parameters)
+{
+	UAHEncounterDefinition* Definition = NewObject<UAHEncounterDefinition>();
+	Definition->EncounterId = TEXT("SpawnSequenceTest");
+	Definition->DeterministicSeed = 4242;
+	Definition->PrimaryEnemy = AHEnemyAssets::EnemyId(TEXT("Pilgrim"));
+	Definition->AdditionalEnemies = {
+		AHEnemyAssets::EnemyId(TEXT("Warden")),
+		AHEnemyAssets::EnemyId(TEXT("Hound")),
+	};
+
+	TArray<FPrimaryAssetId> Sequence;
+	Definition->BuildSpawnSequence(8, Sequence);
+	TestEqual(TEXT("Sequence fills the requested count"), Sequence.Num(), 8);
+	for (const FPrimaryAssetId& Expected : Definition->AdditionalEnemies)
+	{
+		TestTrue(TEXT("Every listed archetype appears at least once"), Sequence.Contains(Expected));
+	}
+	TestTrue(TEXT("The primary archetype still appears"), Sequence.Contains(Definition->PrimaryEnemy));
+
+	// A checkpoint restores an encounter by rebuilding its draws, so the same inputs have to
+	// produce the same line-up.
+	TArray<FPrimaryAssetId> Repeat;
+	Definition->BuildSpawnSequence(8, Repeat);
+	TestTrue(TEXT("The same seed rebuilds the same line-up"), Sequence == Repeat);
+
+	// Different encounters carry different seeds; that is what makes two fights differ.
+	Definition->DeterministicSeed = 99;
+	TArray<FPrimaryAssetId> Reseeded;
+	Definition->BuildSpawnSequence(8, Reseeded);
+	TestTrue(TEXT("A different seed draws a different line-up"), Sequence != Reseeded);
+
+	// A single-archetype encounter must stay exactly what it was authored as.
+	Definition->AdditionalEnemies.Reset();
+	TArray<FPrimaryAssetId> SoloRoster;
+	Definition->BuildSpawnSequence(4, SoloRoster);
+	TestEqual(TEXT("A lone archetype fills every slot"), SoloRoster.Num(), 4);
+	for (const FPrimaryAssetId& EnemyId : SoloRoster)
+	{
+		TestEqual(TEXT("A lone archetype is the only thing spawned"), EnemyId, Definition->PrimaryEnemy);
+	}
 	return true;
 }
 
@@ -96,6 +279,14 @@ namespace AHEnemyAssetTests
 		}
 	};
 
+	// Per-stage budget for the streaming waits below. 15s was measured against a Visual bundle
+	// that held one mesh, one physics asset and a single animation take per archetype; the
+	// roster now carries five takes each plus 4K source maps, and stage 1 alone crossed 15s on
+	// a machine with an editor open beside it. Generous rather than tight on purpose - this is
+	// a timeout guarding against a hang, not an assertion about load speed, and a flaky failure
+	// here reads as a broken asset and costs an afternoon.
+	constexpr double StageTimeoutSeconds = 45.0;
+
 	class FAsyncLifecycleCommand final : public IAutomationLatentCommand
 	{
 	public:
@@ -150,7 +341,7 @@ namespace AHEnemyAssetTests
 						++S.CompletedRepeatedRequests;
 					}));
 				S.Stage = 1;
-				S.Deadline = FPlatformTime::Seconds() + 15.0;
+				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;
 				return false;
 
 			case 1:
@@ -172,13 +363,14 @@ namespace AHEnemyAssetTests
 				S.EncounterLease = S.Assets->PreloadEncounterAssets(
 					AHEnemyAssets::EncounterId(TEXT("PilgrimWarden")), TEXT("Test.EncounterPreload"), S.MakeCallback());
 				S.Stage = 2;
-				S.Deadline = FPlatformTime::Seconds() + 15.0;
+				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;
 				return false;
 
 			case 2:
 				if (!S.bLastCallback) return !TimedOut() ? false : true;
 				S.Test->TestTrue(TEXT("encounter prediction preload succeeds"), S.bLastSuccess);
-				S.Test->TestEqual(TEXT("mixed encounter predicts Pilgrim and Warden"), S.LastDefinitionCount, 2);
+				// The mixed encounter is the whole creature roster: Pilgrim, Warden, Hound, Spider.
+				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 4);
 				S.Assets->ReleaseEncounterAssets(S.EncounterLease);
 				S.EncounterLease.Invalidate();
 				S.Test->TestEqual(TEXT("encounter release drops both enemy references"), S.Assets->GetResidentEnemyCount(), 0);
@@ -207,7 +399,7 @@ namespace AHEnemyAssetTests
 					{ AHEnemyAssets::EnemyId(TEXT("Pilgrim")), AHEnemyAssets::EnemyId(TEXT("Warden")) },
 					true, true, S.MakeCallback());
 				S.Stage = 3;
-				S.Deadline = FPlatformTime::Seconds() + 15.0;
+				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;
 				return false;
 
 			case 3:
@@ -229,7 +421,7 @@ namespace AHEnemyAssetTests
 				UGameplayStatics::FinishSpawningActor(S.Encounter, FTransform::Identity);
 				S.Encounter->ActivateEncounter();
 				S.Stage = 4;
-				S.Deadline = FPlatformTime::Seconds() + 15.0;
+				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;
 				return false;
 
 			case 4:

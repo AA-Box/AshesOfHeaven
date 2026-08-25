@@ -86,6 +86,10 @@ void UAHCombatComponent::Melee()
 	}
 
 	GetWorld()->GetTimerManager().SetTimer(MeleeTimer, MeleeCooldown, false);
+	// Every melee path routes through here, so this is the one place a swing has to telegraph.
+	// Hanging it off the AI controller instead would leave a player melee, or any future
+	// scripted attack, swinging invisibly.
+	CombatantOwner->PlayCreatureAttack();
 	if (MeleeSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, MeleeSound, CombatantOwner->GetActorLocation());
@@ -103,6 +107,14 @@ void UAHCombatComponent::Melee()
 	FHitResult Hit;
 	if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(MeleeRadius), Params) && Hit.GetActor())
 	{
+		// The Pawn channel blocks Pawn, so an ally capsule is a valid blocking hit. That was
+		// theoretical while the player was the only caller; a pack of biters all paths to the same
+		// point and bunches nose-to-tail, and the rear one would chew through its own packmate.
+		const AAHCombatantCharacter* HitCombatant = Cast<AAHCombatantCharacter>(Hit.GetActor());
+		if (HitCombatant && !CombatantOwner->IsHostileTo(HitCombatant))
+		{
+			return;
+		}
 		FPointDamageEvent Event;
 		Event.Damage = MeleeDamage;
 		Event.HitInfo = Hit;

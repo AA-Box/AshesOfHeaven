@@ -13,6 +13,7 @@ class UAHEnemyDefinition;
 class UAHAudioPaletteData;
 class UAnimInstance;
 class UAnimationAsset;
+class UAnimSequenceBase;
 class UBehaviorTree;
 class UCurveFloat;
 class UMaterialInterface;
@@ -67,6 +68,15 @@ struct ASHESOFHEAVEN_API FAHEnemyCombatDefaults
 	/** Seconds a corpse may remain after death. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
 	float CorpseLifeSpan = 30.0f;
+
+	/** Zero keeps the combat class default. A knee-high biter and a two-and-a-half metre
+	 *  revenant cannot share the mannequin capsule: too tall and the body floats, too short
+	 *  and the head pokes through geometry. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
+	float CapsuleHalfHeight = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
+	float CapsuleRadius = 0.0f;
 };
 
 /** AI authoring values and optional behavior assets needed before possession. */
@@ -110,7 +120,87 @@ struct ASHESOFHEAVEN_API FAHEnemyAISettings
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI", meta=(ClampMin="0.0"))
 	float MaxBurstPause = 1.6f;
+
+	/** Closes to contact and bites instead of holding a firing line. Set on archetypes whose
+	 *  Loadout grants no weapon - a beast has nothing to stand off with, so the cover, standoff
+	 *  and burst-fire logic that governs a rifleman would leave it circling out of reach. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee")
+	bool bMeleeOnly = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeDamage = 45.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeRange = 165.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeRadius = 28.0f;
+
+	/** Seconds between bites. This is the beast's whole damage cadence, so it is the knob that
+	 *  decides whether a pack is pressure or an instant kill. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.1"))
+	float MeleeCooldown = 1.1f;
 };
+
+/** Which authored take a creature body is playing. */
+UENUM(BlueprintType)
+enum class EAHCreatureAnimState : uint8
+{
+	Idle,
+	Walk,
+	Run,
+	Attack,
+	Death
+};
+
+/** Named locomotion and reaction takes for a body with no AnimBlueprint.
+
+ *  The imported creatures each carry their own skeleton, so the mannequin AnimBlueprint cannot
+ *  drive any of them and authoring four AnimBlueprints by hand is four graphs to maintain for
+ *  what is a five-clip state machine. The character plays these through the single-node
+ *  instance instead and picks between them on speed, which is the whole of what these bodies
+ *  need: they walk, they run, they bite, they fall over. */
+USTRUCT(BlueprintType)
+struct ASHESOFHEAVEN_API FAHCreatureAnimationSet
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Idle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Walk;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Run;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Attack;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation")
+	TSoftObjectPtr<UAnimSequenceBase> Death;
+
+	/** Ground speed at which the body stops idling and starts walking, cm/s. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
+	float WalkSpeed = 40.0f;
+
+	/** Ground speed at which the walk gives way to the run, cm/s. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
+	float RunSpeed = 340.0f;
+
+	bool IsEmpty() const;
+};
+
+namespace AHCreatureLocomotion
+{
+	/** Which take a body moving at this ground speed should be playing.
+	 *
+	 *  Free function, and deliberately knows nothing about actors or worlds, because the thing
+	 *  worth testing here is the hysteresis: without it a body decelerating through a threshold
+	 *  swaps clip on alternate frames and reads as a stutter instead of a gait change. */
+	ASHESOFHEAVEN_API EAHCreatureAnimState SelectLocomotionState(
+		const FAHCreatureAnimationSet& Set, float GroundSpeed, EAHCreatureAnimState Current);
+}
 
 /** Mesh, animation, physics, and material payload for one presentation tier. */
 USTRUCT(BlueprintType)
@@ -127,6 +217,11 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	TArray<TSoftObjectPtr<UAnimationAsset>> AnimationSet;
 
+	/** Preferred over AnimationSet when it names anything: AnimationSet only ever loops its
+	 *  first entry, which is a body that walks on the spot while it charges you. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FAHCreatureAnimationSet Locomotion;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	TSoftObjectPtr<UPhysicsAsset> PhysicsAsset;
 
@@ -135,6 +230,18 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	FVector MeshScale = FVector::OneVector;
+
+	/** Body transform relative to the capsule centre, used when bOverrideMeshTransform is set.
+	 *  The mannequin convention (origin at the feet, facing +Y) is baked into the combat class
+	 *  defaults; an imported creature honours neither, so each one carries its own. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FVector MeshOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FRotator MeshRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	bool bOverrideMeshTransform = false;
 
 	bool HasAnyAssetOverride() const;
 	void OverlayOnto(FAHEnemyVisualPayload& Target) const;

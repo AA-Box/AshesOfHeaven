@@ -7,9 +7,12 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Encounters/AHEncounterDirectorSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
@@ -18,6 +21,7 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Presentation/AHPresentationData.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -47,6 +51,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Engine/Engine.h"
+#include "UnrealClient.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -128,24 +133,6 @@ namespace
 			Line(TEXT("LUCIAN"), TEXT("You invaded my world."), 2.6f),
 			Line(TEXT("SAEL"), TEXT("Because the alternative is worse."), 3.0f)
 		};
-	}
-
-	TArray<FAHDialogueLine> MayaLines()
-	{
-		return {
-			Line(TEXT("MAYA"), TEXT("We need you."), 2.2f),
-			Line(TEXT("LUCIAN"), TEXT("I'm retired."), 2.2f),
-			Line(TEXT("MAYA"), TEXT("Eleven million people would disagree."), 3.0f),
-			Line(TEXT("MAYA"), TEXT("That message came from something three billion years old."), 3.2f),
-			Line(TEXT("LUCIAN"), TEXT("When?"), 1.6f),
-			Line(TEXT("MAYA"), TEXT("Six hours ago."), 2.0f),
-			Line(TEXT("LUCIAN"), TEXT("Then we're already late."), 2.8f)
-		};
-	}
-
-	TArray<FAHDialogueLine> NysaLines()
-	{
-		return {Line(TEXT("NYSA TRANSMISSION"), TEXT("LUCIAN VARR."), 2.0f), Line(TEXT("NYSA TRANSMISSION"), TEXT("Modern military identification confirmed."), 2.8f)};
 	}
 
 	TArray<FAHDialogueLine> OtherLucianLines()
@@ -266,6 +253,14 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
 	{
 		DestructionFadeAlpha = FMath::Clamp(StageElapsed / 6.0f, 0.0f, 1.0f);
+	}
+	// The alpha used to be computed and consumed by nobody, so the destruction ending was
+	// dialogue over an unchanged view. Manual camera fade darkens the scene render only, so the
+	// Ch01_ErebusFinale subtitles stay readable as Erebus goes black. StartStage resets the alpha,
+	// so this is inert outside the destruction stage.
+	if (APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0))
+	{
+		CameraManager->SetManualCameraFade(DestructionFadeAlpha, FLinearColor::Black, false);
 	}
 	if (GetCurrentStage() == EAHChapterStage::FleetDeparture && StageElapsed > 5.0f)
 	{
@@ -617,6 +612,15 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		if (!bSaelSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Sael"))))
 		{
 			bSaelSequenceStarted = true;
+			// The beat that plays here is the Other Lucian first encounter (Ch01_Sael resolves to
+			// the canonical Other-Lucian lines). Nothing used to be spawned for it, so the player
+			// heard "You invaded my world" with an empty corridor in front of him. A visual
+			// character actor: no AI, no collision, cannot fall off the walkway.
+			SpawnVisualCharacter(
+				TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+				TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+				FVector(17300.0f, 0.0f, AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior).GameplayFloorZ),
+				FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 			StartDialogueSequence(FName(TEXT("Ch01_Sael")), SaelLines());
 		}
 		break;
@@ -627,7 +631,18 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		SpawnEscapeEncounter();
 		break;
 	case EAHChapterStage::OtherLucian:
-		SpawnFriendly(AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation + FVector(0.0f, -260.0f, 0.0f), FName(TEXT("OtherLucian")));
+		// The silent second sighting is a figure, not a combatant: SpawnFriendly put a gravity- and
+		// AI-driven soldier beside the escape route, which is both the wrong character and free to
+		// walk or fall out of frame. Same visual actor as the first encounter, on the route, at the
+		// authored floor height.
+		SpawnVisualCharacter(
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+			TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+			FVector(
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation.X + 700.0f,
+				260.0f,
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).GameplayFloorZ),
+			FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 		if (!bOtherLucianSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_OtherLucian"))))
 		{
 			bOtherLucianSequenceStarted = true;
@@ -636,22 +651,14 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		break;
 	case EAHChapterStage::ErebusDestruction:
 		Chapter->StopCountdown();
-		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 7.0f, false);
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, AHLevelOneNarrative::GetErebusDestructionHoldSeconds(), false);
 		break;
+	// Unreachable in FOR A WHILE: Level One ends at ErebusDestruction, so no objective
+	// advances into these stages. Kept as stage cases only for save-compatibility reads.
 	case EAHChapterStage::TenYearsLater:
 		SpawnPresentDayScene();
-		if (!bMayaSceneStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Maya"))))
-		{
-			bMayaSceneStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Maya")), MayaLines());
-		}
 		break;
 	case EAHChapterStage::MayaScene:
-		if (!bNysaSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Nysa"))))
-		{
-			bNysaSequenceStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Nysa")), NysaLines());
-		}
 		break;
 	case EAHChapterStage::NysaTransmission:
 		break;
@@ -757,7 +764,10 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Sael")))
 	{
-		StartStage(EAHChapterStage::SaelTransmission);
+		// Only advance if the chapter is still where this beat started. The player can confirm
+		// the terminal while it is still playing, and an unconditional StartStage here would
+		// rewind the chapter out of Escape and leave every later trigger rejected.
+		AdvanceStageFromDialogue(EAHChapterStage::CathedralInterior, EAHChapterStage::SaelTransmission);
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Maya")))
 	{
@@ -769,8 +779,21 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_OtherLucian")))
 	{
-		StartStage(EAHChapterStage::Escape);
+		AdvanceStageFromDialogue(EAHChapterStage::OtherLucian, EAHChapterStage::Escape);
 	}
+}
+
+void AAHChapterOneDirector::AdvanceStageFromDialogue(EAHChapterStage ExpectedStage, EAHChapterStage NextStage)
+{
+	if (GetCurrentStage() != ExpectedStage)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] stale_dialogue_transition expected=%s current=%s skipped=%s"),
+			*UEnum::GetValueAsString(ExpectedStage), *UEnum::GetValueAsString(GetCurrentStage()), *UEnum::GetValueAsString(NextStage));
+		#endif
+		return;
+	}
+	StartStage(NextStage);
 }
 
 void AAHChapterOneDirector::HandleTerminalConfirmed()
@@ -837,10 +860,24 @@ void AAHChapterOneDirector::HandleMissionComplete()
 
 void AAHChapterOneDirector::FinishDestructionSequence()
 {
-	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
+	if (GetCurrentStage() != EAHChapterStage::ErebusDestruction)
 	{
-		CompleteCurrentObjective();
+		return;
 	}
+	// The hold covers the finale sequence, but the finale can still start late if another
+	// sequence owned the dialogue channel when the stage began. Wait for the closing
+	// transmission rather than completing the objective over it. Bounded at twice the hold so
+	// a wedged dialogue channel cannot strand the player at the end of the level.
+	const float HoldSeconds = AHLevelOneNarrative::GetErebusDestructionHoldSeconds();
+	if (Dialogue && Dialogue->HasActiveDialogue() && StageElapsed < HoldSeconds * 2.0f)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] destruction_wait sequence=%s elapsed=%0.1f"), *Dialogue->GetCurrentSequence().ToString(), StageElapsed);
+		#endif
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 0.5f, false);
+		return;
+	}
+	CompleteCurrentObjective();
 }
 
 void AAHChapterOneDirector::BuildGreybox()
@@ -1813,8 +1850,13 @@ void AAHChapterOneDirector::BuildMissionActors()
 	const FAHStageSpatialDefinition& Battlefield = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpenBattlefield);
 	Trigger = SpawnTrigger(Battlefield.ObjectiveTargetLocation, FVector(300.0f, 1100.0f, 180.0f), FName(TEXT("CrossBattlefield")), EAHChapterStage::OpenBattlefield);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	const FAHStageSpatialDefinition& CathedralApproach = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach);
-	Trigger = SpawnTrigger(CathedralApproach.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::CathedralApproach);
+	// EnterCathedral belongs to FailsafeOrder, not CathedralApproach. Tick already completes
+	// REACH THE CATHEDRAL APPROACH when the player or the Manticore passes X=13700, several
+	// hundred units before this box, so a trigger authored for CathedralApproach can only ever
+	// be overlapped while the chapter is already on FailsafeOrder - where AAHChapterTrigger
+	// rejects it and ACTIVATE PLANETARY FAILSAFE has no other completer at all.
+	const FAHStageSpatialDefinition& FailsafeOrder = AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeOrder);
+	Trigger = SpawnTrigger(FailsafeOrder.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::FailsafeOrder);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
 	const FAHStageSpatialDefinition& CathedralInterior = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior);
 	Trigger = SpawnTrigger(CathedralInterior.ObjectiveTargetLocation, FVector(300.0f, 650.0f, 220.0f), FName(TEXT("ReachTerminal")), EAHChapterStage::CathedralInterior);
@@ -1882,17 +1924,16 @@ void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotat
 {
 	TeleportPlayer(Location, Rotation);
 	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding
-	// the pose for a few seconds is the whole contract.
-	TSharedPtr<int32> Reapplied = MakeShared<int32>(0);
+	// the pose is the whole contract. It used to stop after 12 reps - six seconds - while the
+	// acceptance harness projects its review regions at twelve seconds and screenshots at about
+	// thirty, so recoil and spatial recovery walked the camera off the subject and the capture
+	// still came back looking like a valid frame. It now holds for the life of the process; this
+	// is a review-only path and the harness kills the app when it is done.
 	FTimerHandle HoldHandle;
 	GetWorldTimerManager().SetTimer(HoldHandle, FTimerDelegate::CreateWeakLambda(this,
-		[this, Location, Rotation, Reapplied, HoldHandle]() mutable
+		[this, Location, Rotation]()
 		{
 			TeleportPlayer(Location, Rotation);
-			if (++(*Reapplied) >= 12)
-			{
-				GetWorldTimerManager().ClearTimer(HoldHandle);
-			}
 		}), 0.5f, true);
 }
 
@@ -2111,6 +2152,118 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 	}
 }
 
+#if !UE_BUILD_SHIPPING
+void AAHChapterOneDirector::SpawnEnemyLineupBench()
+{
+	if (!EnemyLineupSubjects.IsEmpty() || EnemyLineupLease.IsValid())
+	{
+		// The art target can be re-activated by a stage restart; without this each pass stacks
+		// another four bodies into the same spot.
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	UAHEnemyAssetSubsystem* Assets = GameInstance ? GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>() : nullptr;
+	if (!Assets)
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED: no enemy asset subsystem"));
+		return;
+	}
+
+	// Every archetype the game can field. Adding one here is how it joins the review bench.
+	TArray<FPrimaryAssetId> Roster;
+	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") })
+	{
+		Roster.Add(AHEnemyAssets::EnemyId(FName(ArchetypeName)));
+	}
+	EnemyLineupLease = Assets->PreloadEnemyAssets(
+		Roster,
+		Assets->BuildBundlesForCurrentPlatform(true, true),
+		TEXT("ArtTarget.EnemyLineup"),
+		FAHEnemyAssetsReady::CreateUObject(this, &AAHChapterOneDirector::HandleEnemyLineupAssetsReady));
+}
+
+void AAHChapterOneDirector::HandleEnemyLineupAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error)
+{
+	if (!bSuccess || !GetWorld())
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED: %s"), *Error);
+		return;
+	}
+
+	// Spread across Y rather than X so all four sit at the same distance from the review camera
+	// and their sizes are directly comparable in one frame.
+	// 190, not 240: at the review pose a 720uu spread pushes the widest body off the frame edge,
+	// and the camera cannot back off far enough to fix it without leaving the greybox floor.
+	const float SpacingY = 190.0f;
+	const float FirstY = -120.0f - SpacingY * (Definitions.Num() - 1) * 0.5f;
+	int32 Index = 0;
+	for (UAHEnemyDefinition* Definition : Definitions)
+	{
+		UClass* SpawnClass = Definition ? Definition->CombatClass.Get() : nullptr;
+		if (!SpawnClass)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup archetype has no combat class: %s"),
+				Definition ? *Definition->EnemyId.ToString() : TEXT("<null>"));
+			continue;
+		}
+		// Facing the camera, which stands back down -X.
+		const FTransform SubjectTransform(FRotator(0.0f, 180.0f, 0.0f), FVector(-1150.0f, FirstY + SpacingY * Index, 150.0f));
+		AAHCombatantCharacter* Subject = GetWorld()->SpawnActorDeferred<AAHCombatantCharacter>(
+			SpawnClass, SubjectTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Subject)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED to spawn %s"), *Definition->EnemyId.ToString());
+			continue;
+		}
+		// ApplyEnemyDefinition sets AutoPossessAI to PlacedInWorldOrSpawned, so disabling it first
+		// does nothing: the bench possessed every body, the two melee archetypes charged the review
+		// camera and killed the player, and the stage restarted every seven seconds - re-running
+		// this branch each time. Disable it after the definition has been applied, and still
+		// before FinishSpawningActor, which is what actually runs BeginPlay.
+		Subject->ApplyEnemyDefinition(Definition);
+		Subject->AutoPossessAI = EAutoPossessAI::Disabled;
+		UGameplayStatics::FinishSpawningActor(Subject, SubjectTransform);
+		if (UCharacterMovementComponent* Movement = Subject->GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+			Movement->StopMovementImmediately();
+		}
+		EnemyLineupSubjects.Add(Subject);
+
+		const USkeletalMeshComponent* Body = Subject->GetMesh();
+		const FVector Extent = Subject->GetComponentsBoundingBox(true).GetExtent();
+		UE_LOG(LogAshesOfHeaven, Display,
+			TEXT("[Phase4][ArtTarget] enemy_lineup %s at=%s mesh=%s world_height=%.0fcm melee=%s"),
+			*Definition->EnemyId.ToString(), *Subject->GetActorLocation().ToCompactString(),
+			Body && Body->GetSkeletalMeshAsset() ? *Body->GetSkeletalMeshAsset()->GetName() : TEXT("<none>"),
+			Extent.Z * 2.0f, Definition->AISettings.bMeleeOnly ? TEXT("true") : TEXT("false"));
+		++Index;
+	}
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] enemy_lineup placed=%d"), EnemyLineupSubjects.Num());
+	// Project the review regions now that the bodies are actually in the world. The generic
+	// twelve-second timer in ActivateArtTargetView is scheduled before this lease resolves, and
+	// the acceptance harness treats a capture with no projections as unmeasurable.
+	LogArtRoiProjections();
+
+	// The engine takes its own screenshot rather than relying on macOS screencapture. A packaged
+	// fullscreen game gets its own Space, and a desktop capture of it comes back solid black
+	// whether or not the app is frontmost - which looks exactly like a scene that failed to
+	// render. Eight seconds is auto-exposure settling time, not a guess at load time: the bodies
+	// already exist by the time this runs.
+	FTimerHandle ShotHandle;
+	GetWorldTimerManager().SetTimer(ShotHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this]()
+		{
+			// FScreenshotRequest, not the HighResShot console command: in a packaged build that
+			// command produces no file and no error, which is the worst of both.
+			const FString ShotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("EnemyLineup.png"));
+			FScreenshotRequest::RequestScreenshot(ShotPath, false, false);
+			UE_LOG(LogAshesOfHeaven, Display,
+				TEXT("[Phase4][ArtTarget] enemy_lineup screenshot requested: %s"), *ShotPath);
+		}), 8.0f, false);
+}
+#endif
+
 void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 {
 	// Every review path gets its regions logged, not just -ArtCam: the Battle target is the only
@@ -2118,6 +2271,22 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 	FTimerHandle RoiHandle;
 	GetWorldTimerManager().SetTimer(RoiHandle, FTimerDelegate::CreateWeakLambda(this,
 		[this]() { LogArtRoiProjections(); }), 12.0f, false);
+
+#if !UE_BUILD_SHIPPING
+	// Every review target takes its own frame. macOS screencapture returns solid black for a
+	// packaged fullscreen build even when the app is frontmost - it gets its own Space - so a
+	// desktop grab of any of these is worthless. 25s is past the ROI pass and past auto-exposure
+	// settling, and for Battle it is long enough for the opening wave to have started moving.
+	FTimerHandle ArtShotHandle;
+	const FString ShotName = FString::Printf(TEXT("ArtTarget_%s.png"), *TargetName);
+	GetWorldTimerManager().SetTimer(ArtShotHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this, ShotName]()
+		{
+			const FString ShotPath = FPaths::Combine(FPaths::ProjectSavedDir(), ShotName);
+			FScreenshotRequest::RequestScreenshot(ShotPath, false, false);
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] screenshot requested: %s"), *ShotPath);
+		}), 25.0f, false);
+#endif
 
 	// -ArtCam=X,Y,Z[,Pitch[,Yaw]] overrides the review camera for this launch. There is no
 	// synthetic input into a packaged build on this machine, so without a command-line pose the
@@ -2238,6 +2407,23 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 		// 350uu back and a hair down, so the body sits against road and mid-ground rather than
 		// against the fog aperture, and the body-to-road ratio has road in the same frame.
 		HoldReviewPose(FVector(-1750.0f, -120.0f, 150.0f), FRotator(-3.0f, 0.0f, 0.0f));
+#endif
+	}
+	else if (TargetName.Equals(TEXT("Enemies"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Roster"), ESearchCase::IgnoreCase))
+	{
+#if !UE_BUILD_SHIPPING
+		// Same corridor and the same reasoning as the Combatant bench: ErebusOpening spawns no
+		// combatants of its own, so the only bodies in the world are the ones this places, and
+		// the Y=-120 axis is the stretch with greybox floor under it and a clear sight line.
+		StartStage(EAHChapterStage::ErebusOpening);
+		SpawnEnemyLineupBench();
+		// X=-1750 exactly, the same spot the Combatant bench stands on, because it is the furthest
+		// back that is still inside the stage envelope. At -1800 spatial recovery decides the
+		// player has left the stage and restarts it every seven seconds - which re-runs this whole
+		// branch, stacks another four bodies into the level and throws the camera back to the
+		// spawn. Behind -2000 the greybox floor ends entirely and the frame goes black. The lineup
+		// is therefore moved forward rather than the camera back.
+		HoldReviewPose(FVector(-1750.0f, -120.0f, 205.0f), FRotator(-5.0f, 0.0f, 0.0f));
 #endif
 	}
 	else if (TargetName.Equals(TEXT("UI"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Audio"), ESearchCase::IgnoreCase))
