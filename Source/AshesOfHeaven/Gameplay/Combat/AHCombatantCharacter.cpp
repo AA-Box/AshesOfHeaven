@@ -131,16 +131,24 @@ void AAHCombatantCharacter::BeginPlay()
 	}
 	else if (const FPrimaryAssetId DefaultEnemyId = GetDefaultEnemyDefinitionId(); DefaultEnemyId.IsValid())
 	{
-		if (UGameInstance* GameInstance = GetGameInstance())
+		UGameInstance* GameInstance = GetGameInstance();
+		UAHEnemyAssetSubsystem* Assets = GameInstance ? GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>() : nullptr;
+		if (Assets)
 		{
-			if (UAHEnemyAssetSubsystem* Assets = GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>())
-			{
-				SelfAssetLease = Assets->PreloadEnemyAssets(
-					{ DefaultEnemyId },
-					Assets->BuildBundlesForCurrentPlatform(true, true),
-					FName(*FString::Printf(TEXT("DirectSpawn.%s"), *GetName())),
-					FAHEnemyAssetsReady::CreateUObject(this, &ThisClass::HandleSelfEnemyAssetsReady));
-			}
+			SelfAssetLease = Assets->PreloadEnemyAssets(
+				{ DefaultEnemyId },
+				Assets->BuildBundlesForCurrentPlatform(true, true),
+				FName(*FString::Printf(TEXT("DirectSpawn.%s"), *GetName())),
+				FAHEnemyAssetsReady::CreateUObject(this, &ThisClass::HandleSelfEnemyAssetsReady));
+		}
+		else
+		{
+			// A world with no game instance cannot reach the asset subsystem, and this used to
+			// fail in silence: the body stands there with no mesh, no physics asset and no weapon,
+			// which reads as an immortal invisible enemy rather than as a missing subsystem.
+			UE_LOG(LogAshesOfHeaven, Warning,
+				TEXT("[Assets] combatant %s cannot reach UAHEnemyAssetSubsystem (world has no game instance); it stays unmeshed and unarmed"),
+				*GetName());
 		}
 	}
 	else

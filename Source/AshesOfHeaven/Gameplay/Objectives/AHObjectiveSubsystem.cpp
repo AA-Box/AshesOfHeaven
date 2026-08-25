@@ -1,6 +1,7 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "AshesOfHeaven.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
@@ -49,7 +50,19 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] complete id=%s index=%d/%d"), *ObjectiveId.ToString(), CurrentObjectiveIndex + 1, Objectives.Num());
 	#endif
-	OnObjectiveCompleted.Broadcast(ObjectiveId);
+
+	const bool bFinalLevelOneObjective = AHLevelOneNarrative::IsLevelOneFinalObjective(ObjectiveId)
+		&& CurrentObjectiveIndex == Objectives.Num() - 1;
+
+	// The legacy Chapter One director used OnObjectiveCompleted(Ch01_SurviveDestruction)
+	// to enter its old TenYearsLater epilogue. FOR A WHILE now ends on Erebus, so the
+	// final objective resolves directly through OnMissionComplete instead. Every earlier
+	// objective keeps the normal completion delegate and therefore the existing stage flow.
+	if (!bFinalLevelOneObjective)
+	{
+		OnObjectiveCompleted.Broadcast(ObjectiveId);
+	}
+
 	++CurrentObjectiveIndex;
 	if (CurrentObjectiveIndex >= Objectives.Num())
 	{
@@ -65,8 +78,21 @@ bool UAHObjectiveSubsystem::CompleteObjective(FName ObjectiveId)
 void UAHObjectiveSubsystem::ConfigureObjectives(const TArray<FAHObjectiveDefinition>& NewObjectives, int32 RestoreIndex)
 {
 	Objectives = NewObjectives;
+
+	// The director still contains compatibility definitions for the old PresentDay
+	// epilogue. Level One now canonically ends at Ch01_SurviveDestruction; retain those
+	// enum/stage values for save compatibility, but they are not active objectives here.
+	const int32 FinalLevelOneIndex = Objectives.IndexOfByPredicate([](const FAHObjectiveDefinition& Definition)
+	{
+		return AHLevelOneNarrative::IsLevelOneFinalObjective(Definition.Id);
+	});
+	if (FinalLevelOneIndex != INDEX_NONE && FinalLevelOneIndex + 1 < Objectives.Num())
+	{
+		Objectives.SetNum(FinalLevelOneIndex + 1);
+	}
+
 	#if !UE_BUILD_SHIPPING
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] configure count=%d restore_index=%d"), Objectives.Num(), RestoreIndex);
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Objective] configure count=%d restore_index=%d level_one_final=%d"), Objectives.Num(), RestoreIndex, FinalLevelOneIndex);
 	#endif
 	RestoreState(RestoreIndex);
 }

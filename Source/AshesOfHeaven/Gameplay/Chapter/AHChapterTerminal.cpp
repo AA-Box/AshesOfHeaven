@@ -1,9 +1,11 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
+#include "AshesOfHeaven.h"
 #include "Gameplay/WorldState/AHPersistentIdComponent.h"
 #include "Gameplay/WorldState/AHWorldStateSubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/TextBlock.h"
 #include "UObject/SoftObjectPath.h"
 
 AAHChapterTerminal::AAHChapterTerminal()
@@ -30,12 +32,29 @@ void AAHChapterTerminal::BeginPlay()
 		if (UClass* WidgetClass = FSoftClassPath(TEXT("/Game/Ashes/UI/Terminal/WBP_TerminalWorld.WBP_TerminalWorld_C")).TryLoadClass<UUserWidget>())
 		{
 			TerminalWidget->SetWidgetClass(WidgetClass);
+			// CasualtyText held the 11,407,231 figure the level is about and nothing ever read it,
+			// so the screen showed the widget's authored placeholder instead.
+			TerminalWidget->InitWidget();
+			SetScreenText(FName(TEXT("TerminalIntel")), CasualtyText);
 		}
 	}
 	if (UAHWorldStateSubsystem* WorldState = GetWorld()->GetSubsystem<UAHWorldStateSubsystem>())
 	{
 		WorldState->RegisterSavableActor(this);
 	}
+}
+
+bool AAHChapterTerminal::SetScreenText(FName WidgetName, const FText& Value)
+{
+	UUserWidget* Screen = TerminalWidget ? TerminalWidget->GetUserWidgetObject() : nullptr;
+	UTextBlock* Block = Screen ? Cast<UTextBlock>(Screen->GetWidgetFromName(WidgetName)) : nullptr;
+	if (!Block)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase3.2][Terminal] missing screen text block=%s"), *WidgetName.ToString());
+		return false;
+	}
+	Block->SetText(Value);
+	return true;
 }
 
 void AAHChapterTerminal::Interact_Implementation(AActor* Interactor)
@@ -52,6 +71,7 @@ void AAHChapterTerminal::Interact_Implementation(AActor* Interactor)
 	}
 
 	bConfirmed = true;
+	SetScreenText(FName(TEXT("TerminalStatus")), ConfirmationText);
 	MarkWorldStateDirty();
 	OnConfirmed.Broadcast();
 }

@@ -7,6 +7,7 @@
 #include "Gameplay/Chapter/AHChapterTerminal.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
@@ -18,6 +19,7 @@
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Presentation/AHPresentationData.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -128,24 +130,6 @@ namespace
 			Line(TEXT("LUCIAN"), TEXT("You invaded my world."), 2.6f),
 			Line(TEXT("SAEL"), TEXT("Because the alternative is worse."), 3.0f)
 		};
-	}
-
-	TArray<FAHDialogueLine> MayaLines()
-	{
-		return {
-			Line(TEXT("MAYA"), TEXT("We need you."), 2.2f),
-			Line(TEXT("LUCIAN"), TEXT("I'm retired."), 2.2f),
-			Line(TEXT("MAYA"), TEXT("Eleven million people would disagree."), 3.0f),
-			Line(TEXT("MAYA"), TEXT("That message came from something three billion years old."), 3.2f),
-			Line(TEXT("LUCIAN"), TEXT("When?"), 1.6f),
-			Line(TEXT("MAYA"), TEXT("Six hours ago."), 2.0f),
-			Line(TEXT("LUCIAN"), TEXT("Then we're already late."), 2.8f)
-		};
-	}
-
-	TArray<FAHDialogueLine> NysaLines()
-	{
-		return {Line(TEXT("NYSA TRANSMISSION"), TEXT("LUCIAN VARR."), 2.0f), Line(TEXT("NYSA TRANSMISSION"), TEXT("Modern military identification confirmed."), 2.8f)};
 	}
 
 	TArray<FAHDialogueLine> OtherLucianLines()
@@ -266,6 +250,14 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
 	{
 		DestructionFadeAlpha = FMath::Clamp(StageElapsed / 6.0f, 0.0f, 1.0f);
+	}
+	// The alpha used to be computed and consumed by nobody, so the destruction ending was
+	// dialogue over an unchanged view. Manual camera fade darkens the scene render only, so the
+	// Ch01_ErebusFinale subtitles stay readable as Erebus goes black. StartStage resets the alpha,
+	// so this is inert outside the destruction stage.
+	if (APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0))
+	{
+		CameraManager->SetManualCameraFade(DestructionFadeAlpha, FLinearColor::Black, false);
 	}
 	if (GetCurrentStage() == EAHChapterStage::FleetDeparture && StageElapsed > 5.0f)
 	{
@@ -617,6 +609,15 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		if (!bSaelSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Sael"))))
 		{
 			bSaelSequenceStarted = true;
+			// The beat that plays here is the Other Lucian first encounter (Ch01_Sael resolves to
+			// the canonical Other-Lucian lines). Nothing used to be spawned for it, so the player
+			// heard "You invaded my world" with an empty corridor in front of him. A visual
+			// character actor: no AI, no collision, cannot fall off the walkway.
+			SpawnVisualCharacter(
+				TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+				TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+				FVector(17300.0f, 0.0f, AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior).GameplayFloorZ),
+				FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 			StartDialogueSequence(FName(TEXT("Ch01_Sael")), SaelLines());
 		}
 		break;
@@ -627,7 +628,18 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		SpawnEscapeEncounter();
 		break;
 	case EAHChapterStage::OtherLucian:
-		SpawnFriendly(AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation + FVector(0.0f, -260.0f, 0.0f), FName(TEXT("OtherLucian")));
+		// The silent second sighting is a figure, not a combatant: SpawnFriendly put a gravity- and
+		// AI-driven soldier beside the escape route, which is both the wrong character and free to
+		// walk or fall out of frame. Same visual actor as the first encounter, on the route, at the
+		// authored floor height.
+		SpawnVisualCharacter(
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+			TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"),
+			FVector(
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).SafePlayerLocation.X + 700.0f,
+				260.0f,
+				AHChapterSpatial::GetStageDefinition(EAHChapterStage::OtherLucian).GameplayFloorZ),
+			FRotator(0.0f, 180.0f, 0.0f), 1.0f, FName(TEXT("OtherLucian")));
 		if (!bOtherLucianSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_OtherLucian"))))
 		{
 			bOtherLucianSequenceStarted = true;
@@ -636,22 +648,14 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		break;
 	case EAHChapterStage::ErebusDestruction:
 		Chapter->StopCountdown();
-		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 7.0f, false);
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, AHLevelOneNarrative::GetErebusDestructionHoldSeconds(), false);
 		break;
+	// Unreachable in FOR A WHILE: Level One ends at ErebusDestruction, so no objective
+	// advances into these stages. Kept as stage cases only for save-compatibility reads.
 	case EAHChapterStage::TenYearsLater:
 		SpawnPresentDayScene();
-		if (!bMayaSceneStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Maya"))))
-		{
-			bMayaSceneStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Maya")), MayaLines());
-		}
 		break;
 	case EAHChapterStage::MayaScene:
-		if (!bNysaSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Nysa"))))
-		{
-			bNysaSequenceStarted = true;
-			StartDialogueSequence(FName(TEXT("Ch01_Nysa")), NysaLines());
-		}
 		break;
 	case EAHChapterStage::NysaTransmission:
 		break;
@@ -757,7 +761,10 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Sael")))
 	{
-		StartStage(EAHChapterStage::SaelTransmission);
+		// Only advance if the chapter is still where this beat started. The player can confirm
+		// the terminal while it is still playing, and an unconditional StartStage here would
+		// rewind the chapter out of Escape and leave every later trigger rejected.
+		AdvanceStageFromDialogue(EAHChapterStage::CathedralInterior, EAHChapterStage::SaelTransmission);
 	}
 	else if (SequenceId == FName(TEXT("Ch01_Maya")))
 	{
@@ -769,8 +776,21 @@ void AAHChapterOneDirector::HandleDialogueComplete(FName SequenceId)
 	}
 	else if (SequenceId == FName(TEXT("Ch01_OtherLucian")))
 	{
-		StartStage(EAHChapterStage::Escape);
+		AdvanceStageFromDialogue(EAHChapterStage::OtherLucian, EAHChapterStage::Escape);
 	}
+}
+
+void AAHChapterOneDirector::AdvanceStageFromDialogue(EAHChapterStage ExpectedStage, EAHChapterStage NextStage)
+{
+	if (GetCurrentStage() != ExpectedStage)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] stale_dialogue_transition expected=%s current=%s skipped=%s"),
+			*UEnum::GetValueAsString(ExpectedStage), *UEnum::GetValueAsString(GetCurrentStage()), *UEnum::GetValueAsString(NextStage));
+		#endif
+		return;
+	}
+	StartStage(NextStage);
 }
 
 void AAHChapterOneDirector::HandleTerminalConfirmed()
@@ -837,10 +857,24 @@ void AAHChapterOneDirector::HandleMissionComplete()
 
 void AAHChapterOneDirector::FinishDestructionSequence()
 {
-	if (GetCurrentStage() == EAHChapterStage::ErebusDestruction)
+	if (GetCurrentStage() != EAHChapterStage::ErebusDestruction)
 	{
-		CompleteCurrentObjective();
+		return;
 	}
+	// The hold covers the finale sequence, but the finale can still start late if another
+	// sequence owned the dialogue channel when the stage began. Wait for the closing
+	// transmission rather than completing the objective over it. Bounded at twice the hold so
+	// a wedged dialogue channel cannot strand the player at the end of the level.
+	const float HoldSeconds = AHLevelOneNarrative::GetErebusDestructionHoldSeconds();
+	if (Dialogue && Dialogue->HasActiveDialogue() && StageElapsed < HoldSeconds * 2.0f)
+	{
+		#if !UE_BUILD_SHIPPING
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][ChapterDirector] destruction_wait sequence=%s elapsed=%0.1f"), *Dialogue->GetCurrentSequence().ToString(), StageElapsed);
+		#endif
+		GetWorld()->GetTimerManager().SetTimer(StageTimer, this, &AAHChapterOneDirector::FinishDestructionSequence, 0.5f, false);
+		return;
+	}
+	CompleteCurrentObjective();
 }
 
 void AAHChapterOneDirector::BuildGreybox()
@@ -1808,8 +1842,13 @@ void AAHChapterOneDirector::BuildMissionActors()
 	const FAHStageSpatialDefinition& Battlefield = AHChapterSpatial::GetStageDefinition(EAHChapterStage::OpenBattlefield);
 	Trigger = SpawnTrigger(Battlefield.ObjectiveTargetLocation, FVector(300.0f, 1100.0f, 180.0f), FName(TEXT("CrossBattlefield")), EAHChapterStage::OpenBattlefield);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
-	const FAHStageSpatialDefinition& CathedralApproach = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach);
-	Trigger = SpawnTrigger(CathedralApproach.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::CathedralApproach);
+	// EnterCathedral belongs to FailsafeOrder, not CathedralApproach. Tick already completes
+	// REACH THE CATHEDRAL APPROACH when the player or the Manticore passes X=13700, several
+	// hundred units before this box, so a trigger authored for CathedralApproach can only ever
+	// be overlapped while the chapter is already on FailsafeOrder - where AAHChapterTrigger
+	// rejects it and ACTIVATE PLANETARY FAILSAFE has no other completer at all.
+	const FAHStageSpatialDefinition& FailsafeOrder = AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeOrder);
+	Trigger = SpawnTrigger(FailsafeOrder.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::FailsafeOrder);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
 	const FAHStageSpatialDefinition& CathedralInterior = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralInterior);
 	Trigger = SpawnTrigger(CathedralInterior.ObjectiveTargetLocation, FVector(300.0f, 650.0f, 220.0f), FName(TEXT("ReachTerminal")), EAHChapterStage::CathedralInterior);

@@ -172,6 +172,8 @@ protected:
 	void HandleObjectiveCompleted(FName ObjectiveId);
 	UFUNCTION()
 	void HandleDialogueComplete(FName SequenceId);
+	/** Advances only while the chapter is still on the stage that started the finished beat. */
+	void AdvanceStageFromDialogue(EAHChapterStage ExpectedStage, EAHChapterStage NextStage);
 	UFUNCTION()
 	void HandleTerminalConfirmed();
 	UFUNCTION()
@@ -271,8 +273,6 @@ protected:
 	bool bOpeningSequenceStarted = false;
 	bool bOrderSequenceStarted = false;
 	bool bSaelSequenceStarted = false;
-	bool bMayaSceneStarted = false;
-	bool bNysaSequenceStarted = false;
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;
