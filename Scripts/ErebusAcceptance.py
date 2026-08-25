@@ -88,6 +88,10 @@ EXTRA_TARGETS = {
     # Deterministic character bench: one body, fixed spot, fixed camera, clear sight line, real
     # Erebus lighting. The target sets its own camera, so no -ArtCam.
     "shot8_combatant_bench": ("Combatant", None),
+    # One of every enemy archetype, frozen in a line at equal distance, so scale, orientation,
+    # material and the body fill can be compared between them in a single frame. Sets its own
+    # camera for the same reason shot8 does.
+    "shot9_enemy_lineup": ("Enemies", None),
 }
 # Narrow window on purpose. Too short and the bodies have not reached the pose; at 30s the
 # firefight is over and every candidate is a corpse lying under the floor at Z=-32, which measures

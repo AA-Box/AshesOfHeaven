@@ -76,6 +76,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Fire Discipline", meta=(ClampMin=0.0))
 	float FirstContactGraceSeconds = 1.25f;
 
+	/** Contact fighter: closes to bite range and attacks, never seeks a standoff or cover.
+	 *  Driven off the archetype's FAHEnemyAISettings::bMeleeOnly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Melee")
+	bool bMeleeOnly = false;
+
+	/** Distance the bite lands from. Mirrors UAHCombatComponent::MeleeRange so the AI stops
+	 *  where its own attack actually reaches. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AI|Melee", meta=(ClampMin=40.0))
+	float MeleeReach = 165.0f;
+
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -120,6 +130,9 @@ protected:
 	void MoveWithFallback(const FVector& Destination, float DeltaSeconds, bool bForceNewRequest = false);
 	/** Keeps the weapon fed. A combatant that runs dry and never reloads just stands there. */
 	void MaintainWeapon();
+	/** Run-in-and-bite loop for weaponless archetypes. Pacing comes from the combat component's
+	 *  own melee cooldown, so this can be called every combat tick. */
+	void UpdateMeleeEngagement(AActor* Target, float DeltaSeconds, bool bMovementDue, bool bAimDue, bool bCombatDue);
 	FVector GetStandoffLocation(const FVector& TargetLocation, float Range) const;
 	void FaceLocation(const FVector& Target, float DeltaSeconds);
 	/** Decides whether this combatant is one of the MaxSimultaneousAttackers on its target. */
@@ -150,6 +163,8 @@ protected:
 	float GrenadeReactionReadyTime = -BIG_NUMBER;
 	/** Goal of the path request currently in flight, so it is not restarted every tick. */
 	FVector CurrentMoveGoal = FVector::ZeroVector;
+	/** Earliest world time an idle path-follow may be re-requested for the same goal. */
+	float NextMoveRetryTime = 0.0f;
 	/** Sweep point while hunting a lost target; re-rolled on a timer, never per frame. */
 	FVector SearchLocation = FVector::ZeroVector;
 	FVector CachedTacticalLocation = FVector::ZeroVector;

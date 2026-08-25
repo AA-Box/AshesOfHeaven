@@ -11,6 +11,8 @@
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
+#include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Encounters/AHEncounterDirectorSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
@@ -49,6 +51,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Engine/Engine.h"
+#include "UnrealClient.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -1916,17 +1919,16 @@ void AAHChapterOneDirector::HoldReviewPose(const FVector& Location, const FRotat
 {
 	TeleportPlayer(Location, Rotation);
 	// Re-apply past spatial recovery rather than racing it: this is a review camera, so holding
-	// the pose for a few seconds is the whole contract.
-	TSharedPtr<int32> Reapplied = MakeShared<int32>(0);
+	// the pose is the whole contract. It used to stop after 12 reps - six seconds - while the
+	// acceptance harness projects its review regions at twelve seconds and screenshots at about
+	// thirty, so recoil and spatial recovery walked the camera off the subject and the capture
+	// still came back looking like a valid frame. It now holds for the life of the process; this
+	// is a review-only path and the harness kills the app when it is done.
 	FTimerHandle HoldHandle;
 	GetWorldTimerManager().SetTimer(HoldHandle, FTimerDelegate::CreateWeakLambda(this,
-		[this, Location, Rotation, Reapplied, HoldHandle]() mutable
+		[this, Location, Rotation]()
 		{
 			TeleportPlayer(Location, Rotation);
-			if (++(*Reapplied) >= 12)
-			{
-				GetWorldTimerManager().ClearTimer(HoldHandle);
-			}
 		}), 0.5f, true);
 }
 
@@ -2145,6 +2147,118 @@ void AAHChapterOneDirector::LogArtRoiProjections() const
 	}
 }
 
+#if !UE_BUILD_SHIPPING
+void AAHChapterOneDirector::SpawnEnemyLineupBench()
+{
+	if (!EnemyLineupSubjects.IsEmpty() || EnemyLineupLease.IsValid())
+	{
+		// The art target can be re-activated by a stage restart; without this each pass stacks
+		// another four bodies into the same spot.
+		return;
+	}
+	UGameInstance* GameInstance = GetGameInstance();
+	UAHEnemyAssetSubsystem* Assets = GameInstance ? GameInstance->GetSubsystem<UAHEnemyAssetSubsystem>() : nullptr;
+	if (!Assets)
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED: no enemy asset subsystem"));
+		return;
+	}
+
+	// Every archetype the game can field. Adding one here is how it joins the review bench.
+	TArray<FPrimaryAssetId> Roster;
+	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") })
+	{
+		Roster.Add(AHEnemyAssets::EnemyId(FName(ArchetypeName)));
+	}
+	EnemyLineupLease = Assets->PreloadEnemyAssets(
+		Roster,
+		Assets->BuildBundlesForCurrentPlatform(true, true),
+		TEXT("ArtTarget.EnemyLineup"),
+		FAHEnemyAssetsReady::CreateUObject(this, &AAHChapterOneDirector::HandleEnemyLineupAssetsReady));
+}
+
+void AAHChapterOneDirector::HandleEnemyLineupAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error)
+{
+	if (!bSuccess || !GetWorld())
+	{
+		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED: %s"), *Error);
+		return;
+	}
+
+	// Spread across Y rather than X so all four sit at the same distance from the review camera
+	// and their sizes are directly comparable in one frame.
+	// 190, not 240: at the review pose a 720uu spread pushes the widest body off the frame edge,
+	// and the camera cannot back off far enough to fix it without leaving the greybox floor.
+	const float SpacingY = 190.0f;
+	const float FirstY = -120.0f - SpacingY * (Definitions.Num() - 1) * 0.5f;
+	int32 Index = 0;
+	for (UAHEnemyDefinition* Definition : Definitions)
+	{
+		UClass* SpawnClass = Definition ? Definition->CombatClass.Get() : nullptr;
+		if (!SpawnClass)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup archetype has no combat class: %s"),
+				Definition ? *Definition->EnemyId.ToString() : TEXT("<null>"));
+			continue;
+		}
+		// Facing the camera, which stands back down -X.
+		const FTransform SubjectTransform(FRotator(0.0f, 180.0f, 0.0f), FVector(-1150.0f, FirstY + SpacingY * Index, 150.0f));
+		AAHCombatantCharacter* Subject = GetWorld()->SpawnActorDeferred<AAHCombatantCharacter>(
+			SpawnClass, SubjectTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Subject)
+		{
+			UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4][ArtTarget] enemy_lineup FAILED to spawn %s"), *Definition->EnemyId.ToString());
+			continue;
+		}
+		// ApplyEnemyDefinition sets AutoPossessAI to PlacedInWorldOrSpawned, so disabling it first
+		// does nothing: the bench possessed every body, the two melee archetypes charged the review
+		// camera and killed the player, and the stage restarted every seven seconds - re-running
+		// this branch each time. Disable it after the definition has been applied, and still
+		// before FinishSpawningActor, which is what actually runs BeginPlay.
+		Subject->ApplyEnemyDefinition(Definition);
+		Subject->AutoPossessAI = EAutoPossessAI::Disabled;
+		UGameplayStatics::FinishSpawningActor(Subject, SubjectTransform);
+		if (UCharacterMovementComponent* Movement = Subject->GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+			Movement->StopMovementImmediately();
+		}
+		EnemyLineupSubjects.Add(Subject);
+
+		const USkeletalMeshComponent* Body = Subject->GetMesh();
+		const FVector Extent = Subject->GetComponentsBoundingBox(true).GetExtent();
+		UE_LOG(LogAshesOfHeaven, Display,
+			TEXT("[Phase4][ArtTarget] enemy_lineup %s at=%s mesh=%s world_height=%.0fcm melee=%s"),
+			*Definition->EnemyId.ToString(), *Subject->GetActorLocation().ToCompactString(),
+			Body && Body->GetSkeletalMeshAsset() ? *Body->GetSkeletalMeshAsset()->GetName() : TEXT("<none>"),
+			Extent.Z * 2.0f, Definition->AISettings.bMeleeOnly ? TEXT("true") : TEXT("false"));
+		++Index;
+	}
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4][ArtTarget] enemy_lineup placed=%d"), EnemyLineupSubjects.Num());
+	// Project the review regions now that the bodies are actually in the world. The generic
+	// twelve-second timer in ActivateArtTargetView is scheduled before this lease resolves, and
+	// the acceptance harness treats a capture with no projections as unmeasurable.
+	LogArtRoiProjections();
+
+	// The engine takes its own screenshot rather than relying on macOS screencapture. A packaged
+	// fullscreen game gets its own Space, and a desktop capture of it comes back solid black
+	// whether or not the app is frontmost - which looks exactly like a scene that failed to
+	// render. Eight seconds is auto-exposure settling time, not a guess at load time: the bodies
+	// already exist by the time this runs.
+	FTimerHandle ShotHandle;
+	GetWorldTimerManager().SetTimer(ShotHandle, FTimerDelegate::CreateWeakLambda(this,
+		[this]()
+		{
+			// FScreenshotRequest, not the HighResShot console command: in a packaged build that
+			// command produces no file and no error, which is the worst of both.
+			const FString ShotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("EnemyLineup.png"));
+			FScreenshotRequest::RequestScreenshot(ShotPath, false, false);
+			UE_LOG(LogAshesOfHeaven, Display,
+				TEXT("[Phase4][ArtTarget] enemy_lineup screenshot requested: %s"), *ShotPath);
+		}), 8.0f, false);
+}
+#endif
+
 void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 {
 	// Every review path gets its regions logged, not just -ArtCam: the Battle target is the only
@@ -2272,6 +2386,23 @@ void AAHChapterOneDirector::ActivateArtTargetView(FString TargetName)
 		// 350uu back and a hair down, so the body sits against road and mid-ground rather than
 		// against the fog aperture, and the body-to-road ratio has road in the same frame.
 		HoldReviewPose(FVector(-1750.0f, -120.0f, 150.0f), FRotator(-3.0f, 0.0f, 0.0f));
+#endif
+	}
+	else if (TargetName.Equals(TEXT("Enemies"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Roster"), ESearchCase::IgnoreCase))
+	{
+#if !UE_BUILD_SHIPPING
+		// Same corridor and the same reasoning as the Combatant bench: ErebusOpening spawns no
+		// combatants of its own, so the only bodies in the world are the ones this places, and
+		// the Y=-120 axis is the stretch with greybox floor under it and a clear sight line.
+		StartStage(EAHChapterStage::ErebusOpening);
+		SpawnEnemyLineupBench();
+		// X=-1750 exactly, the same spot the Combatant bench stands on, because it is the furthest
+		// back that is still inside the stage envelope. At -1800 spatial recovery decides the
+		// player has left the stage and restarts it every seven seconds - which re-runs this whole
+		// branch, stacks another four bodies into the level and throws the camera back to the
+		// spawn. Behind -2000 the greybox floor ends entirely and the frame goes black. The lineup
+		// is therefore moved forward rather than the camera back.
+		HoldReviewPose(FVector(-1750.0f, -120.0f, 205.0f), FRotator(-5.0f, 0.0f, 0.0f));
 #endif
 	}
 	else if (TargetName.Equals(TEXT("UI"), ESearchCase::IgnoreCase) || TargetName.Equals(TEXT("Audio"), ESearchCase::IgnoreCase))

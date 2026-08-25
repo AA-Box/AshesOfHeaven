@@ -33,7 +33,7 @@ namespace AHEnemyAssets
 bool FAHEnemyVisualPayload::HasAnyAssetOverride() const
 {
 	return !SkeletalMesh.IsNull() || !AnimClass.IsNull() || !AnimationSet.IsEmpty()
-		|| !PhysicsAsset.IsNull() || !Materials.IsEmpty();
+		|| !PhysicsAsset.IsNull() || !Materials.IsEmpty() || bOverrideMeshTransform;
 }
 
 void FAHEnemyVisualPayload::OverlayOnto(FAHEnemyVisualPayload& Target) const
@@ -44,6 +44,12 @@ void FAHEnemyVisualPayload::OverlayOnto(FAHEnemyVisualPayload& Target) const
 	if (!PhysicsAsset.IsNull()) Target.PhysicsAsset = PhysicsAsset;
 	if (!Materials.IsEmpty()) Target.Materials = Materials;
 	if (!MeshScale.Equals(FVector::OneVector)) Target.MeshScale = MeshScale;
+	if (bOverrideMeshTransform)
+	{
+		Target.MeshOffset = MeshOffset;
+		Target.MeshRotation = MeshRotation;
+		Target.bOverrideMeshTransform = true;
+	}
 }
 
 bool FAHEnemyAudioPayload::HasAnyAssetOverride() const
@@ -113,9 +119,21 @@ EDataValidationResult UAHEnemyDefinition::IsDataValid(FDataValidationContext& Co
 	if (EnemyId.IsNone()) Error(TEXT("EnemyId must be set so the Primary Asset ID survives asset renames."));
 	if (CombatClass.IsNull()) Error(TEXT("CombatClass is required in the Core bundle."));
 	if (Visuals.SkeletalMesh.IsNull()) Error(TEXT("A base skeletal mesh is required in the Visual bundle."));
-	if (Visuals.AnimClass.IsNull()) Error(TEXT("A base animation class is required in the Visual bundle."));
+	// Creature archetypes ship their own skeleton, so there is no mannequin AnimBP to point at and
+	// AAHCombatantCharacter falls back to looping the first clip in AnimationSet. A body with
+	// neither still renders, so this is a warning about a bind-pose enemy, not a broken asset.
+	if (Visuals.AnimClass.IsNull() && Visuals.AnimationSet.IsEmpty())
+	{
+		Context.AddWarning(FText::FromString(FString::Printf(
+			TEXT("%s has no animation class and no animation set; it will spawn in its bind pose."),
+			*EnemyId.ToString())));
+	}
 	if (Visuals.PhysicsAsset.IsNull()) Error(TEXT("A physics asset is required for hit zones and ragdolls."));
-	if (Loadout.WeaponClasses.IsEmpty()) Error(TEXT("At least one soft weapon class is required in the Core bundle."));
+	// A melee archetype is weaponless on purpose - that is what bMeleeOnly declares.
+	if (!AISettings.bMeleeOnly && Loadout.WeaponClasses.IsEmpty())
+	{
+		Error(TEXT("At least one soft weapon class is required in the Core bundle unless AISettings.bMeleeOnly is set."));
+	}
 
 	TArray<FSoftObjectPath> SoftReferences;
 	UAssetManager::Get().ExtractSoftObjectPaths(GetClass(), this, SoftReferences);
