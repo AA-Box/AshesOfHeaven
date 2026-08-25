@@ -86,6 +86,10 @@ void UAHCombatComponent::Melee()
 	}
 
 	GetWorld()->GetTimerManager().SetTimer(MeleeTimer, MeleeCooldown, false);
+	// Every melee path routes through here, so this is the one place a swing has to telegraph.
+	// Hanging it off the AI controller instead would leave a player melee, or any future
+	// scripted attack, swinging invisibly.
+	CombatantOwner->PlayCreatureAttack();
 	if (MeleeSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, MeleeSound, CombatantOwner->GetActorLocation());

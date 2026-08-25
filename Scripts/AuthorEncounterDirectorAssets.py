@@ -127,6 +127,7 @@ def _difficulty(difficulty, budget, delay, active_delta, sophistication):
 def _configure_common(
     definition,
     encounter_id,
+    minimum_player_distance,
     stage,
     objective_id,
     budget,
@@ -159,16 +160,27 @@ def _configure_common(
     definition.set_editor_property("phases", phases)
     definition.set_editor_property("default_reinforcement_delay", 2.0)
     definition.set_editor_property("spawn_query", spawn_query)
+    # EQS_FindRoamLocation is a SimpleGrid generated around the QUERIER, and the querier is the
+    # player pawn, so RoamBoxSize is a hard half-extent on how far any enemy can ever spawn:
+    # 1800 capped every body in the game at 18 metres. The regions below are the real allow-list
+    # and they now reach further out, so the grid has to reach them.
     definition.set_editor_property(
         "spawn_query_float_params",
         {
-            unreal.Name("RoamBoxSize"): 1800.0,
-            unreal.Name("RoamBoxSampleDistance"): 250.0,
+            unreal.Name("RoamBoxSize"): 4200.0,
+            unreal.Name("RoamBoxSampleDistance"): 300.0,
         },
     )
     definition.set_editor_property("allowed_spawn_regions", regions)
-    definition.set_editor_property("minimum_distance_from_player", 700.0)
-    definition.set_editor_property("los_restriction", unreal.AHEncounterLOSRule.HIDDEN_FROM_PLAYER)
+    # 700 put a body seven metres away, which is inside the range at which anything reads as
+    # "appeared". 2200 is far enough to be a silhouette the player can plan around and still
+    # inside the authored regions.
+    definition.set_editor_property("minimum_distance_from_player", minimum_player_distance)
+    # ANY, not HIDDEN_FROM_PLAYER. That rule is a single occlusion trace from the player's eye,
+    # with no frustum test at all, so it did not mean "off screen" - it meant "behind something",
+    # and it systematically selected the one subset of legal ground the player could not see.
+    # Every enemy therefore had to walk out from behind cover to become visible.
+    definition.set_editor_property("los_restriction", unreal.AHEncounterLOSRule.ANY)
     definition.set_editor_property("allowed_directions", ALL_DIRECTIONS)
     definition.set_editor_property(
         "difficulty_modifiers",
@@ -203,6 +215,7 @@ def _author_defensive_line():
     return _configure_common(
         definition=definition,
         encounter_id="Erebus_DefensiveLine",
+        minimum_player_distance=2200.0,
         stage=unreal.AHChapterStage.OPENING_BATTLE,
         objective_id="Ch01_SurviveOpeningBattle",
         # 16.0/8.0/9 before the creature roster. Swapping one opening Pilgrim (1.0) for a Hound
@@ -215,9 +228,12 @@ def _author_defensive_line():
         mobile_cap=5,
         total_cap=10,
         seed=71337,
+        # Moved east from (2350,250) and (2050,-1125). The player holds the line around X=1600,
+        # so the old regions put the whole fight between 1.5 and 13 metres away - there was no
+        # distance at which an enemy could be seen and planned around. These sit 20-37m out.
         regions=[
-            _region(initial, (2350.0, 250.0, 120.0), (600.0, 850.0, 260.0), unreal.AHEncounterDirection.EAST),
-            _region(west, (2050.0, -1125.0, 120.0), (750.0, 300.0, 260.0), unreal.AHEncounterDirection.WEST),
+            _region(initial, (4400.0, 250.0, 120.0), (900.0, 900.0, 260.0), unreal.AHEncounterDirection.EAST),
+            _region(west, (4200.0, -1600.0, 120.0), (900.0, 400.0, 260.0), unreal.AHEncounterDirection.WEST),
         ],
         phases=[
             # 3 Pilgrim (3.0) + 1 Hound (1.5) + the boss Warden (4.0) = 8.5, the whole opening purse.
@@ -258,6 +274,9 @@ def _author_opening_manifest():
     return _configure_common(
         definition=_create_or_load("DA_Encounter_ErebusOpening"),
         encounter_id="Erebus_Opening",
+        # Its single region is centred 200uu from the stage spawn, so a 2200 floor would starve
+        # it completely. 1100 is the most this geometry can give without re-authoring the street.
+        minimum_player_distance=1100.0,
         stage=unreal.AHChapterStage.EREBUS_OPENING,
         objective_id="Ch01_ReachDefensiveLine",
         budget=6.0,
@@ -287,6 +306,8 @@ def _author_cathedral_manifest():
     return _configure_common(
         definition=_create_or_load("DA_Encounter_CathedralApproach"),
         encounter_id="Erebus_CathedralApproach",
+        # The steps region sits on top of the stage spawn; same constraint as the opening.
+        minimum_player_distance=1100.0,
         stage=unreal.AHChapterStage.CATHEDRAL_APPROACH,
         objective_id="Ch01_ReachCathedralApproach",
         budget=12.0,

@@ -1,6 +1,8 @@
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "AshesOfHeaven.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "EngineUtils.h"
+#include "Gameplay/AI/AHCombatAIController.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Camera/CameraComponent.h"
@@ -38,6 +40,37 @@ AAHWeaponBase::AAHWeaponBase()
 	CapacitorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CapacitorMesh->SetOnlyOwnerSee(true);
 	CapacitorMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+}
+
+namespace
+{
+	/** Every hostile AI inside Radius of a shot goes to look. Mirrors the grenade notify: a
+	 *  direct call rather than a hearing sense, because nothing here listens for stimuli. */
+	void NotifyNearbyAIOfShot(AAHCombatantCharacter* Shooter, float Radius)
+	{
+		if (!Shooter || !Shooter->GetWorld())
+		{
+			return;
+		}
+		const FVector ShotLocation = Shooter->GetActorLocation();
+		const float RadiusSquared = FMath::Square(Radius);
+		for (TActorIterator<AAHCombatantCharacter> It(Shooter->GetWorld()); It; ++It)
+		{
+			AAHCombatantCharacter* Listener = *It;
+			if (!Listener || Listener == Shooter || Listener->IsCombatantDead())
+			{
+				continue;
+			}
+			if (FVector::DistSquared(Listener->GetActorLocation(), ShotLocation) > RadiusSquared)
+			{
+				continue;
+			}
+			if (AAHCombatAIController* AI = Cast<AAHCombatAIController>(Listener->GetController()))
+			{
+				AI->ReactToGunshot(ShotLocation, Shooter);
+			}
+		}
+	}
 }
 
 void AAHWeaponBase::BeginPlay()
@@ -452,4 +485,9 @@ void AAHWeaponBase::FireShot()
 	}
 
 	MakeNoise(1.0f, Combatant, Combatant->GetActorLocation(), 3000.0f, Combatant->GetFactionName());
+	// MakeNoise has no listener in this project - no AI configures a hearing sense - so the
+	// stimulus was emitted and dropped on every shot. Notify directly, the same way
+	// AAHGrenadeBase notifies ReactToGrenade, so firing from concealment actually costs the
+	// player something.
+	NotifyNearbyAIOfShot(Combatant, 3000.0f);
 }
