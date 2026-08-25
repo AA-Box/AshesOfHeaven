@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Record VIDEO of the packaged build at a fixed Erebus pose, then extract frames.
 
-CAVEAT: this harness is NOT trustworthy for absolute numbers yet - see
-ScoreErebusMotion.py and Docs/FABLE_ART_LESSONS.md. The consecutive-frame contact
-sheets it enables ARE trustworthy; the statistics need a static vantage first.
+Judge the output by LOOKING at consecutive frames, not by measuring them. Frames ~27ms
+apart show whether an effect evolves or merely translates and whether particles pop. A
+scoring tool was written for this and deleted: it was wrong in two different ways and
+every conclusion it produced turned out to be a capture artifact. See
+Docs/FABLE_ART_LESSONS.md before writing another one.
 
 Every judgement in the fire/smoke pass so far came from single stills. Fire is a motion
 phenomenon: sliding noise, sprite pop, per-frame flicker and TSR shimmer on low-alpha
