@@ -165,8 +165,8 @@ Durable lessons only. Each entry prevents a repeated mistake.
   construction; (3) a fixed screen-space ROI is meaningless unless the frame content
   is proven stable first. Never report a motion number without a control region that
   the effect does not touch, and treat the EXCESS over that control as the only
-  signal. `Scripts/../scratchpad/motion_metric.py` does this; its docstring carries
-  the reasoning.
+  signal. `Scripts/ScoreErebusMotion.py` does this; its docstring carries the
+  reasoning, and `Scripts/CaptureErebusMotion.py` records the footage.
 - Invariance is evidence. A measured "defect" that does not move when you change
   four different parameters that should all affect it is almost certainly in your
   instrument, not in the game. Fire "dropout" held at 25.0 / 25.3 / 25.7 / 24.1%
