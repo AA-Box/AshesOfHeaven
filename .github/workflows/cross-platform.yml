@@ -6,6 +6,12 @@ on:
   push:
     branches: [main]
 
+# Every job only reads the repository: checkout needs contents:read, and
+# actions/upload-artifact uses the Actions runtime token rather than GITHUB_TOKEN.
+# Jobs inherit this, so no job needs its own block.
+permissions:
+  contents: read
+
 jobs:
   source-validation:
     runs-on: ubuntu-latest
