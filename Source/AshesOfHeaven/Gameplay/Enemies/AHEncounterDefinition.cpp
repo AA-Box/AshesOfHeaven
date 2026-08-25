@@ -61,18 +61,41 @@ void UAHEncounterDefinition::BuildSpawnSequence(int32 EnemyCount, TArray<FPrimar
 		return;
 	}
 
-	const int32 MainCount = FMath::Max(0, EnemyCount - AdditionalEnemies.Num());
-	for (int32 Index = 0; Index < MainCount; ++Index)
+	TArray<FPrimaryAssetId> Roster;
+	Roster.Add(PrimaryEnemy);
+	for (const FPrimaryAssetId& EnemyId : AdditionalEnemies)
 	{
-		OutEnemyIds.Add(PrimaryEnemy);
+		if (EnemyId.IsValid())
+		{
+			Roster.AddUnique(EnemyId);
+		}
 	}
-	for (int32 Index = 0; Index < AdditionalEnemies.Num() && OutEnemyIds.Num() < EnemyCount; ++Index)
+	if (Roster.Num() == 1)
 	{
-		OutEnemyIds.Add(AdditionalEnemies[Index].IsValid() ? AdditionalEnemies[Index] : PrimaryEnemy);
+		OutEnemyIds.Init(PrimaryEnemy, EnemyCount);
+		return;
 	}
+
+	// Every listed archetype shows up at least once, the primary included - a roster of six that
+	// rolls three of the same beast reads as a bug, not as variety, and a purely weighted draw can
+	// leave an archetype out of a fight entirely. The remaining slots are drawn at random.
+	for (int32 Index = 0; Index < Roster.Num() && OutEnemyIds.Num() < EnemyCount; ++Index)
+	{
+		OutEnemyIds.Add(Roster[Index]);
+	}
+
+	// Seeded from the encounter, not the clock: FAHEncounterCheckpointState restores an encounter
+	// by replaying its draws, so a checkpoint reload has to rebuild the same line-up. Different
+	// encounters carry different seeds, which is where the variety between fights comes from.
+	FRandomStream Stream(DeterministicSeed + EnemyCount * 977);
 	while (OutEnemyIds.Num() < EnemyCount)
 	{
-		OutEnemyIds.Add(PrimaryEnemy);
+		OutEnemyIds.Add(Roster[Stream.RandRange(0, Roster.Num() - 1)]);
+	}
+	// Shuffle, or the guaranteed archetypes are always the first bodies through the door.
+	for (int32 Index = OutEnemyIds.Num() - 1; Index > 0; --Index)
+	{
+		OutEnemyIds.Swap(Index, Stream.RandRange(0, Index));
 	}
 }
 

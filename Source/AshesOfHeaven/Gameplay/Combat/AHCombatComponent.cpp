@@ -103,6 +103,14 @@ void UAHCombatComponent::Melee()
 	FHitResult Hit;
 	if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(MeleeRadius), Params) && Hit.GetActor())
 	{
+		// The Pawn channel blocks Pawn, so an ally capsule is a valid blocking hit. That was
+		// theoretical while the player was the only caller; a pack of biters all paths to the same
+		// point and bunches nose-to-tail, and the rear one would chew through its own packmate.
+		const AAHCombatantCharacter* HitCombatant = Cast<AAHCombatantCharacter>(Hit.GetActor());
+		if (HitCombatant && !CombatantOwner->IsHostileTo(HitCombatant))
+		{
+			return;
+		}
 		FPointDamageEvent Event;
 		Event.Damage = MeleeDamage;
 		Event.HitInfo = Hit;
