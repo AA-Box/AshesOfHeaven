@@ -14,6 +14,7 @@
 #include "Gameplay/AI/AHCombatAIController.h"
 #include "Platform/AHPlatformManagerSubsystem.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimationAsset.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PointLightComponent.h"
@@ -76,6 +77,7 @@ AAHCombatantCharacter::AAHCombatantCharacter()
 	BodyFillLight->SetAttenuationRadius(500.0f);
 	BodyFillLight->SetIntensityUnits(ELightUnits::Candelas);
 	BodyFillLight->SetIntensity(BodyFillIntensity);
+	BodyFillLight->SetLightColor(BodyFillColor);
 	BodyFillLight->SetCastShadows(false);
 	BodyFillLight->SetVolumetricScatteringIntensity(0.0f);
 	BodyFillLight->bAffectTranslucentLighting = false;
@@ -209,10 +211,29 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = Definition->CombatDefaults.WalkSpeed;
 	}
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		// Applied before the mesh offset below, because the offset is expressed against the
+		// capsule centre and a creature sized to the mannequin capsule either floats or sinks.
+		const float HalfHeight = Definition->CombatDefaults.CapsuleHalfHeight > 0.0f
+			? Definition->CombatDefaults.CapsuleHalfHeight : Capsule->GetUnscaledCapsuleHalfHeight();
+		const float Radius = Definition->CombatDefaults.CapsuleRadius > 0.0f
+			? Definition->CombatDefaults.CapsuleRadius : Capsule->GetUnscaledCapsuleRadius();
+		Capsule->SetCapsuleSize(Radius, HalfHeight, true);
+	}
 	if (UClass* ControllerClass = Definition->AISettings.ControllerClass.Get())
 	{
 		AIControllerClass = ControllerClass;
 		AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	}
+	if (CombatComponent && Definition->AISettings.bMeleeOnly)
+	{
+		// The bite numbers live with the rest of the archetype's AI tuning; the component is
+		// where they have to end up, because it owns the sweep and the cooldown timer.
+		CombatComponent->MeleeDamage = Definition->AISettings.MeleeDamage;
+		CombatComponent->MeleeRange = Definition->AISettings.MeleeRange;
+		CombatComponent->MeleeRadius = Definition->AISettings.MeleeRadius;
+		CombatComponent->MeleeCooldown = Definition->AISettings.MeleeCooldown;
 	}
 
 	const UAHPlatformManagerSubsystem* Platform = UAHPlatformManagerSubsystem::Get(this);
@@ -221,9 +242,26 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 	if (USkeletalMeshComponent* Body = GetMesh())
 	{
 		if (USkeletalMesh* Mesh = Visuals.SkeletalMesh.Get()) Body->SetSkeletalMesh(Mesh);
-		if (UClass* AnimClass = Visuals.AnimClass.Get()) Body->SetAnimInstanceClass(AnimClass);
+		if (UClass* AnimClass = Visuals.AnimClass.Get())
+		{
+			Body->SetAnimInstanceClass(AnimClass);
+		}
+		else if (UAnimationAsset* Clip = Visuals.AnimationSet.IsEmpty() ? nullptr : Visuals.AnimationSet[0].Get())
+		{
+			// Creature meshes arrive with their own skeleton, so the mannequin AnimBP cannot
+			// drive them and there is no retarget to borrow. Loop the archetype's first authored
+			// clip in single-node mode: a moving body beats a T-pose.
+			// ponytail: no state machine, so no hit reacts or attack poses. Author a per-skeleton
+			// AnimBP when a creature needs to visibly telegraph its bite.
+			Body->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+			Body->PlayAnimation(Clip, true);
+		}
 		if (UPhysicsAsset* PhysicsAsset = Visuals.PhysicsAsset.Get()) Body->SetPhysicsAsset(PhysicsAsset, true);
 		Body->SetRelativeScale3D(Visuals.MeshScale);
+		if (Visuals.bOverrideMeshTransform)
+		{
+			Body->SetRelativeLocationAndRotation(Visuals.MeshOffset, Visuals.MeshRotation);
+		}
 		for (int32 Index = 0; Index < Visuals.Materials.Num(); ++Index)
 		{
 			if (UMaterialInterface* Material = Visuals.Materials[Index].Get()) ApplyBodyPaint(Body, Index, Material);

@@ -10,7 +10,15 @@ import unreal
 ENCOUNTER_PATH = "/Game/Ashes/Data/Encounters"
 PILGRIM = "Pilgrim"
 WARDEN = "Warden"
+HOUND = "Hound"
+SPIDER = "Spider"
 ALL_DIRECTIONS = 1 | 2 | 4 | 8
+
+# Spawn costs come from each archetype's authored ThreatCost when the pool entry does not override
+# it: Pilgrim 1.0, Hound 1.5, Spider 2.5, Warden 4.0. Fixed composition slots are charged against
+# the same credits as pool draws, so every composition below is written to fit the encounter's
+# StartingCredits exactly - a slot the director cannot afford is silently skipped, and a fight that
+# quietly drops its heaviest body is worse than one that is simply tuned wrong.
 
 
 def _primary_asset_id(asset_type, name):
@@ -197,31 +205,38 @@ def _author_defensive_line():
         encounter_id="Erebus_DefensiveLine",
         stage=unreal.AHChapterStage.OPENING_BATTLE,
         objective_id="Ch01_SurviveOpeningBattle",
-        budget=16.0,
-        starting_credits=8.0,
+        # 16.0/8.0/9 before the creature roster. Swapping one opening Pilgrim (1.0) for a Hound
+        # (1.5) and one reinforcement Pilgrim for a Spider (2.5) costs 2.0 more threat, and the
+        # west-lane bonus rises with it so the pool fill still has something to spend. The extra
+        # total slot is the body that swap would otherwise have taken out of the fight.
+        budget=18.0,
+        starting_credits=8.5,
         active_cap=8,
         mobile_cap=5,
-        total_cap=9,
+        total_cap=10,
         seed=71337,
         regions=[
             _region(initial, (2350.0, 250.0, 120.0), (600.0, 850.0, 260.0), unreal.AHEncounterDirection.EAST),
             _region(west, (2050.0, -1125.0, 120.0), (750.0, 300.0, 260.0), unreal.AHEncounterDirection.WEST),
         ],
         phases=[
+            # 3 Pilgrim (3.0) + 1 Hound (1.5) + the boss Warden (4.0) = 8.5, the whole opening purse.
             _phase(
                 "InitialAssault",
                 unreal.AHEncounterPhaseTrigger.IMMEDIATE,
-                [_slot(PILGRIM, 4, [initial])],
+                [_slot(PILGRIM, 3, [initial]), _slot(HOUND, 1, [initial])],
                 [initial],
                 2,
             ),
+            # The west lane is where the heavy crawler comes from: 2 Pilgrim (2.0) + 1 Spider (2.5)
+            # is 4.5 of the 6.0 bonus, leaving 1.5 for one more pool draw.
             _phase(
                 "WestLaneReinforcement",
                 unreal.AHEncounterPhaseTrigger.FORCE_REMAINING_RATIO,
-                [_slot(PILGRIM, 3, [west])],
+                [_slot(PILGRIM, 2, [west]), _slot(SPIDER, 1, [west])],
                 [west],
                 8,
-                bonus=4.0,
+                bonus=6.0,
                 delay=2.5,
                 force_ratio=0.5,
                 fill=True,
@@ -230,6 +245,8 @@ def _author_defensive_line():
         ],
         pool=[
             _pool(PILGRIM, 1.0, 1.0, maximum=8),
+            _pool(HOUND, 0.85, 1.5, maximum=4, veteran=1.15, damnation=1.30),
+            _pool(SPIDER, 0.50, 2.5, minimum_phase=1, maximum=2, veteran=1.10, damnation=1.25),
             _pool(WARDEN, 0.55, 4.0, minimum_phase=1, maximum=2, veteran=1.10, damnation=1.25),
         ],
         boss_slots=[_slot(WARDEN, 1, [initial])],
@@ -250,8 +267,18 @@ def _author_opening_manifest():
         total_cap=5,
         seed=41017,
         regions=[_region(region, (200.0, 0.0, 120.0), (650.0, 1100.0, 260.0), unreal.AHEncounterDirection.EAST)],
-        phases=[_phase("StreetContact", unreal.AHEncounterPhaseTrigger.IMMEDIATE, [_slot(PILGRIM, 3, [region])], [region], 2)],
-        pool=[_pool(PILGRIM, 1.0, 1.0, maximum=5)],
+        # 2 Pilgrim + 1 Hound = 3.5 of the 6.0 opening credits, where 3 Pilgrim was 3.0. First
+        # contact is where the player learns that not every silhouette stands off and shoots.
+        phases=[
+            _phase(
+                "StreetContact",
+                unreal.AHEncounterPhaseTrigger.IMMEDIATE,
+                [_slot(PILGRIM, 2, [region]), _slot(HOUND, 1, [region])],
+                [region],
+                2,
+            )
+        ],
+        pool=[_pool(PILGRIM, 1.0, 1.0, maximum=5), _pool(HOUND, 0.8, 1.5, maximum=3)],
     )
 
 
@@ -269,16 +296,33 @@ def _author_cathedral_manifest():
         total_cap=8,
         seed=91273,
         regions=[_region(region, (15100.0, 0.0, 890.0), (350.0, 750.0, 220.0), unreal.AHEncounterDirection.EAST)],
-        phases=[_phase("OuterSteps", unreal.AHEncounterPhaseTrigger.IMMEDIATE, [_slot(PILGRIM, 4, [region]), _slot(WARDEN, 1, [region])], [region], 2)],
-        pool=[_pool(PILGRIM, 1.0, 1.0, maximum=7), _pool(WARDEN, 0.4, 4.0, maximum=1)],
+        # 2 Pilgrim (2.0) + 1 Hound (1.5) + 1 Warden (4.0) = 7.5 of the 8.0 opening credits, where
+        # 4 Pilgrim + 1 Warden was 8.0. The Spider stays in the pool rather than the fixed slots:
+        # the steps are a narrow approach and a guaranteed crawler there is a wall, not a fight.
+        phases=[
+            _phase(
+                "OuterSteps",
+                unreal.AHEncounterPhaseTrigger.IMMEDIATE,
+                [_slot(PILGRIM, 2, [region]), _slot(HOUND, 1, [region]), _slot(WARDEN, 1, [region])],
+                [region],
+                2,
+            )
+        ],
+        pool=[
+            _pool(PILGRIM, 1.0, 1.0, maximum=7),
+            _pool(HOUND, 0.75, 1.5, maximum=3),
+            _pool(SPIDER, 0.40, 2.5, maximum=1),
+            _pool(WARDEN, 0.4, 4.0, maximum=1),
+        ],
     )
 
 
 def main():
-    if unreal.load_asset("/Game/Ashes/Data/Enemies/DA_Enemy_Pilgrim.DA_Enemy_Pilgrim") is None:
-        raise RuntimeError("Run Scripts/AuthorEnemyDefinitions.py before authoring encounters")
-    if unreal.load_asset("/Game/Ashes/Data/Enemies/DA_Enemy_Warden.DA_Enemy_Warden") is None:
-        raise RuntimeError("Run Scripts/AuthorEnemyDefinitions.py before authoring encounters")
+    for archetype in (PILGRIM, WARDEN, HOUND, SPIDER):
+        path = "/Game/Ashes/Data/Enemies/DA_Enemy_%s.DA_Enemy_%s" % (archetype, archetype)
+        if unreal.load_asset(path) is None:
+            raise RuntimeError(
+                "Run Scripts/AuthorEnemyDefinitions.py before authoring encounters (missing %s)" % path)
 
     unreal.EditorAssetLibrary.make_directory(ENCOUNTER_PATH)
     _author_opening_manifest()

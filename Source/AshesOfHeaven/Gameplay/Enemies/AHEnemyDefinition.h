@@ -67,6 +67,15 @@ struct ASHESOFHEAVEN_API FAHEnemyCombatDefaults
 	/** Seconds a corpse may remain after death. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
 	float CorpseLifeSpan = 30.0f;
+
+	/** Zero keeps the combat class default. A knee-high biter and a two-and-a-half metre
+	 *  revenant cannot share the mannequin capsule: too tall and the body floats, too short
+	 *  and the head pokes through geometry. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
+	float CapsuleHalfHeight = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat", meta=(ClampMin="0.0"))
+	float CapsuleRadius = 0.0f;
 };
 
 /** AI authoring values and optional behavior assets needed before possession. */
@@ -110,6 +119,26 @@ struct ASHESOFHEAVEN_API FAHEnemyAISettings
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI", meta=(ClampMin="0.0"))
 	float MaxBurstPause = 1.6f;
+
+	/** Closes to contact and bites instead of holding a firing line. Set on archetypes whose
+	 *  Loadout grants no weapon - a beast has nothing to stand off with, so the cover, standoff
+	 *  and burst-fire logic that governs a rifleman would leave it circling out of reach. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee")
+	bool bMeleeOnly = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeDamage = 45.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeRange = 165.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.0"))
+	float MeleeRadius = 28.0f;
+
+	/** Seconds between bites. This is the beast's whole damage cadence, so it is the knob that
+	 *  decides whether a pack is pressure or an instant kill. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="AI|Melee", meta=(ClampMin="0.1"))
+	float MeleeCooldown = 1.1f;
 };
 
 /** Mesh, animation, physics, and material payload for one presentation tier. */
@@ -135,6 +164,18 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	FVector MeshScale = FVector::OneVector;
+
+	/** Body transform relative to the capsule centre, used when bOverrideMeshTransform is set.
+	 *  The mannequin convention (origin at the feet, facing +Y) is baked into the combat class
+	 *  defaults; an imported creature honours neither, so each one carries its own. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FVector MeshOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	FRotator MeshRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
+	bool bOverrideMeshTransform = false;
 
 	bool HasAnyAssetOverride() const;
 	void OverlayOnto(FAHEnemyVisualPayload& Target) const;
