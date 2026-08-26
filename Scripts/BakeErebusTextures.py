@@ -12,7 +12,10 @@ S = 1024
 # Write straight into the directory ImportErebusTextures.py reads, so a re-bake is
 # immediately importable instead of needing a hand copy.
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Saved", "ErebusTextureSource")
-os.makedirs(OUT, exist_ok=True)
+# NOT at module scope: other modules import this one for its noise helpers, and creating
+# the directory on import leaves an EMPTY Saved/ErebusTextureSource behind, which is
+# enough to satisfy ImportErebusTextures.py's "have you baked yet" guard and turn a hard
+# stop into a soft "expected 15 textures, got 0".
 rng = np.random.default_rng(46)
 
 
@@ -259,6 +262,7 @@ def bake_vfx_noise():
 
 
 if __name__ == "__main__":
+    os.makedirs(OUT, exist_ok=True)
     bake_concrete(); bake_metal(); bake_mud(); bake_asphalt(); bake_masks(); bake_vfx_noise()
     # self-check: every output exists, is tileable-sized, non-degenerate
     import glob

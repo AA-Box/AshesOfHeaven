@@ -7,9 +7,12 @@ class USoundBase;
 
 namespace AHChapterStateConstants
 {
-	constexpr int32 CurrentSaveVersion = 6;
+	// v7 ends Level One at the destruction of Erebus. The old PresentDay stages remain in
+	// the enum for save compatibility and future Level Two migration, but are no longer
+	// objectives in Level One.
+	constexpr int32 CurrentSaveVersion = 7;
 	constexpr int32 CurrentSpatialSchemaVersion = 2;
-	constexpr int32 ObjectiveCount = 17;
+	constexpr int32 ObjectiveCount = 12;
 }
 
 UENUM(BlueprintType)
@@ -30,6 +33,8 @@ enum class EAHChapterStage : uint8
 	Escape,
 	OtherLucian,
 	ErebusDestruction,
+	// Retained for compatibility. These beats belong to the later campaign now and are
+	// not part of Level One: FOR A WHILE.
 	TenYearsLater,
 	MayaScene,
 	NysaTransmission,

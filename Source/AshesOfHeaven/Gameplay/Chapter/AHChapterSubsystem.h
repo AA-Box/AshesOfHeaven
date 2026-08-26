@@ -6,7 +6,6 @@
 #include "AHChapterSubsystem.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHChapterStageChangedDelegate, EAHChapterStage, Stage);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAHChapterCountdownMilestoneDelegate, int32, SecondsRemaining);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAHChapterCountdownChangedDelegate, float, SecondsRemaining, bool, bActive);
 
 UCLASS()
@@ -19,9 +18,6 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterStageChangedDelegate OnStageChanged;
-
-	UPROPERTY(BlueprintAssignable, Category="Chapter")
-	FAHChapterCountdownMilestoneDelegate OnCountdownMilestone;
 
 	UPROPERTY(BlueprintAssignable, Category="Chapter")
 	FAHChapterCountdownChangedDelegate OnCountdownChanged;

@@ -1,5 +1,6 @@
 #include "Gameplay/AI/AHCombatAIController.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
+#include "Gameplay/Characters/AHCombatPlayerCharacter.h"
 #include "Gameplay/Combat/AHCombatComponent.h"
 #include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
@@ -42,6 +43,16 @@ void AAHCombatAIController::ApplyEnemySettings(const FAHEnemyAISettings& Setting
 	BurstRounds = Settings.BurstRounds;
 	MinBurstPause = Settings.MinBurstPause;
 	MaxBurstPause = Settings.MaxBurstPause;
+	bMeleeOnly = Settings.bMeleeOnly;
+	MeleeReach = Settings.MeleeRange;
+	if (bMeleeOnly)
+	{
+		// A biter that respects a 650uu minimum range never reaches anything. Its engagement
+		// distances are its own reach, whatever the shared archetype defaults happened to say.
+		PreferredEngagementRange = MeleeReach;
+		MinimumEngagementRange = 0.0f;
+		bPreferCover = false;
+	}
 	if (AIPerception)
 	{
 		if (UAISenseConfig_Sight* Sight = AIPerception->GetSenseConfig<UAISenseConfig_Sight>())
@@ -94,6 +105,28 @@ void AAHCombatAIController::ApplyEncounterSophistication(float Sophistication)
 	if (Combatant.IsValid())
 	{
 		Combatant->SetAimSpreadPenaltyDegrees((1.0f - Accuracy) * MaxAimErrorDegrees);
+	}
+}
+
+void AAHCombatAIController::AlertToLocation(const FVector& Location)
+{
+	LastKnownLocation = Location;
+	bHasSeenTarget = true;
+	LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
+	// Suspicious, not Alert: they know where to go, not who is there.
+	Awareness = FMath::Max(Awareness, MakeAwarenessTuning().SuspiciousThreshold);
+}
+
+void AAHCombatAIController::AlertToDamage(AActor* Instigator)
+{
+	// Taking a hit is not a sight event and must not be gated by one: being shot from a direction
+	// you cannot see is the exact case where staying unaware is wrong.
+	bForcedAlertPending = true;
+	if (Instigator)
+	{
+		LastKnownLocation = Instigator->GetActorLocation();
+		bHasSeenTarget = true;
+		LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
 	}
 }
 
@@ -203,12 +236,12 @@ void AAHCombatAIController::Tick(float DeltaSeconds)
 void AAHCombatAIController::UpdateTarget()
 {
 	AH_SCOPE_PERFORMANCE(AIPerception, this);
-	if (CurrentTarget.IsValid() && Cast<AAHCombatantCharacter>(CurrentTarget.Get()) && !Cast<AAHCombatantCharacter>(CurrentTarget.Get())->IsCombatantDead())
-	{
-		return;
-	}
+	// No early-out on "already have a living target". That is what made a target impossible to
+	// lose: an AI that saw the player once held them forever, through walls, at any range, so
+	// there was no way to break contact and nothing to sneak past.
 	AActor* const PreviousTarget = CurrentTarget.Get();
-	CurrentTarget = FindBestTarget();
+	CurrentTarget = UpdateAwareness(GetWorld() ? GetWorld()->GetTimeSeconds() - LastAwarenessStepTime : 0.0f);
+	LastAwarenessStepTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	if (CurrentTarget.Get() != PreviousTarget)
 	{
 		// A new target is a new contact, so it gets its own grace window.
@@ -236,6 +269,106 @@ void AAHCombatAIController::UpdateTarget()
 	}
 }
 
+FAHAwarenessTuning AAHCombatAIController::MakeAwarenessTuning() const
+{
+	FAHAwarenessTuning Tuning;
+	Tuning.GainRatePerSecond = AwarenessGainRate;
+	Tuning.DecayRatePerSecond = AwarenessDecayRate;
+	return Tuning;
+}
+
+bool AAHCombatAIController::IsWithinViewCone(const AActor* Target) const
+{
+	if (!Target || !Combatant.IsValid())
+	{
+		return false;
+	}
+	const FVector ToTarget = (Target->GetActorLocation() - Combatant->GetActorLocation()).GetSafeNormal2D();
+	if (ToTarget.IsNearlyZero())
+	{
+		return true;
+	}
+	// Control rotation, not actor rotation: FaceLocation drives the control rotation and
+	// bUseControllerRotationYaw carries it to the body, so this is where the AI is looking.
+	const FVector Facing = GetControlRotation().Vector().GetSafeNormal2D();
+	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(FMath::Clamp(ViewConeHalfAngleDegrees, 5.0f, 180.0f)));
+	return FVector::DotProduct(Facing, ToTarget) >= CosHalfAngle;
+}
+
+void AAHCombatAIController::ReactToGunshot(const FVector& ShotLocation, AActor* Shooter)
+{
+	if (!Combatant.IsValid() || Combatant->IsCombatantDead())
+	{
+		return;
+	}
+	const AAHCombatantCharacter* ShootingCombatant = Cast<AAHCombatantCharacter>(Shooter);
+	if (!ShootingCombatant || !Combatant->IsHostileTo(ShootingCombatant))
+	{
+		return;
+	}
+	// A shot does not hand over the shooter - it hands over a direction. The AI goes to look,
+	// which is what makes firing from concealment a real decision rather than a free reveal.
+	LastKnownLocation = ShotLocation;
+	bHasSeenTarget = true;
+	LastSeenTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastSeenTime;
+	Awareness = FMath::Max(Awareness, MakeAwarenessTuning().SuspiciousThreshold);
+}
+
+AActor* AAHCombatAIController::UpdateAwareness(float DeltaSeconds)
+{
+	if (!Combatant.IsValid() || Combatant->IsCombatantDead())
+	{
+		Awareness = 0.0f;
+		AwarenessState = EAHAwarenessState::Unaware;
+		AwarenessCandidate = nullptr;
+		return nullptr;
+	}
+
+	const FAHAwarenessTuning Tuning = MakeAwarenessTuning();
+	AActor* Candidate = FindBestTarget();
+	// A dead or vanished candidate takes its awareness with it, or the AI keeps hunting a corpse.
+	if (Candidate != AwarenessCandidate.Get())
+	{
+		Awareness = 0.0f;
+		AwarenessCandidate = Candidate;
+	}
+	if (!Candidate)
+	{
+		AwarenessState = EAHAwarenessState::Unaware;
+		return nullptr;
+	}
+
+	FAHAwarenessEvidence Evidence;
+	Evidence.DistanceToTarget = FVector::Dist(Candidate->GetActorLocation(), Combatant->GetActorLocation());
+	Evidence.SightRange = SightRange;
+	Evidence.bHasLineOfSight = HasLineOfSightTo(Candidate);
+	Evidence.bWithinViewCone = IsWithinViewCone(Candidate);
+	Evidence.bForcedAlert = bForcedAlertPending;
+	if (const AAHCombatPlayerCharacter* PlayerTarget = Cast<AAHCombatPlayerCharacter>(Candidate))
+	{
+		Evidence.bTargetCrouched = PlayerTarget->IsCrouchedForCombat();
+		Evidence.bTargetSprinting = PlayerTarget->IsSprinting();
+	}
+	bForcedAlertPending = false;
+
+	const bool bWasAlert = AwarenessState == EAHAwarenessState::Alert;
+	Awareness = AHPerception::StepAwareness(Awareness, Evidence, Tuning, DeltaSeconds);
+	AwarenessState = AHPerception::ResolveState(Awareness, bWasAlert, Tuning);
+
+	if (AwarenessState == EAHAwarenessState::Alert)
+	{
+		return Candidate;
+	}
+	if (AwarenessState == EAHAwarenessState::Suspicious && !LastKnownLocation.IsZero())
+	{
+		// Suspicious is not a target. The AI investigates the last known point through the
+		// existing search behaviour, and holds fire while it does.
+		return nullptr;
+	}
+	bHasSeenTarget = false;
+	return nullptr;
+}
+
 AActor* AAHCombatAIController::FindBestTarget() const
 {
 	AAHCombatantCharacter* Best = nullptr;
@@ -249,6 +382,13 @@ AActor* AAHCombatAIController::FindBestTarget() const
 		}
 
 		const float Distance = FVector::DistSquared(Candidate->GetActorLocation(), Combatant->GetActorLocation());
+		// Out of sight range is not a candidate at all. Without this the sweep nominates a hostile
+		// on the far side of the level and awareness sits at zero against it while a closer,
+		// visible one is never considered.
+		if (Distance > FMath::Square(SightRange))
+		{
+			continue;
+		}
 		const float PlayerBias = Candidate->GetFaction() == EAHFaction::Player ? 0.35f : 1.0f;
 		if (Distance * PlayerBias < BestScore)
 		{
@@ -306,15 +446,72 @@ void AAHCombatAIController::MoveWithFallback(const FVector& Destination, float D
 	// wrong loop. One request per goal, left alone until the goal actually moves or completes.
 	const bool bGoalMoved = !CurrentMoveGoal.Equals(Destination, 150.0f);
 	const bool bIdle = GetMoveStatus() == EPathFollowingStatus::Idle;
-	if (bForceNewRequest || bGoalMoved || bIdle)
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	// The idle case is a retry, and a retry that cannot succeed must not run every frame. A target
+	// standing off the navmesh returns a partial path that completes short of it, so the follower
+	// goes Idle with the goal still out of reach - and a melee chaser re-requests on the very next
+	// frame, at Near tier, which is a synchronous A* per creature per frame for the whole fight.
+	// ponytail: fixed 0.4s backoff. Make it adaptive only if traces still show idle thrash.
+	if (bForceNewRequest || bGoalMoved || (bIdle && Now >= NextMoveRetryTime))
 	{
 		AH_SCOPE_PERFORMANCE(Movement, this);
+		if (bIdle)
+		{
+			NextMoveRetryTime = Now + 0.4f;
+		}
 		CurrentMoveGoal = Destination;
 		MoveToLocation(Destination, 80.0f, true);
 	}
 
 	// Path following steers; this only keeps the body pointed where it is going.
 	FaceLocation(Destination, DeltaSeconds);
+}
+
+void AAHCombatAIController::UpdateMeleeEngagement(AActor* Target, float DeltaSeconds, bool bMovementDue, bool bAimDue, bool bCombatDue)
+{
+	if (!Combatant.IsValid() || !Target)
+	{
+		return;
+	}
+
+	// Nothing tactical to decide: the beast has one plan and it is the target's throat. Leaving
+	// the intent on Hold also keeps ExecuteTacticalMovement and its EQS queries out of the loop.
+	SetTacticalIntent(EAHTacticalIntent::Hold);
+
+	const FVector TargetLocation = Target->GetActorLocation();
+	const float Distance = FVector::Dist(TargetLocation, Combatant->GetActorLocation());
+	// Stop a little short of maximum reach so the sweep still connects while the target drifts,
+	// rather than standing exactly on the edge and whiffing every other bite.
+	const float StopDistance = FMath::Max(60.0f, MeleeReach * 0.7f);
+
+	if (bMovementDue)
+	{
+		if (Distance > StopDistance)
+		{
+			MoveWithFallback(TargetLocation, DeltaSeconds);
+		}
+		else
+		{
+			if (GetMoveStatus() != EPathFollowingStatus::Idle)
+			{
+				StopMovement();
+			}
+			CurrentMoveGoal = FVector::ZeroVector;
+		}
+	}
+	if (bAimDue)
+	{
+		FaceLocation(TargetLocation, DeltaSeconds);
+	}
+	if (bCombatDue && Distance <= MeleeReach)
+	{
+		if (UAHCombatComponent* Combat = Combatant->GetCombatComponent())
+		{
+			// Melee() is a no-op while its own cooldown timer is running, so the cadence is the
+			// archetype's MeleeCooldown and not the AI decision rate.
+			Combat->Melee();
+		}
+	}
 }
 
 void AAHCombatAIController::MaintainWeapon()
@@ -401,6 +598,12 @@ void AAHCombatAIController::UpdateCombatBehavior(float DeltaSeconds, bool bPerce
 			bHasSeenTarget = true;
 			bInvestigating = false;
 			NextSearchTime = 0.0f;
+		}
+
+		if (bMeleeOnly)
+		{
+			UpdateMeleeEngagement(Target, DeltaSeconds, bMovementDue, bAimDue, bCombatDue);
+			return;
 		}
 
 		if (bTacticalDue)
@@ -882,7 +1085,11 @@ void AAHCombatAIController::UpdateAttackSlot()
 			continue;
 		}
 		const AAHCombatantCharacter* OtherPawn = Other->Combatant.Get();
-		if (!OtherPawn || OtherPawn->IsCombatantDead())
+		// A biter never spends an aim slot - UpdateMeleeEngagement returns before ApplyAimDiscipline
+		// and UpdateBurstFire ever run - so it must not block one either. It also stands closer to
+		// the target than anything else in the fight, so without this two hounds silently pin every
+		// rifleman in the encounter to suppression spread for the rest of the fight.
+		if (!OtherPawn || OtherPawn->IsCombatantDead() || Other->bMeleeOnly)
 		{
 			continue;
 		}

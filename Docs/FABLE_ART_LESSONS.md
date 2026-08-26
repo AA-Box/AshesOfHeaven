@@ -154,3 +154,32 @@ Durable lessons only. Each entry prevents a repeated mistake.
   input, so pass `""`, not `"Input"`. Math nodes' `ConstA`/`ConstB`/
   `ConstExponent`/`ConstAlpha` defaults remove most constant nodes from an
   authored graph.
+- Judging VFX in MOTION needs a capture harness that is itself verified, and this
+  one is not. Three separate artifacts were each mistaken for a game defect before
+  being caught: (1) `screencapture -v` imposes its own ~1s encoding cadence, so
+  autocorrelating any region's brightness reports a confident loop — a static HUD
+  region scores r=0.56 and an empty skyline r=0.71 at the SAME lag in the SAME
+  recording; (2) the packaged window renders a BLACK 3D scene whenever it is not
+  frontmost while Slate keeps drawing the HUD, so a lost-focus frame looks exactly
+  like the effect vanishing and a HUD-based sanity check cannot see it by
+  construction; (3) a fixed screen-space ROI is meaningless unless the frame content
+  is proven stable first. Never report a motion number without a control region that
+  the effect does not touch, and treat the EXCESS over that control as the only
+  signal. No scoring tool ships with this: one was written, was wrong in two
+  different ways, and never produced a number that survived scrutiny.
+- Invariance is evidence. A measured "defect" that does not move when you change
+  four different parameters that should all affect it is almost certainly in your
+  instrument, not in the game. Fire "dropout" held at 25.0 / 25.3 / 25.7 / 24.1%
+  across four builds with different determinism, pan speeds, loop durations and
+  distance-cull settings; that flatness was the tell, not the number.
+- Consecutive-frame contact sheets are the cheap, trustworthy motion check, and the
+  only one that ever worked here: five native frames ~27ms apart show whether an effect
+  EVOLVES or merely translates, and whether particles pop, with no statistics to get
+  wrong. `Scripts/CaptureErebusMotion.py` records the footage; two ffmpeg calls and a
+  paste loop turn it into a sheet. Reach for a metric only if a sheet cannot answer the
+  question, and build the control region in from the first line if you do.
+- Fountain exposes far more rapid-iteration parameters than the recipe table reads.
+  `InitializeParticle.Sprite Rotation Angle Min`/`Max`, `EmitterState.Loop Duration`,
+  `EmitterState.MinDistance`/`MaxDistance` are all settable and were all being left
+  at template defaults. Dump the parameter list before concluding something needs a
+  module added.

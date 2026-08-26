@@ -214,10 +214,47 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 	if (DefensiveLine)
 	{
 		TestEqual(TEXT("Defensive Line is the migrated encounter ID"), DefensiveLine->EncounterId, FName(TEXT("Erebus_DefensiveLine")));
-		TestEqual(TEXT("Defensive Line owns sixteen tactical budget"), DefensiveLine->EnemyBudget, 16.0f);
+		// 18.0, raised from 16.0 when the roster gained the Hound (1.5) and Spider (2.5): the
+		// opening wave swapped one Pilgrim for a Hound and the reinforcement swapped one for a
+		// Spider, which is exactly 2.0 more threat. The number is asserted so the budget cannot
+		// drift silently - it is what decides whether the boss Warden is affordable at all.
+		TestEqual(TEXT("Defensive Line owns eighteen tactical budget"), DefensiveLine->EnemyBudget, 18.0f);
 		TestEqual(TEXT("Defensive Line has two authored phases"), DefensiveLine->Phases.Num(), 2);
 		TestNotNull(TEXT("Defensive Line has an EQS spawn query"), DefensiveLine->SpawnQuery.Get());
 		TestFalse(TEXT("Defensive Line spawn regions are explicitly bounded"), DefensiveLine->AllowedSpawnRegions.IsEmpty());
+
+		// The opening purse has to cover the whole authored opening or a fixed slot is silently
+		// skipped: 3 Pilgrim (3.0) + 1 Hound (1.5) + the boss Warden (4.0) = 8.5.
+		TestEqual(TEXT("Defensive Line opens with its whole authored composition affordable"),
+			DefensiveLine->StartingCredits, 8.5f);
+
+		// The spawn-placement contract, asserted because nothing else observes it: these two
+		// values are the whole reason enemies used to appear a few metres away instead of being
+		// visible at range. TryResolveSafeSpawnLocation is private and untested, so a silent
+		// drift back to 700/HiddenFromPlayer would restore the pop-in with a green suite.
+		TestEqual(TEXT("Defensive Line spawns no closer than the plan-ahead distance"),
+			DefensiveLine->MinimumDistanceFromPlayer, 2200.0f);
+		TestEqual(TEXT("Defensive Line no longer forces spawns out of the player's sight"),
+			DefensiveLine->LOSRestriction, EAHEncounterLOSRule::Any);
+		// The EQS grid is generated around the player, so this half-extent is a hard ceiling on
+		// how far any body can ever be placed. It must exceed the spawn floor or nothing spawns.
+		const float* RoamBoxSize = DefensiveLine->SpawnQueryFloatParams.Find(FName(TEXT("RoamBoxSize")));
+		TestNotNull(TEXT("Defensive Line authors the EQS grid extent"), RoamBoxSize);
+		if (RoamBoxSize)
+		{
+			TestTrue(TEXT("The EQS grid reaches past the spawn floor"),
+				*RoamBoxSize > DefensiveLine->MinimumDistanceFromPlayer);
+		}
+
+		// Every archetype the game ships appears somewhere in this encounter's prediction set,
+		// which is both the streaming manifest and the roster the player actually meets.
+		TArray<FPrimaryAssetId> Predicted;
+		DefensiveLine->GetPredictedEnemySet(Predicted);
+		for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") })
+		{
+			TestTrue(*FString::Printf(TEXT("Defensive Line can field %s"), ArchetypeName),
+				Predicted.Contains(AHEnemyAssets::EnemyId(FName(ArchetypeName))));
+		}
 	}
 	return true;
 }

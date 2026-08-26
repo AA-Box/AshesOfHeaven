@@ -10,6 +10,16 @@ damage mask and a flame/smoke erosion noise.
 """
 
 SRC = os.path.join(unreal.Paths.project_saved_dir(), "ErebusTextureSource")
+# Test for actual PNGs, not just the directory: importing BakeErebusTextures for its noise
+# helpers used to be enough to create an empty one and satisfy a directory-only check.
+if not os.path.isdir(SRC) or not [f for f in os.listdir(SRC) if f.endswith(".png")]:
+    # Saved/ is gitignored, so a fresh checkout has the .uasset files but none of the
+    # PNGs they were imported from. Say so, instead of raising FileNotFoundError from
+    # os.listdir three lines down.
+    raise SystemExit(
+        "[ErebusTex] no source PNGs at " + SRC
+        + " -- run `python3 Scripts/BakeErebusTextures.py` first (pure numpy, ~4s, "
+          "deterministic; it writes the 15 PNGs this script imports)")
 DEST = "/Game/Ashes/Textures/Erebus"
 TOOLS = unreal.AssetToolsHelpers.get_asset_tools()
 

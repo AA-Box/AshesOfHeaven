@@ -25,9 +25,12 @@ missing optional content asset cannot break gameplay construction.
 
 The masters above are flat tints with no texture inputs, which is why the mannequin enemies read
 as untextured no matter which one was applied. `M_EnemyCreature` is the textured character master
-the four imported enemy bodies use: `BaseColorTex`, `NormalTex`, `RoughnessTex` and `EmissiveMask`
-texture parameters, each gated by a `Use*`/`*Strength` scalar so a model that shipped without a
-given map falls back to `BaseTint` and the scalar roughness instead of sampling a white square.
+the four imported enemy bodies use: `BaseColorTex`, `NormalTex`, `RoughnessTex`, `MetallicTex`,
+`AOTex` and `EmissiveMask` texture parameters, each gated by a `Use*`/`*Strength` scalar so a model
+that shipped without a given map falls back to `BaseTint` and the scalar instead of sampling a
+white square. Metallic takes a map as well as a scalar because the quadruped ships a real metal
+mask - plating over hide - and collapsing that to one value turns the whole animal into either
+rubber or a mirror depending on which way the scalar is pushed.
 It carries `used_with_skeletal_mesh`, without which a character body silently renders as the
 engine default grey and only logs a warning.
 
@@ -45,6 +48,9 @@ blue, while the Erebus texture family keeps roughness in red. `RoughChannelMask`
 before them is unchanged; the ORM packs set `(0,1,0)` and `(0,0,1)`. `UVTile` also matters
 here: the Erebus kit's box-projected UVs want 0.25, imported props carry their own UVs and
 want 1.0.
+
+`Docs/ENEMY_CREATURE_PIPELINE.md` covers where those maps come from and the order the authoring
+scripts have to run in.
 
 ## Niagara family
 
