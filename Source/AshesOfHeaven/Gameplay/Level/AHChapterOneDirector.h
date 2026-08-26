@@ -13,6 +13,7 @@ class AAHManticoreVehicle;
 class AAHCombatantCharacter;
 class UAHDialogueSubsystem;
 class UAHEncounterDirectorSubsystem;
+class UAHEnemyDefinition;
 class UMaterialInterface;
 class UStaticMesh;
 class AStaticMeshActor;
@@ -160,6 +161,15 @@ protected:
 	/** The -ArtTarget=Combatant test subject, tracked so a capture can say "it was destroyed"
 	 *  instead of silently reporting the character as unmeasured. */
 	TWeakObjectPtr<ACharacter> ArtBenchSubject;
+#if !UE_BUILD_SHIPPING
+	/** -ArtTarget=Enemies: one of each authored enemy archetype, frozen in a line for review.
+	 *  Combatant bodies are streamed in by their encounter, so a body spawned outside one never
+	 *  receives a mesh; this leases the archetypes explicitly and spawns on the callback. */
+	void SpawnEnemyLineupBench();
+	void HandleEnemyLineupAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error);
+	FGuid EnemyLineupLease;
+	TArray<TWeakObjectPtr<ACharacter>> EnemyLineupSubjects;
+#endif
 	bool ValidateStageSpatialDefinition(const FAHStageSpatialDefinition& Definition, bool bLogDetails) const;
 	bool ValidateStageSpatialState(EAHChapterStage Stage, bool bLogDetails) const;
 	void EnsureStageSpatialValidity(EAHChapterStage Stage, const TCHAR* Reason);
@@ -172,6 +182,8 @@ protected:
 	void HandleObjectiveCompleted(FName ObjectiveId);
 	UFUNCTION()
 	void HandleDialogueComplete(FName SequenceId);
+	/** Advances only while the chapter is still on the stage that started the finished beat. */
+	void AdvanceStageFromDialogue(EAHChapterStage ExpectedStage, EAHChapterStage NextStage);
 	UFUNCTION()
 	void HandleTerminalConfirmed();
 	UFUNCTION()
@@ -271,8 +283,6 @@ protected:
 	bool bOpeningSequenceStarted = false;
 	bool bOrderSequenceStarted = false;
 	bool bSaelSequenceStarted = false;
-	bool bMayaSceneStarted = false;
-	bool bNysaSequenceStarted = false;
 	bool bOtherLucianSequenceStarted = false;
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;

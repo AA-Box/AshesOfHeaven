@@ -24,11 +24,6 @@ EAHChapterStage UAHChapterSubsystem::StageForObjectiveIndex(int32 ObjectiveIndex
 	case 9: return EAHChapterStage::FailsafeTerminal;
 	case 10: return EAHChapterStage::Escape;
 	case 11: return EAHChapterStage::ErebusDestruction;
-	case 12: return EAHChapterStage::TenYearsLater;
-	case 13: return EAHChapterStage::MayaScene;
-	case 14: return EAHChapterStage::NysaTransmission;
-	case 15: return EAHChapterStage::FleetDeparture;
-	case 16: return EAHChapterStage::StarsDisappearing;
 	default: return EAHChapterStage::ChapterComplete;
 	}
 }
@@ -52,11 +47,11 @@ int32 UAHChapterSubsystem::ObjectiveIndexForStage(EAHChapterStage Stage)
 	case EAHChapterStage::Escape:
 	case EAHChapterStage::OtherLucian: return 10;
 	case EAHChapterStage::ErebusDestruction: return 11;
-	case EAHChapterStage::TenYearsLater: return 12;
-	case EAHChapterStage::MayaScene: return 13;
-	case EAHChapterStage::NysaTransmission: return 14;
-	case EAHChapterStage::FleetDeparture: return 15;
-	case EAHChapterStage::StarsDisappearing: return 16;
+	case EAHChapterStage::TenYearsLater:
+	case EAHChapterStage::MayaScene:
+	case EAHChapterStage::NysaTransmission:
+	case EAHChapterStage::FleetDeparture:
+	case EAHChapterStage::StarsDisappearing:
 	case EAHChapterStage::ChapterComplete: return AHChapterStateConstants::ObjectiveCount;
 	default: return INDEX_NONE;
 	}
@@ -66,19 +61,38 @@ FAHChapterState UAHChapterSubsystem::NormalizeState(const FAHChapterState& Candi
 {
 	FAHChapterState Normalized = Candidate;
 	Normalized.SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
-	Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
 
+	// The deprecated post-Erebus enum values are retained so old serialized values stay
+	// readable, but no state that names one is playable: Level One ends at Erebus and the
+	// director has no objective that drives those stages. Migrate every one of them,
+	// regardless of the version that wrote it. Version-gating this let a v7 write put the
+	// state back - UAHCheckpointSubsystem::CaptureCheckpoint stamps the checkpoint's own stage
+	// onto the saved chapter state, and ChapterComplete's checkpoint (Ch01_PresentDay) carries
+	// Stage=TenYearsLater - so the next boot restored straight into the removed epilogue with
+	// no objective and no way forward.
+	if (Candidate.Stage >= EAHChapterStage::TenYearsLater && Candidate.Stage <= EAHChapterStage::StarsDisappearing)
+	{
+		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+		Normalized.Stage = EAHChapterStage::ChapterComplete;
+		Normalized.bChapterComplete = true;
+		Normalized.bCountdownActive = false;
+		Normalized.CountdownSeconds = 0.0f;
+		return Normalized;
+	}
+
+	Normalized.ObjectiveIndex = FMath::Clamp(Candidate.ObjectiveIndex, 0, AHChapterStateConstants::ObjectiveCount);
 	const int32 StageObjectiveIndex = ObjectiveIndexForStage(Candidate.Stage);
 	const bool bObjectiveIsFinal = Normalized.ObjectiveIndex >= AHChapterStateConstants::ObjectiveCount;
 	const bool bStageIsFinal = Candidate.Stage == EAHChapterStage::ChapterComplete;
 	if (bObjectiveIsFinal)
 	{
 		Normalized.Stage = EAHChapterStage::ChapterComplete;
+		Normalized.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
 	}
 	else if (bStageIsFinal || (StageObjectiveIndex != INDEX_NONE && StageObjectiveIndex != Normalized.ObjectiveIndex))
 	{
 		// Objective progress is the canonical progression value. This repairs saves such as
-		// Stage=ErebusOpening/Objectives=5 and old completion overlays at a mid-chapter index.
+		// Stage=ErebusOpening/Objectives=5 and old completion overlays at a mid-level index.
 		Normalized.Stage = StageForObjectiveIndex(Normalized.ObjectiveIndex);
 	}
 
@@ -114,9 +128,12 @@ bool UAHChapterSubsystem::SetStage(EAHChapterStage NewStage)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Chapter] stage=%s"), *UEnum::GetValueAsString(NewStage));
 	#endif
 	State.CompletedSections.AddUnique(FName(*UEnum::GetValueAsString(NewStage)));
-	if (NewStage == EAHChapterStage::ChapterComplete)
+	// Derived, not latched. NormalizeState already defines bChapterComplete as "the stage is
+	// ChapterComplete"; latching it here left a debug or -ArtTarget jump backwards with the flag
+	// stuck true, which silently froze TickCountdown for the rest of the session.
+	State.bChapterComplete = NewStage == EAHChapterStage::ChapterComplete;
+	if (State.bChapterComplete)
 	{
-		State.bChapterComplete = true;
 		State.bCountdownActive = false;
 	}
 	OnStageChanged.Broadcast(NewStage);
@@ -154,7 +171,7 @@ void UAHChapterSubsystem::SetCheckpoint(FName CheckpointId)
 
 void UAHChapterSubsystem::SetObjectiveIndex(int32 NewIndex)
 {
-	State.ObjectiveIndex = FMath::Max(0, NewIndex);
+	State.ObjectiveIndex = FMath::Clamp(NewIndex, 0, AHChapterStateConstants::ObjectiveCount);
 }
 
 void UAHChapterSubsystem::StartCountdown(float DurationSeconds)
@@ -192,10 +209,11 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 		LastCountdownMilestone = CurrentMilestone;
 		if (CurrentMilestone % 60 == 0 || CurrentMilestone <= 10)
 		{
+			// Log only. There is deliberately no milestone delegate: nothing in Source or Content
+			// ever bound one, and the failsafe clock has no authored expiry consequence to raise.
 			#if !UE_BUILD_SHIPPING
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] milestone seconds=%d"), CurrentMilestone);
 			#endif
-			OnCountdownMilestone.Broadcast(CurrentMilestone);
 		}
 	}
 	if (State.CountdownSeconds <= 0.0f)

@@ -550,6 +550,13 @@ namespace
 		float GravityZ = 0.0f;
 		float Drag = 1.0f;
 		float ShapeRadius = 30.0f;
+		// Per-particle quad roll, degrees. Fountain exposes InitializeParticle's
+		// "Sprite Rotation Angle Min/Max" as rapid-iteration parameters, so this
+		// costs nothing but the two matcher branches below. Smoke wants it; fire
+		// must NOT have it, because rolling a flame sprite rolls the direction its
+		// noise pans and the licks stop pointing up.
+		float RotationMin = 0.0f;
+		float RotationMax = 0.0f;
 		FLinearColor Color = FLinearColor::White;
 	};
 
@@ -692,6 +699,14 @@ namespace
 			{
 				bSet = SetRapidIterationFloat(Store, Var, Recipe.ShapeRadius);
 			}
+			else if (Input == TEXT("spriterotationanglemin"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.RotationMin);
+			}
+			else if (Input == TEXT("spriterotationanglemax"))
+			{
+				bSet = SetRapidIterationFloat(Store, Var, Recipe.RotationMax);
+			}
 			if (bSet)
 			{
 				++Applied;
@@ -789,6 +804,7 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Smoke.ShapeRadius = 45.0f;
 		// The smoke master is LIT now, so ParticleColor is an albedo tint, not the
 		// final colour - a near-black tint here would kill all light response.
+		Smoke.RotationMin = 0.0f; Smoke.RotationMax = 360.0f;
 		Smoke.Color = FLinearColor(1.0f, 1.0f, 1.0f, 0.62f);
 		Recipes.Add(Smoke);
 
@@ -809,6 +825,7 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Column.ConeAngle = 11.0f;
 		Column.Drag = 0.4f;
 		Column.ShapeRadius = 300.0f;
+		Column.RotationMin = 0.0f; Column.RotationMax = 360.0f;
 		Column.Color = FLinearColor(1.0f, 1.0f, 1.0f, 0.62f);
 		Recipes.Add(Column);
 
@@ -825,6 +842,7 @@ bool UAHPresentationAuthoringLibrary::AuthorErebusNearVFX()
 		Ash.GravityZ = -28.0f;
 		Ash.Drag = 0.5f;
 		Ash.ShapeRadius = 900.0f;
+		Ash.RotationMin = 0.0f; Ash.RotationMax = 360.0f;
 		Ash.Color = FLinearColor(0.30f, 0.29f, 0.27f, 0.50f);
 		Recipes.Add(Ash);
 	}
