@@ -181,6 +181,12 @@ PODIUM_SKIRT = 120.0        # push the base below the lowest sample so it cannot
 PODIUM_INSET = 0.96         # slightly inside the footprint so it does not poke through walls
 # Clear air allowed under any loose piece before it is culled outright.
 SEAT_MAX_AIR = 120.0
+# Fencing the edge of the map's collision, where a step off is an endless fall.
+FENCE_STEP = 800.0
+FENCE_HEIGHT = 1200.0
+FENCE_MARGIN = 6000.0
+FENCE_MAX = 1500
+LOCAL_FENCE_CELL = 500.0
 SHEAR_CHANCE = {"tower": 0.75, "mid": 0.6, "low": 0.35}
 SHEAR_KEEP = (0.35, 0.85)   # fraction of height left standing
 SHEAR_RAGGED = 1800.0       # instances within this of the cut survive by luck
@@ -1276,6 +1282,169 @@ def apply_culling():
                   % (CULL_DISTANCE / 100.0, culled, scatter))
 
 
+def fence_void(world, terrain):
+    """Wall off the edge where the map's collision stops and nothing begins.
+
+    The landscape's 29 collision components cover a stepped rectangle; step off it and a
+    downward trace finds nothing at all, so the player falls until the engine's world bounds
+    check destroys them. WorldSettings.KillZ is -1048575 - effectively unset - and it is not
+    ours to change, being a property rather than a taggable actor. Fencing is additive: each
+    section is a tagged BlockingVolume, so deleting the folder puts the map back.
+
+    Only the boundary that this district actually exposes is fenced - 11 of our roads and
+    podiums sit within 15 m of the drop and none had a BlockingVolume within 30 m of them.
+    """
+    xs, ys = [], []
+    for actor in EAS.get_all_level_actors():
+        if not has_tag(actor):
+            continue
+        if not actor.get_actor_label().startswith(("Road_", "Bldg_", "Podium_")):
+            continue
+        p = actor.get_actor_location()
+        xs.append(p.x)
+        ys.append(p.y)
+    if not xs:
+        return 0
+    x0, x1 = min(xs) - FENCE_MARGIN, max(xs) + FENCE_MARGIN
+    y0, y1 = min(ys) - FENCE_MARGIN, max(ys) + FENCE_MARGIN
+
+    def solid(x, y):
+        hit = unreal.SystemLibrary.line_trace_single(
+            world, unreal.Vector(x, y, 150000.0), unreal.Vector(x, y, -200000.0),
+            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
+        return bool(hit)
+
+    nx = int((x1 - x0) / FENCE_STEP) + 1
+    ny = int((y1 - y0) / FENCE_STEP) + 1
+    grid = {}
+    for i in range(nx):
+        for j in range(ny):
+            grid[(i, j)] = solid(x0 + i * FENCE_STEP, y0 + j * FENCE_STEP)
+
+    # The wall goes on the VOID side of the lip, not on the last walkable cell - putting it on
+    # solid ground would wall off metres of ground the player is entitled to stand on.
+    boundary = set()
+    for (i, j), ok in grid.items():
+        if ok:
+            continue
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if grid.get((i + di, j + dj), False):
+                boundary.add((i, j))
+                break
+
+    # Merge runs along j so the fence is a few long walls, not hundreds of little cubes.
+    runs, used = [], set()
+    for (i, j) in sorted(boundary):
+        if (i, j) in used:
+            continue
+        end = j
+        while (i, end + 1) in boundary:
+            end += 1
+            used.add((i, end))
+        used.add((i, j))
+        runs.append((i, j, end))
+
+    made = 0
+    for (i, j0, j1) in runs:
+        if made >= FENCE_MAX:
+            break
+        cx = x0 + i * FENCE_STEP
+        cy = y0 + (j0 + j1) * 0.5 * FENCE_STEP
+        length = (j1 - j0 + 1) * FENCE_STEP
+        # The cell itself is void, so take the height from whichever neighbour is solid.
+        ground = None
+        for dx, dy in ((FENCE_STEP, 0.0), (-FENCE_STEP, 0.0), (0.0, FENCE_STEP),
+                       (0.0, -FENCE_STEP), (0.0, 0.0)):
+            ground = terrain.exact(cx + dx, cy + dy)
+            if ground is not None:
+                break
+        if ground is None:
+            continue
+        volume = spawn_class(unreal.BlockingVolume, (cx, cy, ground + FENCE_HEIGHT * 0.5 - 200.0),
+                             unreal.Rotator(pitch=0.0, yaw=0.0, roll=0.0),
+                             "Fence_%03d" % made)
+        if not volume:
+            continue
+        # A spawned volume's brush is a 200 uu cube.
+        volume.set_actor_scale3d(unreal.Vector(FENCE_STEP / 200.0, length / 200.0,
+                                               FENCE_HEIGHT / 200.0))
+        volume.set_actor_hidden_in_game(True)
+        try:
+            volume.set_is_temporarily_hidden_in_editor(True)
+        except Exception:
+            pass
+        made += 1
+    REPORT.append("fenced the drop with %d blocking volumes over %d void-edge cells "
+                  "(WorldSettings.KillZ is unset at -1048575; not changed - it is a property, "
+                  "not a taggable actor)" % (made, len(boundary)))
+    return made
+
+
+def fence_local(world, terrain, start_index):
+    """Close the small holes the coarse boundary sweep steps over.
+
+    The boundary grid samples every 8 m, so a gap in the collision narrower than that falls
+    between its samples - six of the eleven roads sitting beside a drop were next to exactly
+    that kind of interior hole. This probes a tight ring around each thing this pass placed
+    and walls whatever void it finds, which is bounded work rather than a finer global grid.
+    """
+    def solid(x, y):
+        hit = unreal.SystemLibrary.line_trace_single(
+            world, unreal.Vector(x, y, 150000.0), unreal.Vector(x, y, -200000.0),
+            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
+        return bool(hit)
+
+    wanted, made = set(), 0
+    for actor in EAS.get_all_level_actors():
+        if not has_tag(actor):
+            continue
+        if not actor.get_actor_label().startswith(("Road_", "Bldg_", "Podium_")):
+            continue
+        origin = actor.get_actor_location()
+        for step in range(8):
+            angle = 2.0 * math.pi * step / 8.0
+            for reach in (600.0, 1200.0, 1800.0):
+                px = origin.x + math.cos(angle) * reach
+                py = origin.y + math.sin(angle) * reach
+                if solid(px, py):
+                    continue
+                key = (int(px / LOCAL_FENCE_CELL), int(py / LOCAL_FENCE_CELL))
+                wanted.add(key)
+    for (i, j) in sorted(wanted):
+        if made >= FENCE_MAX:
+            break
+        cx, cy = i * LOCAL_FENCE_CELL, j * LOCAL_FENCE_CELL
+        # Snapping the void sample to a cell can move it up to half a cell onto real ground.
+        # Re-test where the wall would actually stand, or it blocks somewhere walkable.
+        if solid(cx, cy):
+            continue
+        ground = None
+        for dx, dy in ((LOCAL_FENCE_CELL, 0.0), (-LOCAL_FENCE_CELL, 0.0),
+                       (0.0, LOCAL_FENCE_CELL), (0.0, -LOCAL_FENCE_CELL)):
+            ground = terrain.exact(cx + dx, cy + dy)
+            if ground is not None:
+                break
+        if ground is None:
+            continue
+        volume = spawn_class(unreal.BlockingVolume,
+                             (cx, cy, ground + FENCE_HEIGHT * 0.5 - 200.0),
+                             unreal.Rotator(pitch=0.0, yaw=0.0, roll=0.0),
+                             "Fence_%03d" % (start_index + made))
+        if not volume:
+            continue
+        volume.set_actor_scale3d(unreal.Vector(LOCAL_FENCE_CELL / 200.0,
+                                               LOCAL_FENCE_CELL / 200.0,
+                                               FENCE_HEIGHT / 200.0))
+        volume.set_actor_hidden_in_game(True)
+        try:
+            volume.set_is_temporarily_hidden_in_editor(True)
+        except Exception:
+            pass
+        made += 1
+    REPORT.append("walled %d interior holes the 8 m boundary sweep stepped over" % made)
+    return made
+
+
 def add_navigation(world, centre, half):
     """The map ships no NavMeshBoundsVolume at all, so nothing here was ever navigable."""
     margin = 30000.0
@@ -1633,6 +1802,8 @@ def main():
     hide_mattes(MATTE_MODE)
     apply_culling()
     add_navigation(world, centre, half)
+    fenced = fence_void(world, terrain)
+    fence_local(world, terrain, fenced)
     tidy_viewport()
     REPORT.append("culled %d loose pieces that ended up with air beneath them" % CULLED[0])
     REPORT.append("material slots: %d filled from slot names, %d left as authored art"
