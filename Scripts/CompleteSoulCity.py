@@ -114,12 +114,31 @@ MAX_BURIAL_FRACTION = 0.35
 SAMPLE_STEP = 500.0
 
 # --- streets -----------------------------------------------------------------------------
-ROAD_TILE = "/Game/Road/Kit_City_Road/SM_ROAD_19_20_0_0_road"
+# The CitySample road kit is all 20 m long tiles (only the width varies: 21 / 11 / 6 m). None
+# of them fit this valley. Measured: with a rigid 20 m tile, only 1-8 of ~470 street segments
+# could take one without a corner hanging in the air or being buried 6 m - the ground is simply
+# rough at that scale, with rock outcrops breaking every plane fit. So the carriageway is the
+# project's own cracked road slab instead: 2.6 x 2.5 m conforms to almost anything, and a
+# broken slab path reads better in a bombed district than intact asphalt would.
+ROAD_TILE = "/Game/Ashes/Environment/Erebus/Meshes/SM_Erebus_RoadSlab_Cracked_A"
+SLAB_SCALE = 1.0   # the mesh is already 5.2 x 5.0 m
+SLAB_OVERLAP = 0.92         # lay them slightly into each other so the path has no seams
 ROAD_STEP = 2004.0          # tile length along its local +X
 ROAD_WIDTH = 2104.0
 ROAD_ORIGIN_Y = 1000.0      # bounds origin sits half a carriageway off centre
-ROAD_SINK = 45.0
-ROAD_MAX_TILES = 1400
+ROAD_MAX_TILES = 1200
+SLAB_LENGTH = 468.0
+# Largest gap a tile may leave under any corner once its own plane is fitted.
+ROAD_MAX_RESIDUAL = 60.0
+# A road is not a ramp. Tiles steeper than this are not laid at all. Matched to the 28% grade
+# STREET_MAX_RISE allows a street to climb, plus a little for lattice quantisation.
+ROAD_MAX_TILT = 26.0
+# After bedding, this is how deep the far corner may be cut INTO the hill. Generous on purpose:
+# bedding already guarantees no corner floats, and a buried edge is a road cut, not a hazard -
+# the player walks on terrain there. Floating is the failure mode that matters.
+ROAD_MAX_BURY = 300.0
+# A hair more, so the bedded tile does not z-fight the ground it is resting on.
+ROAD_BED = 10.0
 STREET_SEEDS = 14
 STREET_MAX_STEPS = 60
 STREET_BRANCH_CHANCE = 0.16
@@ -230,7 +249,7 @@ def spawn_class(cls, location, rotation, label):
     return claim(actor, label) if actor else None
 
 
-def spawn_mesh(mesh, location, rotation, scale, label, tier=1):
+def spawn_mesh(mesh, location, rotation, scale, label, tier=1, collides=True):
     actor = EAS.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(*location), rotation)
     if not actor:
         return None
@@ -238,6 +257,13 @@ def spawn_mesh(mesh, location, rotation, scale, label, tier=1):
     component.set_editor_property("static_mesh", mesh)
     component.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
     actor.set_actor_scale3d(unreal.Vector(*scale))
+    if not collides:
+        # Decoration the player must never stand on. Anything spawned off the ground - the
+        # frames hanging at a shear line 100 m up - is an invisible platform if it collides.
+        # The profile name is the setter that sticks on an editor StaticMeshActor;
+        # set_collision_enabled alone is overwritten by the body instance's own profile.
+        component.set_collision_profile_name("NoCollision")
+        component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     dress_component(component, tier)
     return claim(actor, label)
 
@@ -433,6 +459,48 @@ class Terrain(object):
             break
         self.cache[key] = result
         return result
+
+    def exact(self, x, y):
+        """Ground z at the PRECISE point, uncached.
+
+        at() snaps to a SAMPLE_STEP lattice and returns that cell's height, which is fine for
+        searching but wrong for seating: on a 20% slope a 3.5 m lateral snap is 70 cm of error,
+        and that is a road tile hanging in the air. Anything the player can stand on is seated
+        with this instead.
+        """
+        hits = unreal.SystemLibrary.line_trace_multi(
+            self.world, unreal.Vector(x, y, 90000.0), unreal.Vector(x, y, -150000.0),
+            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
+        if isinstance(hits, tuple):
+            hits = hits[-1]
+        for hit in (hits or []):
+            data = hit.to_dict()
+            actor = data.get("hit_actor")
+            if actor is None or has_tag(actor):
+                continue
+            label = actor.get_actor_label().lower()
+            if not any(t.lower() in label for t in NATURAL_GROUND):
+                continue
+            z = data["location"].z
+            return None if self.submerged(x, y, z) else z
+        return None
+
+    def lowest(self, x, y, radius):
+        """Lowest ground under a footprint of this radius, or None.
+
+        A loose piece seated on its CENTRE hangs its downhill corners over the slope - that is
+        an 8 x 13 m broken facade with 11 m of air under one end, and a player can stand on it.
+        Seating on the lowest sample buries the uphill side instead, which is what rubble does.
+        """
+        best = self.exact(x, y)
+        if best is None:
+            return None
+        for dx, dy in ((radius, 0.0), (-radius, 0.0), (0.0, radius), (0.0, -radius),
+                       (radius * 0.7, radius * 0.7), (-radius * 0.7, -radius * 0.7)):
+            z = self.exact(x + dx, y + dy)
+            if z is not None and z < best:
+                best = z
+        return best
 
     def flat_at(self, x, y, min_normal_z=MIN_NORMAL_Z):
         got = self.at(x, y)
@@ -812,44 +880,172 @@ def grow_streets(terrain, authored, centre, half, rng):
     return streets
 
 
-def lay_streets(terrain, streets):
-    """One tile per segment, pitched to the slope it crosses.
+def rotate_local(rot, x, y, z):
+    """UE's FRotationMatrix applied to a local vector. rotate_vector is not exposed in 5.8."""
+    pitch, yaw, roll = math.radians(rot.pitch), math.radians(rot.yaw), math.radians(rot.roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    cr, sr = math.cos(roll), math.sin(roll)
+    ax = (cp * cy, cp * sy, sp)
+    ay = (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp)
+    az = (-(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp)
+    return (x * ax[0] + y * ay[0] + z * az[0],
+            x * ax[1] + y * ay[1] + z * az[1],
+            x * ax[2] + y * ay[2] + z * az[2])
 
-    Gaps are deliberate: where the trace finds no usable ground the tile is not placed, which
-    reads as a street broken by the same war that broke the buildings.
+
+def bed_tile(terrain, actor):
+    """Push a laid tile down until no corner floats. Returns how deep the worst corner ends up.
+
+    Fitting a plane through four traced corners is not enough on its own: the tile is then
+    rotated about a pivot 10 m outside itself, so where its corners finally land is not where
+    the fit sampled. Rather than re-derive that through the full rotation, the tile is measured
+    where it actually is and dropped until the highest corner rests on the hill. Whatever is
+    left is a corner cut INTO the ground, which is what a road on a slope should do.
     """
+    try:
+        origin, _extent = actor.get_actor_bounds(False)
+    except Exception:
+        return None
+    rotation = actor.get_actor_rotation()
+    gaps = []
+    for u in (-1.0, 1.0):
+        for v in (-1.0, 1.0):
+            ox, oy, oz = rotate_local(rotation, u * SLAB_LENGTH * 0.5,
+                                      v * ROAD_WIDTH * 0.5, 0.0)
+            ground = terrain.exact(origin.x + ox, origin.y + oy)
+            if ground is None:
+                return None
+            gaps.append((origin.z + oz) - ground)
+    lift = max(gaps) + ROAD_BED
+    location = actor.get_actor_location()
+    actor.set_actor_location(
+        unreal.Vector(location.x, location.y, location.z - lift), False, False)
+    return max(gaps) - min(gaps) + ROAD_BED   # how deep the far corner is now cut in
+
+
+def seat_tile(actor, x, y, z):
+    """Shift an actor until its bounds centre is exactly where it was asked to be."""
+    try:
+        origin, _extent = actor.get_actor_bounds(False)
+    except Exception:
+        return
+    location = actor.get_actor_location()
+    actor.set_actor_location(
+        unreal.Vector(location.x + (x - origin.x),
+                      location.y + (y - origin.y),
+                      location.z + (z - origin.z)), False, False)
+
+
+def configure_road():
+    """Take the slab's real dimensions from the mesh instead of trusting constants.
+
+    ROAD_STEP stays the street-growth step (20 m) - it shapes the network. SLAB_LENGTH and
+    ROAD_WIDTH describe the piece actually laid, and the lot setback keys off ROAD_WIDTH so
+    buildings front a 4.5 m lane rather than a boulevard that is not there.
+    """
+    global SLAB_LENGTH, ROAD_WIDTH, ROAD_ORIGIN_Y
     mesh = load(ROAD_TILE)
     if not mesh:
         REPORT.append("MISSING " + ROAD_TILE)
+        return None
+    bounds = mesh.get_bounds()
+    SLAB_LENGTH = abs(bounds.box_extent.x) * 2.0 * SLAB_SCALE
+    ROAD_WIDTH = abs(bounds.box_extent.y) * 2.0 * SLAB_SCALE
+    ROAD_ORIGIN_Y = bounds.origin.y * SLAB_SCALE
+    REPORT.append("road slab %s at %.1fx: %.0f x %.0f cm"
+                  % (ROAD_TILE.split("/")[-1], SLAB_SCALE, SLAB_LENGTH, ROAD_WIDTH))
+    return mesh
+
+
+def lay_streets(terrain, streets):
+    """Lay a path of small cracked slabs along every street, each seated on its own ground.
+
+    Every slab is bedded until no corner of it floats - that is the invariant, because a
+    walkable surface hanging over the hill is a platform the player can stand on in mid air.
+    Slabs that cannot be seated are simply not laid, and the gaps read as a road broken by the
+    same war that broke the buildings.
+    """
+    mesh = load(ROAD_TILE)
+    if not mesh:
         return 0
-    laid = 0
+    half_l, half_w = SLAB_LENGTH * 0.5, ROAD_WIDTH * 0.5
+    pitch_along = SLAB_LENGTH * SLAB_OVERLAP
+    laid = no_ground = twisted = steep = buried = 0
     for index, line in enumerate(streets):
         for step in range(len(line) - 1):
             if laid >= ROAD_MAX_TILES:
                 break
             (ax, ay), (bx, by) = line[step], line[step + 1]
+            run = math.hypot(bx - ax, by - ay)
+            if run <= 0.0:
+                continue
             yaw = math.degrees(math.atan2(by - ay, bx - ax))
             radians = math.radians(yaw)
-            mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
-            ground = terrain.flat_at(mx, my, STREET_NORMAL_Z)
-            if ground is None:
-                continue
-            a_z, b_z = terrain.at(ax, ay), terrain.at(bx, by)
-            pitch = 0.0
-            if a_z and b_z:
-                pitch = -math.degrees(math.atan2(b_z[0] - a_z[0], ROAD_STEP))
-            # Cancel the mesh's own origin offset, rotated into world space.
-            ox = math.sin(radians) * ROAD_ORIGIN_Y
-            oy = -math.cos(radians) * ROAD_ORIGIN_Y
-            spawn_mesh(mesh, (mx + ox, my + oy, ground[0] - ROAD_SINK),
-                       unreal.Rotator(pitch=pitch, yaw=yaw, roll=0.0), (1.0, 1.0, 1.0),
-                       "Road_%02d_%03d" % (index, step), tier=1)
-            laid += 1
-    REPORT.append("laid %d street tiles" % laid)
+            cos_a, sin_a = math.cos(radians), math.sin(radians)
+            ux, uy = (bx - ax) / run, (by - ay) / run
+
+            travelled = pitch_along * 0.5
+            slab = 0
+            while travelled < run and laid < ROAD_MAX_TILES:
+                # Cancel the mesh's own bounds offset, then sample where the slab really goes.
+                centre_x = ax + ux * travelled + sin_a * ROAD_ORIGIN_Y
+                centre_y = ay + uy * travelled - cos_a * ROAD_ORIGIN_Y
+                travelled += pitch_along
+                slab += 1
+
+                corners, missing = {}, False
+                for u in (-1.0, 1.0):
+                    for v in (-1.0, 1.0):
+                        lx, ly = u * half_l, v * half_w
+                        z = terrain.exact(centre_x + lx * cos_a - ly * sin_a,
+                                          centre_y + lx * sin_a + ly * cos_a)
+                        if z is None:
+                            missing = True
+                            break
+                        corners[(u, v)] = z
+                    if missing:
+                        break
+                if missing:
+                    no_ground += 1
+                    continue
+
+                middle = sum(corners.values()) / 4.0
+                slope_x = ((corners[(1.0, -1.0)] + corners[(1.0, 1.0)])
+                           - (corners[(-1.0, -1.0)] + corners[(-1.0, 1.0)])) / (2.0 * SLAB_LENGTH)
+                slope_y = ((corners[(-1.0, 1.0)] + corners[(1.0, 1.0)])
+                           - (corners[(-1.0, -1.0)] + corners[(1.0, -1.0)])) / (2.0 * ROAD_WIDTH)
+                residual = max(abs(corners[(u, v)] - (middle + slope_x * u * half_l
+                                                      + slope_y * v * half_w))
+                               for (u, v) in corners)
+                if residual > ROAD_MAX_RESIDUAL:
+                    twisted += 1
+                    continue
+
+                tilt_pitch = -math.degrees(math.atan(slope_x))
+                tilt_roll = math.degrees(math.atan(slope_y))
+                if abs(tilt_pitch) > ROAD_MAX_TILT or abs(tilt_roll) > ROAD_MAX_TILT:
+                    steep += 1
+                    continue
+
+                tile = spawn_mesh(mesh, (centre_x, centre_y, middle),
+                                  unreal.Rotator(pitch=tilt_pitch, yaw=yaw, roll=tilt_roll),
+                                  (SLAB_SCALE, SLAB_SCALE, SLAB_SCALE),
+                                  "Road_%02d_%03d_%02d" % (index, step, slab), tier=1)
+                if tile is None:
+                    continue
+                seat_tile(tile, centre_x, centre_y, middle)
+                cut = bed_tile(terrain, tile)
+                if cut is None or cut > ROAD_MAX_BURY:
+                    EAS.destroy_actor(tile)
+                    buried += 1
+                    continue
+                laid += 1
+    REPORT.append("laid %d road slabs (refused: %d no ground, %d twisted, %d too steep, "
+                  "%d would bury an edge)" % (laid, no_ground, twisted, steep, buried))
     return laid
 
 
-# --- damage --------------------------------------------------------------------------------
 def shear(actor, kind, rng):
     """Take the top off, and collapse a vertical bay of facade.
 
@@ -906,6 +1102,22 @@ def shear(actor, kind, rng):
     return removed, cut
 
 
+def bed_in(mesh, scale):
+    """How far to sink a loose piece so it sits IN the ground instead of balancing on it."""
+    try:
+        return abs(mesh.get_bounds().box_extent.z) * scale * 0.30
+    except Exception:
+        return 0.0
+
+
+def footprint_radius(mesh, scale):
+    try:
+        extent = mesh.get_bounds().box_extent
+        return max(abs(extent.x), abs(extent.y)) * scale
+    except Exception:
+        return 200.0
+
+
 def cap_break(terrain, x, y, cut_z, half_x, half_y, tier, rng, caps, label):
     """Exposed frame at the shear line and collapse debris at the foot of it."""
     made = 0
@@ -917,18 +1129,19 @@ def cap_break(terrain, x, y, cut_z, half_x, half_y, tier, rng, caps, label):
                       unreal.Rotator(pitch=rng.uniform(-14.0, 14.0),
                                      yaw=math.degrees(angle) + 90.0,
                                      roll=rng.uniform(-10.0, 10.0)),
-                      (1.0, 1.0, 1.0), "%s_Frame%d" % (label, index), tier):
+                      (1.0, 1.0, 1.0), "%s_Frame%d" % (label, index), tier,
+                      collides=False):
             made += 1
     for index, mesh in enumerate(caps.get("collapse", [])):
         angle = rng.uniform(0.0, 2.0 * math.pi)
         distance = max(half_x, half_y) * rng.uniform(0.8, 1.5)
         px = x + math.cos(angle) * distance
         py = y + math.sin(angle) * distance
-        ground = terrain.at(px, py)
+        scale = rng.uniform(1.0, 2.4)
+        ground = terrain.lowest(px, py, footprint_radius(mesh, scale))
         if ground is None:
             continue
-        scale = rng.uniform(1.0, 2.4)
-        if spawn_mesh(mesh, (px, py, ground[0]),
+        if spawn_mesh(mesh, (px, py, ground - bed_in(mesh, scale)),
                       unreal.Rotator(pitch=rng.uniform(-8.0, 8.0),
                                      yaw=rng.uniform(0.0, 360.0),
                                      roll=rng.uniform(-8.0, 8.0)),
@@ -1083,11 +1296,12 @@ def scatter_around(terrain, x, y, half_x, half_y, tier, rng, pools, label):
         angle = rng.uniform(0.0, 2.0 * math.pi)
         distance = max(half_x, half_y) * rng.uniform(1.05, 1.9)
         px, py = x + math.cos(angle) * distance, y + math.sin(angle) * distance
-        ground = terrain.at(px, py)
+        scale = rng.uniform(0.7, 2.2)
+        piece = pool[rng.randrange(len(pool))]
+        ground = terrain.lowest(px, py, footprint_radius(piece, scale))
         if ground is None:
             continue
-        scale = rng.uniform(0.7, 2.2)
-        if spawn_mesh(pool[rng.randrange(len(pool))], (px, py, ground[0]),
+        if spawn_mesh(piece, (px, py, ground - bed_in(piece, scale)),
                       unreal.Rotator(pitch=rng.uniform(-12.0, 12.0),
                                      yaw=rng.uniform(0.0, 360.0),
                                      roll=rng.uniform(-12.0, 12.0)),
@@ -1098,11 +1312,11 @@ def scatter_around(terrain, x, y, half_x, half_y, tier, rng, pools, label):
             angle = rng.uniform(0.0, 2.0 * math.pi)
             distance = max(half_x, half_y) * rng.uniform(1.1, 1.7)
             px, py = x + math.cos(angle) * distance, y + math.sin(angle) * distance
-            ground = terrain.flat_at(px, py)
+            prop = pools["props"][rng.randrange(len(pools["props"]))]
+            ground = terrain.lowest(px, py, footprint_radius(prop, 1.0))
             if ground is None:
                 continue
-            if spawn_mesh(pools["props"][rng.randrange(len(pools["props"]))],
-                          (px, py, ground[0]),
+            if spawn_mesh(prop, (px, py, ground - bed_in(prop, 1.0)),
                           unreal.Rotator(pitch=0.0, yaw=rng.uniform(0.0, 360.0), roll=0.0),
                           (1.0, 1.0, 1.0), "Debris_%s_%02d" % (label, index), tier):
                 made += 1
@@ -1110,10 +1324,10 @@ def scatter_around(terrain, x, y, half_x, half_y, tier, rng, pools, label):
         angle = rng.uniform(0.0, 2.0 * math.pi)
         distance = max(half_x, half_y) * rng.uniform(0.9, 2.0)
         px, py = x + math.cos(angle) * distance, y + math.sin(angle) * distance
-        ground = terrain.at(px, py)
+        ground = terrain.exact(px, py)
         if ground is None:
             continue
-        decal = spawn_class(unreal.DecalActor, (px, py, ground[0] + 60.0),
+        decal = spawn_class(unreal.DecalActor, (px, py, ground + 60.0),
                             unreal.Rotator(pitch=-90.0, yaw=rng.uniform(0.0, 360.0), roll=0.0),
                             "Scorch_%s_%02d" % (label, index))
         if decal:
@@ -1313,6 +1527,9 @@ def main():
 
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     terrain = Terrain(world, water_zones())
+    if configure_road() is None:
+        REPORT.append("FAILED road tile missing; run Scripts/MigrateCitySampleKit.py")
+        return
     authored = list(spots)   # snapshot before anything new is appended
 
     streets = grow_streets(terrain, authored, centre, half, rng)
