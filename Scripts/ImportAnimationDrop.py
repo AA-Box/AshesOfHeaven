@@ -21,6 +21,7 @@ The imported animations are gitignored - this script is how they come back.
 """
 
 import os
+import posixpath
 import shutil
 import tarfile
 import zipfile
@@ -29,6 +30,84 @@ import unreal
 
 
 SOURCE_ROOT = os.environ.get("AH_ASSET_DROP", os.path.expanduser("~/Downloads/new"))
+
+
+def _contained(root, candidate):
+    """True only if `candidate` really lands inside `root`.
+
+    realpath first: a symlink already on disk inside the destination would otherwise let a
+    later member escape through it.
+    """
+    root = os.path.realpath(root)
+    target = os.path.realpath(candidate)
+    return target == root or target.startswith(root + os.sep)
+
+
+def _safe_join(root, relative):
+    """Join an archive-supplied relative path to root, or None if it tries to escape.
+
+    Archive member names are attacker-controlled data. An entry called `../../evil` or
+    `/etc/evil` writes outside the destination on a plain extractall - CodeQL calls this
+    "Arbitrary file write during tarfile extraction" and it is just as true of zips and of
+    the paths these packages carry inside their own `pathname` files.
+    """
+    relative = relative.replace("\\", "/").strip()
+    if not relative or relative.startswith("/") or posixpath.isabs(relative):
+        return None
+    if os.path.splitdrive(relative)[0]:
+        return None
+    if any(part in ("..", "") for part in relative.split("/")[:-1] if part != "."):
+        return None
+    if ".." in relative.split("/"):
+        return None
+    candidate = os.path.join(root, *[p for p in relative.split("/") if p not in (".",)])
+    return candidate if _contained(root, candidate) else None
+
+
+def extract_zip(archive, root):
+    """Extract regular files only, each to a validated path."""
+    extracted = skipped = 0
+    with zipfile.ZipFile(archive) as handle:
+        for info in handle.infolist():
+            if info.is_dir():
+                continue
+            destination = _safe_join(root, info.filename)
+            if destination is None:
+                skipped += 1
+                continue
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            with handle.open(info) as source, open(destination, "wb") as sink:
+                shutil.copyfileobj(source, sink)
+            extracted += 1
+    if skipped:
+        REPORT.append("REJECTED %d unsafe member(s) in %s" % (skipped, os.path.basename(archive)))
+    return extracted
+
+
+def extract_tar_gz(archive, root):
+    """Extract regular files only. Symlinks, hardlinks and devices are never written."""
+    extracted = skipped = 0
+    with tarfile.open(archive, "r:gz") as handle:
+        for member in handle.getmembers():
+            if not member.isfile():
+                if not member.isdir():
+                    skipped += 1
+                continue
+            destination = _safe_join(root, member.name)
+            if destination is None:
+                skipped += 1
+                continue
+            source = handle.extractfile(member)
+            if source is None:
+                skipped += 1
+                continue
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            with source, open(destination, "wb") as sink:
+                shutil.copyfileobj(source, sink)
+            extracted += 1
+    if skipped:
+        REPORT.append("REJECTED %d unsafe member(s) in %s" % (skipped, os.path.basename(archive)))
+    return extracted
 ANIM_ROOT = "/Game/Ashes/Animations"
 CHARACTER_DIR = "/Game/Ashes/Characters/UEFNMannequin"
 SOURCE_MESH = ("Pistol and Rifle Locomotion Animations 1700/GaspFix/Characters/"
@@ -58,8 +137,7 @@ def extracted_dead_bodies():
         "DeadBodySource")
     if not os.path.isdir(target) or not os.listdir(target):
         os.makedirs(target, exist_ok=True)
-        with zipfile.ZipFile(archive) as handle:
-            handle.extractall(target)
+        extract_zip(archive, target)
     return target
 
 
@@ -117,8 +195,7 @@ def extracted_unity_pack():
     staging = target + "_raw"
     shutil.rmtree(staging, ignore_errors=True)
     os.makedirs(staging, exist_ok=True)
-    with tarfile.open(archive, "r:gz") as handle:
-        handle.extractall(staging)
+    extract_tar_gz(archive, staging)
     for entry in os.listdir(staging):
         name_file = os.path.join(staging, entry, "pathname")
         asset_file = os.path.join(staging, entry, "asset")
@@ -128,7 +205,11 @@ def extracted_unity_pack():
             relative = handle.read().splitlines()[0].strip()
         if not relative.startswith("Assets/"):
             continue
-        destination = os.path.join(target, relative[len("Assets/"):])
+        # The path comes out of the archive too, so it gets the same treatment as a member name.
+        destination = _safe_join(target, relative[len("Assets/"):])
+        if destination is None:
+            REPORT.append("REJECTED unsafe pathname %r" % relative)
+            continue
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         shutil.copy2(asset_file, destination)
     shutil.rmtree(staging, ignore_errors=True)
