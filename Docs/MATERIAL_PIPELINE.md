@@ -39,6 +39,16 @@ The slot's own name, taken from the source FBX, decides which texture set dresse
 it is the part that glows - `LIGHT_EYE` and `Red-Eye-Alien-Animal` get the emissive treatment,
 `rock` and `LEATHER` get their own maps.
 
+### `M_ErebusSurface` channel masks
+
+The imported external prop packs pack roughness into an ORM green channel and metalness into
+blue, while the Erebus texture family keeps roughness in red. `RoughChannelMask` and
+`MetallicChannelMask` select which channel of `RoughTex` feeds each output. Their defaults -
+`(1,0,0)` and `(0,0,0)` - reproduce the previous behaviour exactly, so every instance authored
+before them is unchanged; the ORM packs set `(0,1,0)` and `(0,0,1)`. `UVTile` also matters
+here: the Erebus kit's box-projected UVs want 0.25, imported props carry their own UVs and
+want 1.0.
+
 `Docs/ENEMY_CREATURE_PIPELINE.md` covers where those maps come from and the order the authoring
 scripts have to run in.
 
