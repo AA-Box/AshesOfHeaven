@@ -31,6 +31,8 @@ def author_surface_master():
         material = TOOLS.create_asset("M_ErebusSurface", MAT_DIR, unreal.Material, factory)
     if not material:
         raise RuntimeError("failed to create M_ErebusSurface")
+    # Rebuilding on top of an existing graph would duplicate every node.
+    MEL.delete_all_material_expressions(material)
 
     def expr(class_name, x, y):
         return MEL.create_material_expression(material, getattr(unreal, class_name), x, y)
@@ -118,9 +120,18 @@ def author_surface_master():
     MEL.connect_material_property(based, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
     # --- roughness: map x param, wetness pulls to glossy -------------------
+    # Erebus texture sets ship roughness in R; imported PBR packs pack it into an
+    # ORM green channel instead. A mask parameter picks the channel, so one master
+    # serves both without a second material.
+    rough_channel = expr("MaterialExpressionVectorParameter", -880, 20)
+    rough_channel.set_editor_property("parameter_name", "RoughChannelMask")
+    rough_channel.set_editor_property("default_value", unreal.LinearColor(1.0, 0.0, 0.0, 0.0))
+    rough_pick = expr("MaterialExpressionDotProduct", -740, 20)
+    connect(rough_tex, "RGB", rough_pick, "A")
+    connect(rough_channel, "RGB", rough_pick, "B")
     rough_param = scalar("Roughness", 0.9, -880, 120)
     rough_mul = expr("MaterialExpressionMultiply", -640, 60)
-    connect(rough_tex, "R", rough_mul, "A")
+    connect(rough_pick, "", rough_mul, "A")
     connect(rough_param, "", rough_mul, "B")
     wetness = scalar("Wetness", 0.0, -880, 200)
     wet_target = expr("MaterialExpressionConstant", -640, 200)
@@ -132,8 +143,19 @@ def author_surface_master():
     MEL.connect_material_property(rough_wet, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
     # wet surfaces also darken base color slightly via specular boost only; keep simple.
+    # Same trick for metalness: default mask is zero, so every existing instance
+    # keeps its scalar-only metallic and an ORM instance sets (0,0,1).
     metallic = scalar("Metallic", 0.0, -880, 420)
-    MEL.connect_material_property(metallic, "", unreal.MaterialProperty.MP_METALLIC)
+    metal_channel = expr("MaterialExpressionVectorParameter", -880, 480)
+    metal_channel.set_editor_property("parameter_name", "MetallicChannelMask")
+    metal_channel.set_editor_property("default_value", unreal.LinearColor(0.0, 0.0, 0.0, 0.0))
+    metal_pick = expr("MaterialExpressionDotProduct", -700, 460)
+    connect(rough_tex, "RGB", metal_pick, "A")
+    connect(metal_channel, "RGB", metal_pick, "B")
+    metal_add = expr("MaterialExpressionAdd", -520, 440)
+    connect(metallic, "", metal_add, "A")
+    connect(metal_pick, "", metal_add, "B")
+    MEL.connect_material_property(metal_add, "", unreal.MaterialProperty.MP_METALLIC)
 
     # --- normal: flatten by NormalStrength ---------------------------------
     strength = scalar("NormalStrength", 1.0, -880, 300)

@@ -40,3 +40,46 @@ graphify-out/
 *.cer
 *.pem
 *.key
+
+# Migrated CitySample city art kit (~30 GB, restore with Scripts/MigrateCitySampleKit.py).
+# Third-party sample content; far past what a non-LFS repo can carry.
+/Content/Building/
+/Content/City/
+/Content/Crowd/
+/Content/Effect/
+/Content/Environment/
+/Content/HDA/
+/Content/Lighting/
+/Content/Lookdev/
+/Content/MSPresets/
+/Content/Material/
+/Content/Megascans/
+/Content/Prop/
+/Content/Road/
+/Content/Textures/
+/Content/WFC/
+/Plugins/Traffic/
+
+# Imported external asset drop (rebuild with Scripts/ImportAssetDrop.py and
+# Scripts/ImportAnimationDrop.py from the sources in ~/Downloads/new).
+/Content/Ashes/Environment/Rocks/
+/Content/Ashes/Props/
+/Content/Ashes/Audio/Library/
+/Content/Ashes/Audio/Cues/SC_Lib_*
+/Content/Ashes/Animations/
+/Content/Ashes/Characters/UEFNMannequin/
+# ...including the material instances those scripts generate for the drop.
+/Content/Ashes/Materials/Instances/MI_RockCollection04_*
+/Content/Ashes/Materials/Instances/MI_RockPackVol01_*
+/Content/Ashes/Materials/Instances/MI_StreetProps_*
+/Content/Ashes/Materials/Instances/MI_MilitaryRadio_*
+/Content/Ashes/Materials/Instances/MI_LadderSet_*
+
+# Third-party sample content packs, ~6.1 GB, none of it tracked. This repo has no LFS, so a
+# stray `git add .` would try to commit all of it. LV_Soul_Slum lives under SoulCity and is
+# rebuilt by Scripts/CompleteSoulCity.py from Saved/MapBackups/LV_Soul_Slum.umap.
+/Content/SoulCity/
+/Content/PostApocalypticSandbox/
+/Content/SciFiWorld/
+/Content/Whisper/
+/Content/NW_MuzzleFX/
