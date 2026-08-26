@@ -172,7 +172,15 @@ CULL_DISTANCE = 45000.0
 # A 6 degree lean on a 190 m tower reads as a placement bug, not bomb damage. Damage now comes
 # from removing instances - shearing floors off and collapsing a bay - so the lean is a hint.
 TILT_DEGREES = {"tower": 0.9, "mid": 1.8, "low": 2.8}
-SINK_METRES = {"tower": (0.5, 2.5), "mid": (0.5, 3.5), "low": (0.5, 2.5)}
+# Barely any sink now: the podium carries the slope, and damage comes from shearing.
+SINK_METRES = {"tower": (0.0, 0.6), "mid": (0.0, 0.8), "low": (0.0, 0.5)}
+PODIUM_MESH = "/Engine/BasicShapes/Cube"
+PODIUM_MIN = 60.0           # below this the plot is flat enough to sit straight on
+PODIUM_MAX = 900.0          # a plinth taller than this is a retaining wall, not a building
+PODIUM_SKIRT = 120.0        # push the base below the lowest sample so it cannot float
+PODIUM_INSET = 0.96         # slightly inside the footprint so it does not poke through walls
+# Clear air allowed under any loose piece before it is culled outright.
+SEAT_MAX_AIR = 120.0
 SHEAR_CHANCE = {"tower": 0.75, "mid": 0.6, "low": 0.35}
 SHEAR_KEEP = (0.35, 0.85)   # fraction of height left standing
 SHEAR_RAGGED = 1800.0       # instances within this of the cut survive by luck
@@ -184,6 +192,7 @@ EAS = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 LES = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 EAL = unreal.EditorAssetLibrary
 REPORT = []
+CULLED = [0]
 
 
 def load(path):
@@ -546,9 +555,13 @@ class Terrain(object):
         # the building's own height so nothing loses more than a quarter of itself to the hill.
         if height:
             limit = min(limit, height * MAX_BURIAL_FRACTION)
+        # A plot is only acceptable if a podium can actually fill it. Without this the tallest
+        # steps got no plinth - the building still stood on the high corner and its downhill
+        # side hung in the air, which is the exact failure this was meant to remove.
+        limit = min(limit, PODIUM_MAX - PODIUM_SKIRT)
         if relief > limit:
             return refuse("relief")
-        return (min(zs), relief)
+        return (min(zs), max(zs), relief)
 
 
 # --- what is already there -----------------------------------------------------------------
@@ -1102,6 +1115,43 @@ def shear(actor, kind, rng):
     return removed, cut
 
 
+def ensure_seated(terrain, actor, limit=SEAT_MAX_AIR):
+    """Delete anything that ended up with clear air beneath it. Measured, not assumed.
+
+    Seating maths gets a piece close, but a large mesh dropped near a lip can still overhang.
+    This is the backstop that makes "nothing the player can stand on floats" a property of the
+    level rather than a hope: measure what is actually under the thing, and if it is hanging,
+    it does not ship.
+    """
+    if actor is None:
+        return None
+    try:
+        origin, extent = actor.get_actor_bounds(False)
+    except Exception:
+        return actor
+    under = origin.z - extent.z
+    start = origin.z + extent.z + 100.0
+    worst = None
+    for dx, dy in ((0.0, 0.0), (-0.6, -0.6), (0.6, -0.6), (-0.6, 0.6), (0.6, 0.6)):
+        hit = unreal.SystemLibrary.line_trace_single(
+            terrain.world, unreal.Vector(origin.x + extent.x * dx, origin.y + extent.y * dy, start),
+            unreal.Vector(origin.x + extent.x * dx, origin.y + extent.y * dy, start - 300000.0),
+            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [actor], unreal.DrawDebugTrace.NONE, True)
+        if not hit:
+            continue                       # off the edge of the landscape, not a floating slab
+        data = hit.to_dict()
+        if not data.get("blocking_hit"):
+            continue
+        air = under - data["location"].z
+        if worst is None or air > worst:
+            worst = air
+    if worst is not None and worst > limit:
+        EAS.destroy_actor(actor)
+        CULLED[0] += 1
+        return None
+    return actor
+
+
 def bed_in(mesh, scale):
     """How far to sink a loose piece so it sits IN the ground instead of balancing on it."""
     try:
@@ -1141,11 +1191,12 @@ def cap_break(terrain, x, y, cut_z, half_x, half_y, tier, rng, caps, label):
         ground = terrain.lowest(px, py, footprint_radius(mesh, scale))
         if ground is None:
             continue
-        if spawn_mesh(mesh, (px, py, ground - bed_in(mesh, scale)),
-                      unreal.Rotator(pitch=rng.uniform(-8.0, 8.0),
-                                     yaw=rng.uniform(0.0, 360.0),
-                                     roll=rng.uniform(-8.0, 8.0)),
-                      (scale, scale, scale), "%s_Collapse%d" % (label, index), tier):
+        if ensure_seated(terrain, spawn_mesh(
+                mesh, (px, py, ground - bed_in(mesh, scale)),
+                unreal.Rotator(pitch=rng.uniform(-8.0, 8.0),
+                               yaw=rng.uniform(0.0, 360.0),
+                               roll=rng.uniform(-8.0, 8.0)),
+                (scale, scale, scale), "%s_Collapse%d" % (label, index), tier)):
             made += 1
     return made
 
@@ -1264,6 +1315,35 @@ def tidy_viewport():
 
 
 # --- frontage ------------------------------------------------------------------------------
+def spawn_podium(x, y, low, top, half_x, half_y, yaw, tier, label):
+    """A plinth from the lowest ground under the plot up to the building's floor.
+
+    Without it a flat-based building on a slope has to be buried to its lowest corner, which
+    put a median 5.8 m of hillside over the ground floor. With it the building stands on the
+    high side at grade and the plinth walls the low side, which is how a real hillside block
+    is built - and it leaves a solid, walkable edge instead of a gap under the downhill wall.
+    """
+    cube = load(PODIUM_MESH)
+    if not cube:
+        return None
+    height = max(PODIUM_MIN, (top - low) + PODIUM_SKIRT)
+    if height > PODIUM_MAX:
+        return None
+    centre_z = top - height * 0.5
+    actor = spawn_mesh(cube, (x, y, centre_z),
+                       unreal.Rotator(pitch=0.0, yaw=yaw, roll=0.0),
+                       ((half_x * 2.0 * PODIUM_INSET) / 100.0,
+                        (half_y * 2.0 * PODIUM_INSET) / 100.0,
+                        height / 100.0),
+                       label, tier)
+    if actor:
+        # The engine cube ships WorldGridMaterial, which is the bright default - never leave it.
+        material = (PALETTE.get(tier) or PALETTE.get(1) or {}).get("stone")
+        if material:
+            actor.static_mesh_component.set_material(0, material)
+    return actor
+
+
 def pick_kind(reach, downtown_offset, rng):
     """A skyline, not a uniform ring.
 
@@ -1301,11 +1381,12 @@ def scatter_around(terrain, x, y, half_x, half_y, tier, rng, pools, label):
         ground = terrain.lowest(px, py, footprint_radius(piece, scale))
         if ground is None:
             continue
-        if spawn_mesh(piece, (px, py, ground - bed_in(piece, scale)),
-                      unreal.Rotator(pitch=rng.uniform(-12.0, 12.0),
-                                     yaw=rng.uniform(0.0, 360.0),
-                                     roll=rng.uniform(-12.0, 12.0)),
-                      (scale, scale, scale), "Rubble_%s_%02d" % (label, index), tier):
+        if ensure_seated(terrain, spawn_mesh(
+                piece, (px, py, ground - bed_in(piece, scale)),
+                unreal.Rotator(pitch=rng.uniform(-12.0, 12.0),
+                               yaw=rng.uniform(0.0, 360.0),
+                               roll=rng.uniform(-12.0, 12.0)),
+                (scale, scale, scale), "Rubble_%s_%02d" % (label, index), tier)):
             made += 1
     if tier == 0 and pools["props"]:
         for index in range(2):
@@ -1316,9 +1397,10 @@ def scatter_around(terrain, x, y, half_x, half_y, tier, rng, pools, label):
             ground = terrain.lowest(px, py, footprint_radius(prop, 1.0))
             if ground is None:
                 continue
-            if spawn_mesh(prop, (px, py, ground - bed_in(prop, 1.0)),
-                          unreal.Rotator(pitch=0.0, yaw=rng.uniform(0.0, 360.0), roll=0.0),
-                          (1.0, 1.0, 1.0), "Debris_%s_%02d" % (label, index), tier):
+            if ensure_seated(terrain, spawn_mesh(
+                    prop, (px, py, ground - bed_in(prop, 1.0)),
+                    unreal.Rotator(pitch=0.0, yaw=rng.uniform(0.0, 360.0), roll=0.0),
+                    (1.0, 1.0, 1.0), "Debris_%s_%02d" % (label, index), tier)):
                 made += 1
     for index in range(2 if pools["decals"] else 0):
         angle = rng.uniform(0.0, 2.0 * math.pi)
@@ -1377,7 +1459,7 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                for line in streets for p in line), default=1.0) or 1.0
 
     stats = {"placed": 0, "sheared": 0, "instances_removed": 0, "scatter": 0,
-             "busy": 0, "tries": 0, "on_street": 0}
+             "busy": 0, "tries": 0, "on_street": 0, "podiums": 0}
     why = {}
     for street_index, line in enumerate(streets):
         at, total = street_walk(line)
@@ -1443,9 +1525,10 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                     continue
                 half_x, half_y = entry["half"]
 
-                base, _relief = seat
+                low, base, _relief = seat
                 tier = 0 if reach < 0.34 else (1 if reach < 0.7 else 2)
                 sink = rng.uniform(*SINK_METRES[kind]) * 100.0
+                relief = base - low
                 blueprint = unreal.load_asset(entry["pkg"])
                 generated = blueprint.generated_class() if blueprint else None
                 if not generated:
@@ -1470,13 +1553,17 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                                                   tier, rng, caps, "Break_" + label)
                 stats["scatter"] += scatter_around(terrain, x, y, half_x, half_y, tier,
                                                    rng, pools, label)
+                if relief > PODIUM_MIN:
+                    if spawn_podium(x, y, low, base - sink, half_x, half_y, yaw, tier,
+                                    "Podium_" + label):
+                        stats["podiums"] += 1
                 spots.append((x, y, half_x, half_y))
                 stats["placed"] += 1
                 cursor += 2.0 * half_x + 900.0
 
     REPORT.append("placed %d of %d lot attempts as street frontage "
-                  "(%d sheared, %d instances removed, %d scatter actors)"
-                  % (stats["placed"], stats["tries"], stats["sheared"],
+                  "(%d on podiums, %d sheared, %d instances removed, %d scatter actors)"
+                  % (stats["placed"], stats["tries"], stats["podiums"], stats["sheared"],
                      stats["instances_removed"], stats["scatter"]))
     REPORT.append("lot refusals: %s, occupied %d, on another street %d"
                   % (", ".join("%s %d" % kv for kv in sorted(why.items())) or "none",
@@ -1547,6 +1634,7 @@ def main():
     apply_culling()
     add_navigation(world, centre, half)
     tidy_viewport()
+    REPORT.append("culled %d loose pieces that ended up with air beneath them" % CULLED[0])
     REPORT.append("material slots: %d filled from slot names, %d left as authored art"
                   % (DRESSED[0], DRESSED[1]))
 
