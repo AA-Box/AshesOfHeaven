@@ -157,7 +157,7 @@ instances, and a 50-clip sound library:
 | Rock Pack Vol 01 | `/Game/Ashes/Environment/Rocks/PackVol01` | 12 rocks, 4 texture sets dealt round-robin, Nanite |
 | Stylized NYC Street Props | `/Game/Ashes/Props/Street` | 20 props, no source textures - they take a flat Erebus instance |
 | Military Radio | `/Game/Ashes/Props/Radio` | 13 props, ORM maps |
-| 50 Free Game Sounds | `/Game/Ashes/Audio/Library` | 50 SoundWaves; see the sound library section below |
+| 50 Free Game Sounds | `/Game/Ashes/Audio/Library` | 20 SoundWaves kept; see the sound library section below |
 | VanillaLoop ladder set | `/Game/Ashes/Props/Ladder` | 3 modules, unpacked from the unitypackage by the animation script - run that one first |
 
 `SM_Trash_Bin` is skipped: it ships broken in that pack (the FBX holds an empty `Circle_028`
@@ -203,23 +203,32 @@ A bare SoundWave is not usable in this project: gameplay only asks `UAHAudioSubs
 semantic id, and a sound played outside the project's attenuation/concurrency/submix assets
 plays at full volume through the master bus and is audible anywhere in the level.
 
-All 50 clips are grouped into 20 banks, each authored as one `SC_Lib_<Bank>` SoundCue with a
+The clips are grouped into banks, each authored as one `SC_Lib_<Bank>` SoundCue with a
 `SoundNodeRandom` over its variations (`randomize_without_replacement`, so nothing repeats back
 to back), routed through `ATT_World3D`/`CONC_World`/`SM_World`, or `ATT_UI`/`CONC_UI`/`SM_UI` for
 the Interface and Pickup banks, or `SM_Ambience` for the five loops. Loops additionally get a
 `SoundNodeLooping` and their SoundWave marked looping; one-shots are `FORCE_INLINE` (a streamed
 miss is a silent hit) while loops stay `LOAD_ON_DEMAND`.
 
-Banks: Explosion, GunshotHeavy, GunshotEnergy, WeaponHandling, ImpactMetal, ImpactWood,
-ImpactRock, Melee, Whoosh, CreatureVoice, Door, Pickup, Interface, Water, Industry, and the
-AmbienceWind / AmbienceRain / AmbienceBirds / AmbienceWater / AmbienceFire loops.
+`BANKS` in the script is the authority on what ships. A wave in the library folder that no bank
+claims is deleted, along with any cue and palette id left behind - that is how clips pulled from
+the source pack leave the project instead of lingering as orphans.
 
-Every bank is registered in `DA_AudioPalette_Default` as `Library.<Bank>`, so all fifty clips are
-reachable by semantic name rather than by hunting the content browser. Three events that were
-still synthesised placeholders are repointed at recorded banks: `Combat.Grenade` → Explosion,
-`Weapon.M91.Impact` → ImpactMetal, `Combat.Melee` → Melee. Weapon fire, footsteps and the UI
-stingers keep the SciFi pack that already owns them, and the player's own hurt/death voices are
-deliberately left alone.
+The pack was trimmed from 50 clips to the **20** kept on disk, which left 13 banks: Explosion,
+GunshotHeavy, WeaponHandling, ImpactRock, Melee, Whoosh, CreatureVoice, Door, Pickup, Industry,
+and the AmbienceWind / AmbienceBirds / AmbienceFire loops. Seven banks lost every member and were
+removed: GunshotEnergy, ImpactMetal, ImpactWood, Interface, Water, AmbienceRain, AmbienceWater.
+
+Because `ImpactMetal` is gone, `Weapon.M91.Impact` is handed back to `SC_M91_Impact` via
+`PALETTE_RESTORE` rather than left pointing at a deleted cue. The two surviving repoints stay:
+`Combat.Grenade` -> Explosion, `Combat.Melee` -> Melee. Weapon fire, footsteps and the UI stingers
+keep the SciFi pack, and the player's own hurt/death voices are deliberately untouched.
+
+**`EditorAssetLibrary.delete_asset` leaves the .uasset on disk.** It drops the asset from the
+registry, so a later run cannot even see the file to retry and the asset reappears on the next
+editor start. Pruning deletes the file too, and sweeps the folder for files the registry has
+already forgotten. The final state is asserted by reading the palette back: if its `Library.*`
+ids do not match `BANKS` exactly, the script raises.
 
 The cues are gitignored along with the waves they play; the palette is committed, so on a fresh
 clone its `Library.*` entries are unresolved soft pointers until this script is re-run.

@@ -14,7 +14,7 @@ import json, socket, sys, uuid
 
 NODE = str(uuid.uuid4())
 UDP_PORT = 6766
-TCP_PORT = 6776
+TCP_PORT = 0   # ephemeral: a fixed port stays held after a crashed run ("Address already in use")
 
 
 def message(kind, data=None):
@@ -28,12 +28,13 @@ def run(code, mode="ExecuteFile", timeout=1800.0):
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", TCP_PORT))
+    port = listener.getsockname()[1]
     listener.listen(1)
     listener.settimeout(30.0)
 
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.sendto(message("open_connection",
-                       {"command_ip": "127.0.0.1", "command_port": TCP_PORT}),
+                       {"command_ip": "127.0.0.1", "command_port": port}),
                ("127.0.0.1", UDP_PORT))
     conn, _ = listener.accept()
     conn.settimeout(timeout)

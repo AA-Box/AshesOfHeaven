@@ -1,12 +1,14 @@
 """Make the 50-clip sound library playable: cues, routing, and semantic ids.
 
 Scripts/ImportAssetDrop.py brings the pack in as bare SoundWaves under
-/Game/Ashes/Audio/Library. A SoundWave is not usable content in this project: gameplay
+/Game/Ashes/Audio/Library. BANKS below is the authority on what the game ships: a wave in that
+folder which no bank claims is deleted, along with any cue and palette id left behind. That is
+how clips pulled from the source pack leave the project instead of lingering as orphans. A SoundWave is not usable content in this project: gameplay
 only ever asks UAHAudioSubsystem for a semantic id, and anything played without the
 project's attenuation, concurrency and submix assets plays at full volume through the
 master bus and is audible from anywhere in the level.
 
-This groups all 50 clips into sixteen banks, authors one SoundCue per bank (a
+This groups the clips into banks, authors one SoundCue per bank (a
 SoundNodeRandom over the bank's variations, so nothing repeats back to back), routes each
 through the same mix assets the existing cues use, and registers every bank in
 DA_AudioPalette_Default under a `Library.*` id. Three events that were still synthesised
@@ -14,6 +16,8 @@ placeholders are repointed at the recorded banks.
 
 Run with UnrealEditor-Cmd; idempotent, re-running rebuilds the cues in place.
 """
+
+import os
 
 import unreal
 
@@ -32,30 +36,21 @@ REPORT = []
 BANKS = {
     "Explosion":      ["ExplosionLarge11", "ExplosionMedium21"],
     "GunshotHeavy":   ["Gunshot11", "Gunshot71"],
-    "GunshotEnergy":  ["SciFiGun11"],
-    "WeaponHandling": ["SciFiGun1Reload", "DrawWeaponMetal11"],
-    "ImpactMetal":    ["ShieldMetalImpact13", "HitGeneric21", "HitGeneric51"],
-    "ImpactWood":     ["ShieldWoodImpact21", "Wood148", "WoodChop14", "NailWood11"],
-    "ImpactRock":     ["RockImpact11", "RockImpact37", "RockLargeDebris13"],
-    "Melee":          ["Punch21", "Stab41"],
-    "Whoosh":         ["Whoosh11", "Whoosh41", "FireWhoosh215"],
+    "WeaponHandling": ["DrawWeaponMetal11"],
+    "ImpactRock":     ["RockImpact11", "RockImpact37"],
+    "Melee":          ["Punch21"],
+    "Whoosh":         ["FireWhoosh215"],
     "CreatureVoice":  ["Creature121", "Zombie1Short101"],
-    "Door":           ["DoorOpen41", "DoorClose41", "WoodAndDoorCreak01", "WoodMove21"],
-    "Pickup":         ["SpecialCollectible91", "SpecialCollectible261", "CoinBag31", "Coins21",
-                       "BagHandle15", "BookHandle15", "BookPage12", "CashRegister12"],
-    "Interface":      ["Interface11", "Interface33", "MagicalInterface51", "MagicalInterface81",
-                       "SciFiInterface81"],
-    "Water":          ["WaterSplash52", "Underwater01"],
-    "Industry":       ["Blacksmithing11", "SawingWood11"],
+    "Door":           ["DoorOpen41", "DoorClose41", "WoodAndDoorCreak01"],
+    "Pickup":         ["BagHandle15", "CoinBag31"],
+    "Industry":       ["Blacksmithing11"],
     # Loops get a SoundNodeLooping and stay LoadOnDemand; the rest are inlined one-shots.
     "AmbienceWind":   ["AmbientWindLoop1"],
-    "AmbienceRain":   ["AmbientRainModerateLoop1"],
     "AmbienceBirds":  ["AmbientBirdsLoop04"],
-    "AmbienceWater":  ["AmbientWaterStreamCalm3"],
     "AmbienceFire":   ["FireBurningLoop2"],
 }
 
-LOOPING_BANKS = {"AmbienceWind", "AmbienceRain", "AmbienceBirds", "AmbienceWater", "AmbienceFire"}
+LOOPING_BANKS = {"AmbienceWind", "AmbienceBirds", "AmbienceFire"}
 UI_BANKS = {"Interface", "Pickup"}
 
 # Existing semantic events worth repointing. Everything else keeps what it has: the SciFi
@@ -63,8 +58,13 @@ UI_BANKS = {"Interface", "Pickup"}
 # death voices must not become creature noises.
 PALETTE_EVENTS = {
     "Combat.Grenade": "Explosion",
-    "Weapon.M91.Impact": "ImpactMetal",
     "Combat.Melee": "Melee",
+}
+# Events this script previously repointed at banks that no longer exist, and the cue each must
+# be handed back to. Weapon.M91.Impact rode SC_Lib_ImpactMetal, whose every clip
+# (ShieldMetalImpact, HitGeneric x2) was pulled from the pack.
+PALETTE_RESTORE = {
+    "Weapon.M91.Impact": "/Game/Ashes/Audio/Cues/SC_M91_Impact",
 }
 
 
@@ -186,12 +186,88 @@ def bind_palette(cue_paths):
          % (len(cue_paths), len(PALETTE_EVENTS)))
 
 
+def _erase(package_path):
+    """Delete an asset AND its file.
+
+    EditorAssetLibrary.delete_asset drops the asset from the registry but leaves the .uasset
+    sitting on disk, so a later run cannot even see it to retry and the file returns on the
+    next editor start.
+    """
+    EAL.delete_asset(package_path)
+    on_disk = os.path.join(
+        unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir()),
+        package_path.split(".")[0][len("/Game/"):] + ".uasset")
+    if os.path.isfile(on_disk):
+        os.remove(on_disk)
+
+
+def prune(cue_paths):
+    """Delete waves, cues and palette ids for anything no longer in BANKS."""
+    wanted_waves = {"SW_" + stem for stems in BANKS.values() for stem in stems}
+    removed_waves = removed_cues = 0
+    for asset in EAL.list_assets(LIBRARY_DIR, recursive=False, include_folder=False):
+        name = asset.split("/")[-1].split(".")[0]
+        if name.startswith("SW_") and name not in wanted_waves:
+            _erase(asset)
+            removed_waves += 1
+    for asset in EAL.list_assets(CUE_DIR, recursive=False, include_folder=False):
+        name = asset.split("/")[-1].split(".")[0]
+        if name.startswith("SC_Lib_") and name[len("SC_Lib_"):] not in BANKS:
+            _erase(asset)
+            removed_cues += 1
+
+    # Sweep files the registry no longer lists but which are still on disk from an earlier
+    # half-finished delete.
+    content = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_content_dir())
+    for folder, keep, prefix in ((LIBRARY_DIR, wanted_waves, "SW_"),
+                                 (CUE_DIR, {"SC_Lib_" + b for b in BANKS}, "SC_Lib_")):
+        disk_folder = os.path.join(content, folder[len("/Game/"):])
+        for filename in sorted(os.listdir(disk_folder)) if os.path.isdir(disk_folder) else []:
+            if not filename.endswith(".uasset"):
+                continue
+            name = filename[:-len(".uasset")]
+            if name.startswith(prefix) and name not in keep:
+                os.remove(os.path.join(disk_folder, filename))
+                if prefix == "SW_":
+                    removed_waves += 1
+                else:
+                    removed_cues += 1
+
+    palette = _require(PALETTE_PATH)
+    events = palette.get_editor_property("events")
+    stale = [key for key in list(events.keys())
+             if str(key).startswith("Library.") and str(key)[len("Library."):] not in BANKS]
+    for key in stale:
+        del events[key]
+    handed_back = 0
+    for event_name, cue_path in PALETTE_RESTORE.items():
+        cue = _load(cue_path)
+        if cue:
+            events[unreal.Name(event_name)] = cue
+            handed_back += 1
+        elif unreal.Name(event_name) in events:
+            del events[unreal.Name(event_name)]
+    palette.set_editor_property("events", events)
+    EAL.save_asset(PALETTE_PATH, only_if_is_dirty=False)
+    # Report what is actually on disk afterwards, not what this function thought it changed:
+    # deleting a cue can drop its palette entry as a side effect, which made the stale count
+    # read zero while the palette had in fact been correct all along.
+    written = _load(PALETTE_PATH).get_editor_property("events")
+    library_ids = sorted(str(k)[len("Library."):] for k in written.keys()
+                         if str(k).startswith("Library."))
+    if set(library_ids) != set(BANKS):
+        raise RuntimeError("palette Library ids %s do not match BANKS" % library_ids)
+    _log("pruned %d waves, %d cues; palette holds %d Library ids, all matching BANKS; "
+         "%d events handed back" % (removed_waves, removed_cues, len(library_ids), handed_back))
+
+
 def main():
     used = sum(len(stems) for stems in BANKS.values())
     cue_paths = {}
     for bank, stems in sorted(BANKS.items()):
         cue_paths[bank] = author_cue(bank, bank_waves(bank, stems))
     bind_palette(cue_paths)
+    prune(cue_paths)
     _log("%d clips across %d banks" % (used, len(BANKS)))
 
     import os

@@ -21,6 +21,21 @@ emissive/decal branches where appropriate. Saved instances include `MI_HumanMeta
 The Chapter One director loads these assets first and retains explicit old greybox fallbacks so a
 missing optional content asset cannot break gameplay construction.
 
+### `M_EnemyCreature`
+
+The masters above are flat tints with no texture inputs, which is why the mannequin enemies read
+as untextured no matter which one was applied. `M_EnemyCreature` is the textured character master
+the four imported enemy bodies use: `BaseColorTex`, `NormalTex`, `RoughnessTex` and `EmissiveMask`
+texture parameters, each gated by a `Use*`/`*Strength` scalar so a model that shipped without a
+given map falls back to `BaseTint` and the scalar roughness instead of sampling a white square.
+It carries `used_with_skeletal_mesh`, without which a character body silently renders as the
+engine default grey and only logs a warning.
+
+Instances are generated one per material slot (`MI_<Model>_NN`) by `Scripts/ImportEnemyModels.py`.
+The slot's own name, taken from the source FBX, decides which texture set dresses it and whether
+it is the part that glows - `LIGHT_EYE` and `Red-Eye-Alien-Animal` get the emissive treatment,
+`rock` and `LEATHER` get their own maps.
+
 ### `M_ErebusSurface` channel masks
 
 The imported external prop packs pack roughness into an ORM green channel and metalness into
