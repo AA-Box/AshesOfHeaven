@@ -23,6 +23,13 @@ sys.path.insert(0, ROOT)
 
 import importlib.util
 
+# ImportAnimationDrop.py touches the filesystem at import time, and with unreal stubbed its
+# report path resolves through a MagicMock - so importing it drops a directory literally named
+# "MagicMock/mock.Paths.convert_relative_path_to_full()/..." into the current directory. That
+# was landing in the repo root on every run. Everything below uses absolute paths, so importing
+# from a scratch directory keeps the tree clean.
+os.chdir(tempfile.mkdtemp(prefix="ashes-safe-extract-"))
+
 spec = importlib.util.spec_from_file_location(
     "import_animation_drop", os.path.join(ROOT, "ImportAnimationDrop.py"))
 mod = importlib.util.module_from_spec(spec)
