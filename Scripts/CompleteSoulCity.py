@@ -104,7 +104,10 @@ MIN_NORMAL_Z = 0.90
 EDGE_NORMAL_Z = 0.70
 # cos(28 deg): a street may run steeper than a foundation, because its tiles pitch to the hill.
 STREET_NORMAL_Z = 0.88
-# Three of nine samples may fail - a boulder should not veto a city block.
+# Three of nine samples may fail ON SLOPE - a boulder should not veto a city block. A sample
+# with NO ground under it at all (void, or the lake) is not in that budget: three of those can
+# be one entire side of the footprint hanging over the drop, and the podium then becomes a
+# rectangle bridging it. Missing ground is a hard refusal wherever in the footprint it lands.
 EDGE_FAILURES = 3
 # A footprint may not span more than this much height, or the uphill side buries whole floors.
 MAX_RELIEF = 2800.0
@@ -127,6 +130,11 @@ ROAD_STEP = 2004.0          # tile length along its local +X
 ROAD_WIDTH = 2104.0
 ROAD_ORIGIN_Y = 1000.0      # bounds origin sits half a carriageway off centre
 ROAD_MAX_TILES = 1200
+# Slabs actually laid in the 20 m cell a lot fronts, before that lot counts as having a street.
+# grow_streets() plans a network; lay_streets() refuses every slab it cannot seat (1,078 of
+# them in the last measured run), and frontage on a street that exists only in the graph is a
+# row of buildings facing bare hillside.
+FRONT_MIN_SLABS = 2
 SLAB_LENGTH = 468.0
 # Largest gap a tile may leave under any corner once its own plane is fitted.
 ROAD_MAX_RESIDUAL = 60.0
@@ -186,6 +194,12 @@ FENCE_STEP = 800.0
 FENCE_HEIGHT = 1200.0
 FENCE_MARGIN = 6000.0
 FENCE_MAX = 1500
+# The deliberate playable radius. Streets seed up to SEED_SCAN_REACH out and then grow another
+# ~1.2 km, so sizing the navmesh to the authored slum left most of the walkable district with
+# no navigation; sizing it to the full street extent would ask Recast to build over the whole
+# valley. Everything past this is scenery you can see but not fight in.
+NAV_MAX_HALF = 100000.0
+NAV_MARGIN = 20000.0
 LOCAL_FENCE_CELL = 500.0
 SHEAR_CHANCE = {"tower": 0.75, "mid": 0.6, "low": 0.35}
 SHEAR_KEEP = (0.35, 0.85)   # fraction of height left standing
@@ -199,6 +213,7 @@ LES = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 EAL = unreal.EditorAssetLibrary
 REPORT = []
 CULLED = [0]
+SOLIDS = [0, 0]     # plain mesh components sheared away, plain components left standing
 
 
 def load(path):
@@ -524,9 +539,10 @@ class Terrain(object):
     def footprint(self, x, y, half_x, half_y, yaw, why=None, height=None):
         """Sample a real footprint, not just its centre.
 
-        Returns (base_z, relief) or None. base_z is the LOWEST corner: a flat-based building on
-        a slope must cut into the hill, never hover over the low side. relief is what gets
-        rejected, so the uphill wall does not swallow two floors.
+        Returns (low, base, relief) or None. base is the HIGHEST sample - the building stands
+        at grade on the high side of the plot - and low is the lowest, which is how deep the
+        podium under it has to reach. relief is the difference, and it is what gets rejected,
+        so the uphill wall does not swallow two floors.
         """
         def refuse(reason):
             if why is not None:
@@ -544,14 +560,29 @@ class Terrain(object):
                 px = x + lx * cos_a - ly * sin_a
                 py = y + lx * sin_a + ly * cos_a
                 got = self.at(px, py)
-                if got is None or got[1] < EDGE_NORMAL_Z:
-                    failures += 1    # over water, void, a roof, or a cliff face
+                if got is None:
+                    # No natural ground here at all: over the edge of the world, or the lake.
+                    # This is NOT a slope failure to be budgeted against - it is the strongest
+                    # evidence the footprint is not on the ground, so it refuses outright.
+                    return refuse("void")
+                if got[1] < EDGE_NORMAL_Z:
+                    failures += 1    # a boulder or a steep step; a podium can absorb these
                     if failures > EDGE_FAILURES:
                         return refuse("edges")
                     continue
                 zs.append(got[0])
-        if len(zs) < 6:
-            return refuse("edges")
+        # Those nine come from at(), which answers from a SAMPLE_STEP (5 m) lattice - so a
+        # corner two metres past the lip is answered by a cell three metres inland and the
+        # "no ground here" refusal never fires. The four corners are exactly what the podium
+        # has to reach, so they are re-taken at their real positions. Only a candidate that
+        # already passed the cheap cached pass pays for these traces.
+        for u in (-1.0, 1.0):
+            for v in (-1.0, 1.0):
+                lx, ly = u * half_x, v * half_y
+                z = self.exact(x + lx * cos_a - ly * sin_a, y + lx * sin_a + ly * cos_a)
+                if z is None:
+                    return refuse("void")
+                zs.append(z)
         relief = max(zs) - min(zs)
         # A big building is allowed a proportionally bigger cut, the way a real hillside block
         # sits on a podium. A flat cap keeps a tower from being buried to its third floor.
@@ -652,6 +683,44 @@ def clear_of(x, y, margin, spots, half_x=0.0, half_y=0.0):
         if abs(x - sx) < hx + half_x + margin and abs(y - sy) < hy + half_y + margin:
             return False
     return True
+
+
+def world_half(half_x, half_y, yaw):
+    """Axis-aligned half extents of a box that has been turned by yaw.
+
+    clear_of() is an axis-aligned test and the pool's extents are measured at zero yaw, but a
+    building is turned to its street's heading - so the box being tested was not the box being
+    placed. The 92 x 14 m row house at 45 deg spans 75 x 75 m on world axes, and testing it as
+    92 x 14 let it lie diagonally through its neighbour while clear_of() reported it clear.
+    """
+    radians = math.radians(yaw)
+    cos_a, sin_a = abs(math.cos(radians)), abs(math.sin(radians))
+    return (cos_a * half_x + sin_a * half_y, sin_a * half_x + cos_a * half_y)
+
+
+def solid_ground(world, x, y):
+    """Is there anything here to stand on that this pass did not build itself?
+
+    The fences run AFTER the roads and podiums are laid, so a plain downward trace fired at a
+    road slab that overhangs the void hits the slab and reports solid ground - which is exactly
+    the hole the fence exists to close, and the same trap for a BlockingVolume the first fence
+    pass already placed. Our own actors are skipped; authored geometry counts as ground.
+    """
+    hits = unreal.SystemLibrary.line_trace_multi(
+        world, unreal.Vector(x, y, 150000.0), unreal.Vector(x, y, -200000.0),
+        unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
+    if isinstance(hits, tuple):
+        hits = hits[-1]
+    for hit in (hits or []):
+        actor = hit.to_dict().get("hit_actor")
+        if actor is not None and not has_tag(actor):
+            return True
+    return False
+
+
+def road_cell(x, y):
+    """The street lattice. Shared by street growth and by the paving test for a lot."""
+    return (int(x / ROAD_STEP), int(y / ROAD_STEP))
 
 
 # --- the building pool ---------------------------------------------------------------------
@@ -821,9 +890,6 @@ def grow_streets(terrain, authored, centre, half, rng):
     occupied = set()
     stops = {}
 
-    def cell(x, y):
-        return (int(x / ROAD_STEP), int(y / ROAD_STEP))
-
     def grow(x, y, heading, budget):
         line, taken = [(x, y)], set()
         for _step in range(budget):
@@ -836,7 +902,7 @@ def grow_streets(terrain, authored, centre, half, rng):
                 radians = math.radians(candidate)
                 nx = x + math.cos(radians) * ROAD_STEP
                 ny = y + math.sin(radians) * ROAD_STEP
-                key = cell(nx, ny)
+                key = road_cell(nx, ny)
                 if key in occupied or key in taken:
                     stops["occupied"] = stops.get("occupied", 0) + 1
                     continue
@@ -858,7 +924,7 @@ def grow_streets(terrain, authored, centre, half, rng):
             if best is None:
                 break
             _cost, x, y, heading = best
-            taken.add(cell(x, y))
+            taken.add(road_cell(x, y))
             line.append((x, y))
         return line, taken, heading
 
@@ -984,12 +1050,17 @@ def lay_streets(terrain, streets):
     walkable surface hanging over the hill is a platform the player can stand on in mid air.
     Slabs that cannot be seated are simply not laid, and the gaps read as a road broken by the
     same war that broke the buildings.
+
+    Returns {street cell: slabs laid there}, because the refusals are not rare - most of a
+    planned street can end up with no carriageway at all, and place_frontage() must line the
+    road that exists rather than the one grow_streets() drew.
     """
     mesh = load(ROAD_TILE)
     if not mesh:
-        return 0
+        return {}
     half_l, half_w = SLAB_LENGTH * 0.5, ROAD_WIDTH * 0.5
     pitch_along = SLAB_LENGTH * SLAB_OVERLAP
+    paving = {}
     laid = no_ground = twisted = steep = buried = 0
     for index, line in enumerate(streets):
         for step in range(len(line) - 1):
@@ -1008,8 +1079,9 @@ def lay_streets(terrain, streets):
             slab = 0
             while travelled < run and laid < ROAD_MAX_TILES:
                 # Cancel the mesh's own bounds offset, then sample where the slab really goes.
-                centre_x = ax + ux * travelled + sin_a * ROAD_ORIGIN_Y
-                centre_y = ay + uy * travelled - cos_a * ROAD_ORIGIN_Y
+                along = travelled
+                centre_x = ax + ux * along + sin_a * ROAD_ORIGIN_Y
+                centre_y = ay + uy * along - cos_a * ROAD_ORIGIN_Y
                 travelled += pitch_along
                 slab += 1
 
@@ -1059,10 +1131,68 @@ def lay_streets(terrain, streets):
                     EAS.destroy_actor(tile)
                     buried += 1
                     continue
+                # Keyed on the CENTRELINE, not the slab: the slab is offset perpendicular by
+                # the mesh's own bounds origin, which is enough to land it in the next cell, and
+                # the lot test that reads this samples the centreline.
+                key = road_cell(ax + ux * along, ay + uy * along)
+                paving[key] = paving.get(key, 0) + 1
                 laid += 1
     REPORT.append("laid %d road slabs (refused: %d no ground, %d twisted, %d too steep, "
                   "%d would bury an edge)" % (laid, no_ground, twisted, steep, buried))
-    return laid
+    REPORT.append("%d street cells carry %d+ slabs and can take frontage; %d took at least one"
+                  % (sum(1 for n in paving.values() if n >= FRONT_MIN_SLABS), FRONT_MIN_SLABS,
+                     len(paving)))
+    return paving
+
+
+def component_span(actor, component):
+    """(low_z, high_z) of a mesh component in world space, or None if it cannot be measured.
+
+    Rotation is ignored: this is only ever compared against a cut with a SHEAR_RAGGED (18 m)
+    margin, which is wider than the error a turned panel can introduce.
+    """
+    try:
+        mesh = component.static_mesh
+        if mesh is None:
+            return None
+        bounds = mesh.get_bounds()
+        location = component.get_world_location()
+        scale = abs(component.get_world_scale().z)
+    except Exception:
+        try:
+            location = actor.get_actor_location()
+            return (location.z, location.z)   # unmeasurable: treat as at the base, keep it
+        except Exception:
+            return None
+    centre = location.z + bounds.origin.z * scale
+    half = abs(bounds.box_extent.z) * scale
+    return (centre - half, centre + half)
+
+
+def shear_solids(actor, cut):
+    """Shear the components that are NOT instanced, and count whatever is left standing.
+
+    Removing ISM instances is most of the job but not all of it: get_components_by_class
+    (StaticMeshComponent) returned 121 of 121 as ISM on both probed towers, so on those there
+    is nothing else - but that is 2 of 46 pool members, and one plain facade component left
+    intact above a shear line is an unbroken tower with its floors missing underneath. Anything
+    wholly above the break loses its visibility and its collision; the rest is tallied into the
+    report so the audit is a number in Saved/ rather than an assumption.
+    """
+    for component in actor.get_components_by_class(unreal.StaticMeshComponent):
+        if isinstance(component, unreal.InstancedStaticMeshComponent):
+            continue
+        span = component_span(actor, component)
+        if span is None or span[0] <= cut + SHEAR_RAGGED:
+            SOLIDS[1] += 1
+            continue
+        try:
+            component.set_visibility(False, True)
+            component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+            SOLIDS[0] += 1
+        except Exception as exc:
+            SOLIDS[1] += 1
+            REPORT.append("could not shear a plain component: %s" % exc)
 
 
 def shear(actor, kind, rng):
@@ -1118,6 +1248,7 @@ def shear(actor, kind, rng):
                 removed += len(drop)
             except Exception as exc:
                 REPORT.append("shear failed: %s" % exc)
+    shear_solids(actor, cut)
     return removed, cut
 
 
@@ -1128,6 +1259,10 @@ def ensure_seated(terrain, actor, limit=SEAT_MAX_AIR):
     This is the backstop that makes "nothing the player can stand on floats" a property of the
     level rather than a hope: measure what is actually under the thing, and if it is hanging,
     it does not ship.
+
+    A sample that hits NOTHING is the worst case, not an excuse. It used to be skipped as "off
+    the edge of the landscape, not a floating slab" - backwards: a corner with the void under it
+    is unsupported by definition, which is how rubble kept surviving with one end over the drop.
     """
     if actor is None:
         return None
@@ -1143,11 +1278,10 @@ def ensure_seated(terrain, actor, limit=SEAT_MAX_AIR):
             terrain.world, unreal.Vector(origin.x + extent.x * dx, origin.y + extent.y * dy, start),
             unreal.Vector(origin.x + extent.x * dx, origin.y + extent.y * dy, start - 300000.0),
             unreal.TraceTypeQuery.ECC_VISIBILITY, True, [actor], unreal.DrawDebugTrace.NONE, True)
-        if not hit:
-            continue                       # off the edge of the landscape, not a floating slab
-        data = hit.to_dict()
-        if not data.get("blocking_hit"):
-            continue
+        data = hit.to_dict() if hit else None
+        if not data or not data.get("blocking_hit"):
+            worst = float("inf")           # nothing at all under this corner: it is over void
+            break
         air = under - data["location"].z
         if worst is None or air > worst:
             worst = air
@@ -1308,18 +1442,12 @@ def fence_void(world, terrain):
     x0, x1 = min(xs) - FENCE_MARGIN, max(xs) + FENCE_MARGIN
     y0, y1 = min(ys) - FENCE_MARGIN, max(ys) + FENCE_MARGIN
 
-    def solid(x, y):
-        hit = unreal.SystemLibrary.line_trace_single(
-            world, unreal.Vector(x, y, 150000.0), unreal.Vector(x, y, -200000.0),
-            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
-        return bool(hit)
-
     nx = int((x1 - x0) / FENCE_STEP) + 1
     ny = int((y1 - y0) / FENCE_STEP) + 1
     grid = {}
     for i in range(nx):
         for j in range(ny):
-            grid[(i, j)] = solid(x0 + i * FENCE_STEP, y0 + j * FENCE_STEP)
+            grid[(i, j)] = solid_ground(world, x0 + i * FENCE_STEP, y0 + j * FENCE_STEP)
 
     # The wall goes on the VOID side of the lip, not on the last walkable cell - putting it on
     # solid ground would wall off metres of ground the player is entitled to stand on.
@@ -1388,12 +1516,6 @@ def fence_local(world, terrain, start_index):
     that kind of interior hole. This probes a tight ring around each thing this pass placed
     and walls whatever void it finds, which is bounded work rather than a finer global grid.
     """
-    def solid(x, y):
-        hit = unreal.SystemLibrary.line_trace_single(
-            world, unreal.Vector(x, y, 150000.0), unreal.Vector(x, y, -200000.0),
-            unreal.TraceTypeQuery.ECC_VISIBILITY, True, [], unreal.DrawDebugTrace.NONE, True)
-        return bool(hit)
-
     wanted, made = set(), 0
     for actor in EAS.get_all_level_actors():
         if not has_tag(actor):
@@ -1406,7 +1528,7 @@ def fence_local(world, terrain, start_index):
             for reach in (600.0, 1200.0, 1800.0):
                 px = origin.x + math.cos(angle) * reach
                 py = origin.y + math.sin(angle) * reach
-                if solid(px, py):
+                if solid_ground(world, px, py):
                     continue
                 key = (int(px / LOCAL_FENCE_CELL), int(py / LOCAL_FENCE_CELL))
                 wanted.add(key)
@@ -1416,7 +1538,7 @@ def fence_local(world, terrain, start_index):
         cx, cy = i * LOCAL_FENCE_CELL, j * LOCAL_FENCE_CELL
         # Snapping the void sample to a cell can move it up to half a cell onto real ground.
         # Re-test where the wall would actually stand, or it blocks somewhere walkable.
-        if solid(cx, cy):
+        if solid_ground(world, cx, cy):
             continue
         ground = None
         for dx, dy in ((LOCAL_FENCE_CELL, 0.0), (-LOCAL_FENCE_CELL, 0.0),
@@ -1446,10 +1568,45 @@ def fence_local(world, terrain, start_index):
 
 
 def add_navigation(world, centre, half):
-    """The map ships no NavMeshBoundsVolume at all, so nothing here was ever navigable."""
-    margin = 30000.0
-    extent = (2.0 * (half[0] + margin), 2.0 * (half[1] + margin), 40000.0)
-    volume = spawn_class(unreal.NavMeshBoundsVolume, (centre[0], centre[1], 0.0),
+    """The map ships no NavMeshBoundsVolume at all, so nothing here was ever navigable.
+
+    Sized to what was actually built, not to the authored slum. Streets seed as far as
+    SEED_SCAN_REACH (1.5 km) and then grow ~1.2 km more, so "authored bounds + 300 m" left most
+    of a district the player can now walk into with no navmesh at all - and while the additions
+    were distant skyline that was survivable, they are not that any more. The box grows over
+    every road, podium and building this pass placed, and is then clamped to NAV_MAX_HALF about
+    the authored centre: that clamp is the deliberate playable radius, because asking Recast to
+    cover the whole valley is minutes of build time for ground nothing fights over.
+    """
+    xs = [centre[0] - half[0], centre[0] + half[0]]
+    ys = [centre[1] - half[1], centre[1] + half[1]]
+    zs = []
+    for actor in EAS.get_all_level_actors():
+        if not has_tag(actor):
+            continue
+        if not actor.get_actor_label().startswith(("Road_", "Bldg_", "Podium_")):
+            continue
+        point = actor.get_actor_location()
+        xs.append(point.x)
+        ys.append(point.y)
+        zs.append(point.z)
+    cx, cy = (min(xs) + max(xs)) * 0.5, (min(ys) + max(ys)) * 0.5
+    half_x = (max(xs) - min(xs)) * 0.5 + NAV_MARGIN
+    half_y = (max(ys) - min(ys)) * 0.5 + NAV_MARGIN
+    clamped = []
+    if half_x > NAV_MAX_HALF:
+        cx, half_x = centre[0], NAV_MAX_HALF
+        clamped.append("X")
+    if half_y > NAV_MAX_HALF:
+        cy, half_y = centre[1], NAV_MAX_HALF
+        clamped.append("Y")
+    # Placed z values are ground level (a building is spawned at its base), so the box only has
+    # to reach an agent's worth above the highest of them - a navmesh does not cover roofs.
+    low = (min(zs) if zs else -25000.0) - 2000.0
+    high = (max(zs) if zs else 15000.0) + 10000.0
+    height = max(20000.0, high - low)
+    extent = (2.0 * half_x, 2.0 * half_y, height)
+    volume = spawn_class(unreal.NavMeshBoundsVolume, (cx, cy, (low + high) * 0.5),
                          unreal.Rotator(pitch=0.0, yaw=0.0, roll=0.0), "Nav_CityCompletion")
     if not volume:
         REPORT.append("FAILED could not spawn NavMeshBoundsVolume")
@@ -1470,8 +1627,12 @@ def add_navigation(world, centre, half):
         if "RecastNavMesh" in type(actor).__name__ and not has_tag(actor):
             claim(actor, "Nav_RecastCityCompletion")
     unreal.SystemLibrary.execute_console_command(world, "RebuildNavigation")
-    REPORT.append("nav volume %.0f x %.0f x %.0f m, hidden, RebuildNavigation issued"
-                  % (extent[0] / 100.0, extent[1] / 100.0, extent[2] / 100.0))
+    REPORT.append("nav volume %.0f x %.0f x %.0f m at (%.0f, %.0f) m over the built district, "
+                  "hidden, RebuildNavigation issued%s"
+                  % (extent[0] / 100.0, extent[1] / 100.0, extent[2] / 100.0,
+                     cx / 100.0, cy / 100.0,
+                     (" - clamped on %s to the %.0f m playable radius"
+                      % ("/".join(clamped), NAV_MAX_HALF / 100.0)) if clamped else ""))
 
 
 def tidy_viewport():
@@ -1610,7 +1771,8 @@ def street_walk(line):
     return at, total
 
 
-def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, pools, caps):
+def place_frontage(terrain, streets, spots, street_points, paving, pool, centre, rng,
+                   pools, caps):
     """Walk every street and fill the lots on both sides of it.
 
     Each side keeps its own cursor and advances by the frontage of whatever actually landed,
@@ -1628,7 +1790,7 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                for line in streets for p in line), default=1.0) or 1.0
 
     stats = {"placed": 0, "sheared": 0, "instances_removed": 0, "scatter": 0,
-             "busy": 0, "tries": 0, "on_street": 0, "podiums": 0}
+             "busy": 0, "tries": 0, "on_street": 0, "podiums": 0, "unpaved": 0}
     why = {}
     for street_index, line in enumerate(streets):
         at, total = street_walk(line)
@@ -1641,6 +1803,14 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                 if sample is None:
                     break
                 cx, cy, heading = sample
+                # Front the road that got built, not the one that got planned. lay_streets()
+                # refuses any slab it cannot seat and refused 1,078 of them in the last measured
+                # run, so a stretch of a planned street can have no carriageway at all - and a
+                # row of buildings facing bare hillside is not frontage.
+                if paving.get(road_cell(cx, cy), 0) < FRONT_MIN_SLABS:
+                    stats["unpaved"] += 1
+                    cursor += LOT_PITCH * 0.5
+                    continue
                 normal = (-math.sin(heading), math.cos(heading))
                 reach = min(1.0, math.hypot(cx - centre[0], cy - centre[1]) / far)
                 bearing = math.atan2(cy - centre[1], cx - centre[0])
@@ -1665,6 +1835,7 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                 entry = seat = None
                 yaw = 0.0
                 x = y = 0.0
+                box_x = box_y = 0.0
                 for option in order[:FIT_ATTEMPTS]:
                     half_x, half_y = option["half"]
                     stats["tries"] += 1
@@ -1676,7 +1847,10 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                                               option["height"])
                     if found is None:
                         continue
-                    if not clear_of(try_x, try_y, CLEARANCE, spots, half_x, half_y):
+                    # The extents are measured at zero yaw and this building is turned to the
+                    # street, so the box the axis-aligned test needs is the turned one.
+                    try_box = world_half(half_x, half_y, try_yaw)
+                    if not clear_of(try_x, try_y, CLEARANCE, spots, try_box[0], try_box[1]):
                         stats["busy"] += 1
                         continue
                     # Do not sit on some OTHER street. Measured against the inscribed radius,
@@ -1687,6 +1861,7 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                         stats["on_street"] += 1
                         continue
                     entry, seat, yaw, x, y = option, found, try_yaw, try_x, try_y
+                    box_x, box_y = try_box
                     break
 
                 if entry is None:
@@ -1726,7 +1901,8 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                     if spawn_podium(x, y, low, base - sink, half_x, half_y, yaw, tier,
                                     "Podium_" + label):
                         stats["podiums"] += 1
-                spots.append((x, y, half_x, half_y))
+                # The world box, not the local one - the next building tests against this.
+                spots.append((x, y, box_x, box_y))
                 stats["placed"] += 1
                 cursor += 2.0 * half_x + 900.0
 
@@ -1734,9 +1910,9 @@ def place_frontage(terrain, streets, spots, street_points, pool, centre, rng, po
                   "(%d on podiums, %d sheared, %d instances removed, %d scatter actors)"
                   % (stats["placed"], stats["tries"], stats["podiums"], stats["sheared"],
                      stats["instances_removed"], stats["scatter"]))
-    REPORT.append("lot refusals: %s, occupied %d, on another street %d"
+    REPORT.append("lot refusals: %s, occupied %d, on another street %d, unpaved street %d"
                   % (", ".join("%s %d" % kv for kv in sorted(why.items())) or "none",
-                     stats["busy"], stats["on_street"]))
+                     stats["busy"], stats["on_street"], stats["unpaved"]))
     return stats["placed"]
 
 
@@ -1792,20 +1968,28 @@ def main():
     if not streets:
         REPORT.append("FAILED no street could be grown - terrain rejected every seed")
         return
-    lay_streets(terrain, streets)
+    paving = lay_streets(terrain, streets)
+    if not paving:
+        REPORT.append("FAILED not one road slab could be seated - nothing to front")
+        return
     # Streets are kept OUT of the box list. A building's half extents are local, but the box
     # test compares them on world axes, so a 125 m long building was being refused against the
     # very street it fronts. They get their own distance test against the inscribed radius.
     street_points = [p for line in streets for p in line]
 
-    place_frontage(terrain, streets, spots, street_points, pool, centre, rng, pools, caps)
+    place_frontage(terrain, streets, spots, street_points, paving, pool, centre, rng,
+                   pools, caps)
     hide_mattes(MATTE_MODE)
     apply_culling()
-    add_navigation(world, centre, half)
+    # Fences first. They are BlockingVolumes, so they are geometry Recast has to see - issuing
+    # RebuildNavigation before they exist bakes a navmesh that runs straight over the lip.
     fenced = fence_void(world, terrain)
     fence_local(world, terrain, fenced)
+    add_navigation(world, centre, half)
     tidy_viewport()
     REPORT.append("culled %d loose pieces that ended up with air beneath them" % CULLED[0])
+    REPORT.append("plain (non-instanced) mesh components: %d sheared away above the break, "
+                  "%d left standing at or below it" % (SOLIDS[0], SOLIDS[1]))
     REPORT.append("material slots: %d filled from slot names, %d left as authored art"
                   % (DRESSED[0], DRESSED[1]))
 
