@@ -34,11 +34,26 @@ for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "ERROR: missing required cross-platform file: $file" >&2; exit 1; }
 done
 
-if rg -n --glob '*.cpp' --glob '*.h' \
+# A scan that did not run must never be reported as a clean scan. This was `if rg ...; then`
+# and ubuntu-latest has no rg: the 127 exit reads as "the pattern matched nothing", so the gate
+# reported clean having never looked. grep is in every image, and its status is checked
+# explicitly - 1 is "no matches" and passes, anything above that means the scan itself broke.
+raw="$(mktemp)"
+leaks="$(mktemp)"
+set +e
+grep -rEn --include='*.cpp' --include='*.h' \
   'PLATFORM_(WINDOWS|MAC|ANDROID|IOS)|WIN32|Windows\.h|\\\\' \
-  Source --glob '!Platform/**' >/tmp/ashes_platform_leaks.txt; then
+  Source >"$raw"
+scan=$?
+set -e
+if (( scan > 1 )); then
+  echo "ERROR: the platform leak scan did not run (grep exited $scan)" >&2
+  exit 1
+fi
+grep -v '/Platform/' "$raw" >"$leaks" || true
+if [[ -s "$leaks" ]]; then
   echo "ERROR: platform-specific gameplay dependency found outside Source/.../Platform:" >&2
-  cat /tmp/ashes_platform_leaks.txt >&2
+  cat "$leaks" >&2
   exit 1
 fi
 
@@ -50,5 +65,13 @@ fi
 
 bash -n Scripts/Build-Mac.sh Scripts/Build-Android.sh Scripts/Build-iOS.sh Scripts/Run-AutomationTests.sh
 python3 Scripts/Validate-PSO.py config --all-platforms
-python3 -m unittest Scripts/tests/test_validate_pso.py
+
+# Every python test in the tree, so adding one gates the PR without touching this script.
+# Deliberately NOT `unittest discover`: test_safe_extract.py is plain asserts with no TestCase,
+# so discover imports it, finds nothing to run, and reports success having skipped its checks.
+# Each file runs standalone and exits non-zero when it fails.
+for test in Scripts/tests/test_*.py; do
+  echo "== $test"
+  python3 "$test"
+done
 echo "Cross-platform source/config validation passed. Platform binaries remain evidence-gated in Docs/PLATFORM_MATRIX.md."
