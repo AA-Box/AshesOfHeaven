@@ -152,6 +152,68 @@ class TurnedBox(unittest.TestCase):
         self.assertFalse(CITY["clear_of"](0.0, 0.0, 0.0, spots, box[0], box[1]))
 
 
+class Frontage(unittest.TestCase):
+    """A lot needs carriageway in front of ITSELF, not somewhere in a shared cell."""
+
+    def test_no_road_at_all_is_not_frontage(self):
+        self.assertFalse(CITY["fronted"]([], 5000.0))
+
+    def test_one_slab_is_not_frontage(self):
+        self.assertFalse(CITY["fronted"]([5000.0], 5000.0))
+
+    def test_two_slabs_in_front_are_frontage(self):
+        self.assertTrue(CITY["fronted"]([4800.0, 5200.0], 5000.0))
+
+    def test_road_at_the_far_end_of_the_cell_is_not_frontage(self):
+        # The failure the per-cell count allowed: a 20 m street cell holds ~5 slabs, so two of
+        # them can sit at one end and the lot at the other still counted as paved.
+        span = CITY["FRONT_SPAN"]
+        marks = [0.0, 430.0]
+        self.assertTrue(CITY["fronted"](marks, 200.0))
+        self.assertFalse(CITY["fronted"](marks, 200.0 + span * 2.0))
+
+    def test_a_gap_in_the_middle_of_a_paved_street_is_refused(self):
+        # Slabs every 430 uu except a hole from 4000 to 8000.
+        marks = [float(d) for d in range(0, 4000, 430)] + [float(d) for d in range(8000, 12000, 430)]
+        self.assertTrue(CITY["fronted"](marks, 2000.0))
+        self.assertFalse(CITY["fronted"](marks, 6000.0))
+        self.assertTrue(CITY["fronted"](marks, 10000.0))
+
+
+class PlayableRadius(unittest.TestCase):
+    """Streets and lots stop where the navmesh stops, so nothing walkable outruns the AI."""
+
+    def test_the_nav_box_can_always_cover_what_is_generated(self):
+        # The nav volume is the built extent plus NAV_MARGIN and is then clamped to
+        # NAV_MAX_HALF. If generation reached NAV_MAX_HALF the clamp would cut the outermost
+        # buildings back out of the navmesh, which is the bug this margin exists to prevent.
+        self.assertLessEqual(CITY["PLAY_HALF"] + CITY["NAV_MARGIN"], CITY["NAV_MAX_HALF"])
+
+    def test_inside_and_outside(self):
+        centre = (50000.0, -8000.0)
+        half = CITY["PLAY_HALF"]
+        self.assertTrue(CITY["in_play"](centre[0], centre[1], centre))
+        self.assertTrue(CITY["in_play"](centre[0] + half, centre[1] - half, centre))
+        self.assertFalse(CITY["in_play"](centre[0] + half + 1.0, centre[1], centre))
+        self.assertFalse(CITY["in_play"](centre[0], centre[1] - half - 1.0, centre))
+
+    def test_no_seed_the_scan_can_produce_is_outside_the_radius(self):
+        # seed_cells() walks a lattice out to SEED_SCAN_REACH on each axis and in_play() is a
+        # per-axis box test, so this bound is what makes "every seed is navigable" true for the
+        # whole scan rather than one sampled point. It holds either way - the gate refuses the
+        # rest - but when it holds, no street can even start outside the navmesh.
+        self.assertLessEqual(CITY["SEED_SCAN_REACH"], CITY["PLAY_HALF"])
+        centre = (0.0, 0.0)
+        reach = CITY["SEED_SCAN_REACH"]
+        for x in (-reach, 0.0, reach):
+            for y in (-reach, 0.0, reach):
+                self.assertTrue(CITY["in_play"](x, y, centre), "scan corner (%s, %s)" % (x, y))
+
+    def test_a_point_beyond_the_radius_is_refused(self):
+        centre = (0.0, 0.0)
+        self.assertFalse(CITY["in_play"](CITY["PLAY_HALF"] + 1.0, 0.0, centre))
+
+
 class Ground(unittest.TestCase):
     """Our own roads are not ground: the fences run after they are laid."""
 
