@@ -51,6 +51,7 @@ Measured facts this script is built on, all from Saved/CityProbe*.json:
 """
 
 import json
+import bisect
 import math
 import os
 import shutil
@@ -135,6 +136,11 @@ ROAD_MAX_TILES = 1200
 # them in the last measured run), and frontage on a street that exists only in the graph is a
 # row of buildings facing bare hillside.
 FRONT_MIN_SLABS = 2
+# ...and "the cell it is in holds two slabs somewhere" is not that. A 20 m cell holds about
+# five slabs, so two of them can sit at the far end and leave the lot facing bare hill. The
+# test is positional instead: this is how far either way along the street a lot looks for
+# carriageway, so FRONT_MIN_SLABS have to be within FRONT_SPAN of the frontage point itself.
+FRONT_SPAN = 1000.0
 SLAB_LENGTH = 468.0
 # Largest gap a tile may leave under any corner once its own plane is fitted.
 ROAD_MAX_RESIDUAL = 60.0
@@ -196,10 +202,22 @@ FENCE_MARGIN = 6000.0
 FENCE_MAX = 1500
 # The deliberate playable radius. Streets seed up to SEED_SCAN_REACH out and then grow another
 # ~1.2 km, so sizing the navmesh to the authored slum left most of the walkable district with
-# no navigation; sizing it to the full street extent would ask Recast to build over the whole
-# valley. Everything past this is scenery you can see but not fight in.
-NAV_MAX_HALF = 100000.0
 NAV_MARGIN = 20000.0
+# The playable radius is a GENERATION bound, not just a navigation one, and it is the knob for
+# the whole size/Recast-cost trade. Clamping only the navmesh left 84% of the roads and
+# buildings this pass placed outside it - ground the player can walk onto and the AI cannot
+# follow across, which is worse than not building there. Streets and lots stop here.
+#
+# It is measured from the AUTHORED centre because that is where the player starts, and this
+# map's buildable ground is offset from it: the landscape is centred at (1098, 320) m while the
+# slum sits at (488, -81) m. At an 800 m radius the ring of open ground outside the slum and
+# inside the bound held 36 cells and produced 4 buildings - a navigable district that is not a
+# district. 2 km is what buys a real one here; the cost is the size of box Recast has to cover.
+PLAY_HALF = float(os.environ.get("AH_CITY_PLAY_RADIUS_M", "2000")) * 100.0
+# Derived, never independent: the nav box is the built extent plus NAV_MARGIN, so a cap lower
+# than that would clamp the outermost buildings back out of the navmesh - the exact bug this
+# whole bound exists to remove.
+NAV_MAX_HALF = PLAY_HALF + NAV_MARGIN
 LOCAL_FENCE_CELL = 500.0
 SHEAR_CHANCE = {"tower": 0.75, "mid": 0.6, "low": 0.35}
 SHEAR_KEEP = (0.35, 0.85)   # fraction of height left standing
@@ -718,6 +736,27 @@ def solid_ground(world, x, y):
     return False
 
 
+def in_play(x, y, centre):
+    """Is this inside the district the navmesh will cover?
+
+    Everything walkable this pass creates has to answer yes. The nav volume is a box, so this
+    is a box: an inscribed circle would refuse the corners of ground Recast is going to build.
+    """
+    return abs(x - centre[0]) <= PLAY_HALF and abs(y - centre[1]) <= PLAY_HALF
+
+
+def fronted(marks, at_distance):
+    """Does laid carriageway actually run past this point on the street?
+
+    `marks` is the sorted along-street distance of every slab that got seated on this street.
+    Counting slabs anywhere in a shared 20 m cell answered "yes" for a lot with the road at the
+    far end of the cell; this asks whether the road is in front of THIS lot.
+    """
+    lo = bisect.bisect_left(marks, at_distance - FRONT_SPAN)
+    hi = bisect.bisect_right(marks, at_distance + FRONT_SPAN)
+    return hi - lo >= FRONT_MIN_SLABS
+
+
 def road_cell(x, y):
     """The street lattice. Shared by street growth and by the paving test for a lot."""
     return (int(x / ROAD_STEP), int(y / ROAD_STEP))
@@ -847,6 +886,8 @@ def seed_cells(terrain, authored, centre, half):
         for iy in range(-steps, steps + 1):
             x = centre[0] + ix * SEED_SCAN_STEP
             y = centre[1] + iy * SEED_SCAN_STEP
+            if not in_play(x, y, centre):
+                continue    # a street seeded out here can only grow ground with no navmesh
             # Outside the authored footprint, measured as an ellipse around it.
             ex = (x - centre[0]) / (half[0] + 6000.0)
             ey = (y - centre[1]) / (half[1] + 6000.0)
@@ -902,6 +943,9 @@ def grow_streets(terrain, authored, centre, half, rng):
                 radians = math.radians(candidate)
                 nx = x + math.cos(radians) * ROAD_STEP
                 ny = y + math.sin(radians) * ROAD_STEP
+                if not in_play(nx, ny, centre):
+                    stops["off_play"] = stops.get("off_play", 0) + 1
+                    continue
                 key = road_cell(nx, ny)
                 if key in occupied or key in taken:
                     stops["occupied"] = stops.get("occupied", 0) + 1
@@ -1051,9 +1095,10 @@ def lay_streets(terrain, streets):
     Slabs that cannot be seated are simply not laid, and the gaps read as a road broken by the
     same war that broke the buildings.
 
-    Returns {street cell: slabs laid there}, because the refusals are not rare - most of a
-    planned street can end up with no carriageway at all, and place_frontage() must line the
-    road that exists rather than the one grow_streets() drew.
+    Returns {street index: sorted along-street distances of the slabs that landed}, because
+    the refusals are not rare - most of a planned street can end up with no carriageway at all,
+    and place_frontage() must line the road that exists rather than the one grow_streets()
+    drew. Distances, not counts: a lot has to find road in front of ITSELF.
     """
     mesh = load(ROAD_TILE)
     if not mesh:
@@ -1070,6 +1115,10 @@ def lay_streets(terrain, streets):
             run = math.hypot(bx - ax, by - ay)
             if run <= 0.0:
                 continue
+            # Distance from the START of the street, which is the coordinate street_walk()
+            # hands place_frontage(). Per-segment `travelled` alone would restart every step.
+            base = sum(math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1])
+                       for i in range(step))
             yaw = math.degrees(math.atan2(by - ay, bx - ax))
             radians = math.radians(yaw)
             cos_a, sin_a = math.cos(radians), math.sin(radians)
@@ -1131,17 +1180,18 @@ def lay_streets(terrain, streets):
                     EAS.destroy_actor(tile)
                     buried += 1
                     continue
-                # Keyed on the CENTRELINE, not the slab: the slab is offset perpendicular by
-                # the mesh's own bounds origin, which is enough to land it in the next cell, and
-                # the lot test that reads this samples the centreline.
-                key = road_cell(ax + ux * along, ay + uy * along)
-                paving[key] = paving.get(key, 0) + 1
+                # Recorded against the CENTRELINE distance, not the slab's own position: the
+                # slab is offset perpendicular by the mesh's bounds origin, and the lot test
+                # that reads this walks the centreline.
+                paving.setdefault(index, []).append(base + along)
                 laid += 1
     REPORT.append("laid %d road slabs (refused: %d no ground, %d twisted, %d too steep, "
                   "%d would bury an edge)" % (laid, no_ground, twisted, steep, buried))
-    REPORT.append("%d street cells carry %d+ slabs and can take frontage; %d took at least one"
-                  % (sum(1 for n in paving.values() if n >= FRONT_MIN_SLABS), FRONT_MIN_SLABS,
-                     len(paving)))
+    for marks in paving.values():
+        marks.sort()
+    REPORT.append("%d of %d streets got carriageway, %d slabs on the longest"
+                  % (len(paving), len(streets),
+                     max((len(m) for m in paving.values()), default=0)))
     return paving
 
 
@@ -1790,7 +1840,8 @@ def place_frontage(terrain, streets, spots, street_points, paving, pool, centre,
                for line in streets for p in line), default=1.0) or 1.0
 
     stats = {"placed": 0, "sheared": 0, "instances_removed": 0, "scatter": 0,
-             "busy": 0, "tries": 0, "on_street": 0, "podiums": 0, "unpaved": 0}
+             "busy": 0, "tries": 0, "on_street": 0, "podiums": 0, "unpaved": 0,
+             "off_play": 0}
     why = {}
     for street_index, line in enumerate(streets):
         at, total = street_walk(line)
@@ -1807,8 +1858,12 @@ def place_frontage(terrain, streets, spots, street_points, paving, pool, centre,
                 # refuses any slab it cannot seat and refused 1,078 of them in the last measured
                 # run, so a stretch of a planned street can have no carriageway at all - and a
                 # row of buildings facing bare hillside is not frontage.
-                if paving.get(road_cell(cx, cy), 0) < FRONT_MIN_SLABS:
+                if not fronted(paving.get(street_index, ()), cursor):
                     stats["unpaved"] += 1
+                    cursor += LOT_PITCH * 0.5
+                    continue
+                if not in_play(cx, cy, centre):
+                    stats["off_play"] += 1
                     cursor += LOT_PITCH * 0.5
                     continue
                 normal = (-math.sin(heading), math.cos(heading))
@@ -1910,9 +1965,10 @@ def place_frontage(terrain, streets, spots, street_points, paving, pool, centre,
                   "(%d on podiums, %d sheared, %d instances removed, %d scatter actors)"
                   % (stats["placed"], stats["tries"], stats["podiums"], stats["sheared"],
                      stats["instances_removed"], stats["scatter"]))
-    REPORT.append("lot refusals: %s, occupied %d, on another street %d, unpaved street %d"
+    REPORT.append("lot refusals: %s, occupied %d, on another street %d, unpaved street %d, "
+                  "outside the playable radius %d"
                   % (", ".join("%s %d" % kv for kv in sorted(why.items())) or "none",
-                     stats["busy"], stats["on_street"], stats["unpaved"]))
+                     stats["busy"], stats["on_street"], stats["unpaved"], stats["off_play"]))
     return stats["placed"]
 
 
