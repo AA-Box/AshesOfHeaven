@@ -28,6 +28,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Save")
 	float CampaignProgress = 0.0f;
 
+	/**
+	 * Chapters the player has finished, written when the chapter actually completes rather
+	 * than derived from CombatState. Checkpoint capture is spatial and refuses or normalizes
+	 * states the restore path rejects, so completion recorded only there is lost on relaunch.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Campaign")
+	TArray<FName> CompletedChapters;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Save")
 	TArray<FName> Collectibles;
 
@@ -64,6 +72,16 @@ public:
 	bool LoadCheckpoint(FName& CheckpointId, float& CampaignProgress, FString& MapName, int32& Difficulty);
 
 	bool SaveCombatCheckpoint(const FAHCombatCheckpointState& State);
+
+	/**
+	 * Records campaign completion on disk immediately, independently of checkpoint capture,
+	 * so finishing the chapter survives quitting and relaunching the process.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Ashes of Heaven|Save")
+	bool MarkChapterComplete(FName ChapterId);
+
+	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Save")
+	bool IsChapterComplete(FName ChapterId) const;
 	bool LoadCombatCheckpoint(FAHCombatCheckpointState& State) const;
 	int32 GetDifficulty() const;
 	bool LoadWorldState(FAHWorldStateSaveData& State) const;

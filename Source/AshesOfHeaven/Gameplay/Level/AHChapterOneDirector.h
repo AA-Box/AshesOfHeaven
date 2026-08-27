@@ -20,6 +20,42 @@ class AStaticMeshActor;
 class ASkeletalMeshActor;
 class UNiagaraSystem;
 
+namespace FAHPresentationTags
+{
+	/** A Cathedral glyph stroke: authored symbol geometry, exempt from the debug-primitive audit. */
+	const FName Glyph(TEXT("AH.Glyph"));
+}
+
+/**
+ * One authored presentation zone: a saved level whose contents are placed in anchor-local
+ * space and streamed in at a stage anchor, replacing the runtime primitive layer for that
+ * section of Chapter One.
+ *
+ * Zones are presentation only. Gameplay collision, triggers, checkpoints and navigation stay
+ * in the director's own geometry underneath, so shipping art for a section never changes how
+ * it plays and a missing or short zone level degrades to the primitives instead of a hole.
+ */
+struct FAHAuthoredPresentationZone
+{
+	/** Zone identity used by the fallback checks and the per-zone Presentation log line. */
+	const TCHAR* ZoneId;
+
+	/** Package path of the authored level. A path with no asset is a normal not-yet-authored zone. */
+	const TCHAR* LevelPath;
+
+	/** The stage whose anchor is the authored level's local origin. */
+	EAHChapterStage AnchorStage;
+
+	/** Below this many actors the level is treated as a stub and the primitive fallback wins. */
+	int32 MinimumActors;
+};
+
+namespace AHAuthoredPresentationZones
+{
+	/** Every section of Chapter One that can carry authored art, in load order. */
+	ASHESOFHEAVEN_API const TArray<FAHAuthoredPresentationZone>& Get();
+}
+
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHMissionStage
 {
@@ -107,6 +143,9 @@ protected:
 	void BuildErebusArtTarget();
 	void BuildTransitStationArtTarget();
 	void BuildCathedralArtTarget();
+	/** Signage text and dynamic-emissive glyphs, which cannot be saved into a zone level. */
+	void BuildTransitSignage();
+	void BuildCathedralGlyphs();
 	void BuildPresentDayArtTarget();
 	void ConfigureObjectives();
 	void StartStage(EAHChapterStage Stage);
@@ -127,7 +166,8 @@ protected:
 	void BuildErebusSkyline();
 	/** Streams the authored Erebus opening presentation level at the canonical stage anchor.
 	 * Returns true when the level loaded with content; the legacy primitive build is the fallback. */
-	bool TryLoadAuthoredErebusZone();
+	bool TryLoadAuthoredZone(const FAHAuthoredPresentationZone& Zone);
+	bool IsAuthoredZoneActive(FName ZoneId) const { return ActiveAuthoredZones.Contains(ZoneId); }
 	/** Fires/smoke/ash for the authored zone via the proven runtime Niagara spawn path. */
 	void BuildErebusZoneEffects();
 	void SpawnBannerMonolith(const FVector& BaseCenter, const FVector& Scale, float YawDegrees);
@@ -197,6 +237,13 @@ protected:
 
 	UFUNCTION()
 	void FinishDestructionSequence();
+
+	/** -LevelOneAutoplay: completes one objective per timer tick so a packaged run can finish unattended. */
+	void AdvanceAutoplay();
+
+	/** Raised on the tick the failsafe clock reaches zero: banner, fade, then checkpoint reload. */
+	void BeginFailsafeExpiryFailure();
+	void FinishFailsafeExpiryFailure();
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UAHChapterSubsystem> Chapter;
@@ -279,6 +326,11 @@ protected:
 	float StageElapsed = 0.0f;
 	float LastSpatialRecoveryTime = -BIG_NUMBER;
 	float DestructionFadeAlpha = 0.0f;
+	/** Seconds since the failsafe clock expired, or negative while the mission has not failed. */
+	float FailsafeFailureElapsed = -1.0f;
+	static constexpr float FailsafeFailureFadeSeconds = 2.5f;
+	FTimerHandle FailsafeFailureTimer;
+	FTimerHandle AutoplayTimer;
 	bool bMissionActorsBuilt = false;
 	bool bOpeningSequenceStarted = false;
 	bool bOrderSequenceStarted = false;
@@ -287,6 +339,7 @@ protected:
 	bool bOtherLucianShown = false;
 	bool bVisualArtTargetsBuilt = false;
 	bool bErebusAuthoredZoneActive = false;
+	TSet<FName> ActiveAuthoredZones;
 	int32 PresentationActorCount = 0;
 	int32 PresentationVFXCount = 0;
 	int32 MissingPresentationAssets = 0;

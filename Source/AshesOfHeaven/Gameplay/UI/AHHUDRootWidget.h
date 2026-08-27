@@ -34,6 +34,8 @@ public:
 	void ShowHitMarker(bool bHeadshot);
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
 	void ShowMissionComplete();
+	/** Reuses the chapter-title banner for a failure headline; unlike completion it sets its own text. */
+	void ShowMissionFailed(const FText& Headline);
 	void HideMissionComplete();
 
 	UFUNCTION(BlueprintCallable, Category="HUD|Presentation")

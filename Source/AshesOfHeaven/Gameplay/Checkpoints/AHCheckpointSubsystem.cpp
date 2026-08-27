@@ -70,6 +70,13 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	}
 	RuntimeState.ChapterState = Chapter->GetState();
 	RuntimeState.ChapterState.Stage = CheckpointDefinition->Stage;
+	// The failsafe clock is a per-attempt deadline, not a global one. Persisting the live
+	// remainder would let a checkpoint captured at 00:05 restore into an unwinnable loop now
+	// that expiry actually fails the mission.
+	if (RuntimeState.ChapterState.bCountdownActive)
+	{
+		RuntimeState.ChapterState.CountdownSeconds = AHChapterStateConstants::FailsafeCountdownSeconds;
+	}
 	if (AAHManticoreVehicle* Manticore = Cast<AAHManticoreVehicle>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHManticoreVehicle::StaticClass())))
 	{
 		RuntimeState.ChapterState.Vehicle = Manticore->GetVehicleState();

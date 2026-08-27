@@ -1,6 +1,11 @@
 # Level One — FOR A WHILE
 
-`FOR A WHILE` is the complete first campaign level of *Ashes of Heaven*. It begins on Erebus during the opening attack and ends when Lucian authorizes the planetary failsafe, escapes the Cathedral, watches Erebus burn, and receives the impossible one-word Nysa transmission: `Lucian.`
+`FOR A WHILE` is the first campaign level of *Ashes of Heaven*. Its narrative and progression
+contract is complete and covered end to end by automation; its presentation is authored for the
+Erebus, Transit and Cathedral sections and still on the runtime primitive fallback for the
+present-day epilogue, and the characters are still mannequin proxies with no final facial
+animation, voice, music or production sound. "Complete" here means the level can be played from
+the cold open to `ChapterComplete` and back after a relaunch - not that it is shippable art. It begins on Erebus during the opening attack and ends when Lucian authorizes the planetary failsafe, escapes the Cathedral, watches Erebus burn, and receives the impossible one-word Nysa transmission: `Lucian.`
 
 The old `TenYearsLater` / `MayaScene` / `NysaTransmission` / `FleetDeparture` / `StarsDisappearing` enum values are retained only for save compatibility and later campaign migration. They are no longer Level One objectives.
 
@@ -116,15 +121,43 @@ A Level One implementation is not considered complete unless all of these hold i
 - **`bChapterComplete` is derived from the stage,** not latched. A debug or `-ArtTarget` jump backwards used to leave it true, and `TickCountdown` refuses to run while it is set.
 - **The countdown milestone delegate is gone.** Nothing in `Source` or `Content` ever bound it. The `[Phase3.2][Countdown] milestone` log remains.
 
+## Lifecycle gaps closed
+
+- **Completion is persisted, separately from the checkpoint.** `AAHChapterOneDirector::HandleMissionComplete` writes `UAHPlatformSaveSubsystem::MarkChapterComplete(Ch01)` into `UAHSaveGame::CompletedChapters`, a campaign-level field that is not part of `CombatState`. This matters because the checkpoint restore path legitimately rejects its own data - a stale transform, a schema change, a different map - and completion recorded only through `CaptureCheckpoint` went with it. `AAHChapterOneGameMode::BeginPlay` now applies completion over whatever the checkpoint said, and `RestoreCheckpointAfterSpawn` returns early on a completed chapter so the last mid-level capture (`Ch01_Escape`) cannot overwrite it. Finish the level, quit, relaunch: the save still says complete.
+- **The 08:42 clock is a real deadline.** `UAHChapterSubsystem::TickCountdown` returns true on the tick it reaches zero; the director raises `SIGNAL TRANSMISSION COMPLETE`, fades out, and reloads the last checkpoint. Containment has failed and the outbound Veil carrier is away. Because expiry now costs the player a run, `UAHCheckpointSubsystem::CaptureCheckpoint` stores the *full* window rather than the live remainder - the deadline is per attempt, so a checkpoint taken at 00:05 is not an unwinnable loop.
+- **Queued stage beats are bounded by their objective window.** `UAHDialogueSubsystem::DrainPendingStageEntries` drops a queued beat whose stage belongs to an earlier objective index than the chapter's current one, so an Escape beat can no longer arrive a stage late from behind the terminal sequence. The window is the objective index, not the raw stage, so beats that share one (`CathedralInterior`/`SaelTransmission`, `Escape`/`OtherLucian`) still play.
+
 ## Known gaps (decided, not defects)
 
-- The 08:42 clock has **no expiry consequence**: reaching 00:00 hides the HUD counter and nothing else. Adding stakes is a design decision, not a fix.
-- **Completion is never persisted.** Every disk write goes through `UAHCheckpointSubsystem::CaptureCheckpoint`, whose callers are checkpoint actors and the boot fallback; the last checkpoint on the route is `Ch01_Escape`. Finish the level, quit, relaunch, and the save still says Escape. Nothing consumes a persisted completion yet.
-- **Queued stage beats have no staleness bound.** A beat can play one stage late (e.g. `Ch01_EscapeStart` behind the ~30 s terminal beat). Bounding it means deciding which authored lines may be thrown away.
+- **Characters are mannequin proxies.** Lucian, Maya and the Other Lucian are `SKM_Manny_Simple`/`SKM_Quinn_Simple` with no final facial or cinematic animation. There is no character art to replace them with; this is an art-production gap, not a code one.
+- **No voice, music or production sound.** The audio layer is an authored integration palette, not a final mix.
+- **The present-day epilogue has no authored zone.** It is retained for save compatibility and is not a Level One objective, so its section still renders from the runtime primitive fallback.
 
 ## Verification
 
-`Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than four `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
+`Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than `AH_MIN_LEVEL_ONE_TESTS` `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
+
+`AshesOfHeaven.LevelOne.CampaignE2E.*` is the campaign lifecycle suite. It boots a standalone
+world named as a Chapter One map with the real director and a possessed player, then:
+
+- plays all twelve objectives through `UAHObjectiveSubsystem`, boarding and firing the Manticore and inspecting and confirming the failsafe terminal on the way, and asserts completion reached the disk (`PlaythroughPersistsCompletion`);
+- captures a mid-run checkpoint, spends the run's health/armour/ammo/grenades and objective cursor, restores, and asserts every one of them came back along with encounter and Manticore state — then finishes the chapter anyway (`DeathReloadRestoresRunState`);
+- finishes a chapter, destroys the world and the game instance, boots a second session through `AAHChapterOneGameMode`'s real restore path, and asserts Level One is still complete (`RelaunchKeepsCompletion`);
+- asserts the failsafe clock reports expiry exactly once and never in a completed chapter (`FailsafeExpiryFailsTheMission`), and that a checkpoint inside the timed section stores the full window (`FailsafeClockIsPerAttempt`);
+- asserts a queued stage beat from a passed objective window is discarded (`StaleStageDialogueIsDropped`);
+- asserts every authored presentation zone streamed in and that no visible `SM_AH_*` debug primitive remains in the Transit or Cathedral corridor (`AuthoredPresentationZones`).
+
+`Scripts/Run-LevelOneE2E.sh` is the packaged half, and covers the one thing an in-editor test
+cannot: a real process boundary. It packages a Development build, launches it with
+`-freshchapter -LevelOneAutoplay`, waits for the chapter to complete and for
+`[Campaign][Save] chapter_complete id=Ch01 result=success`, terminates the process, relaunches
+with no arguments, and asserts the `[Phase4.4][Runtime]` line reports `ChapterComplete=true` and
+`Stage=EAHChapterStage::ChapterComplete`. Synthetic keyboard and mouse input does not reach the
+packaged game on macOS here, so `-LevelOneAutoplay` completes one objective per timer tick
+through the ordinary objective path — it drives the real progression, it does not write
+completion directly. **What this does not cover is a human playing it**: movement, aiming,
+combat difficulty, whether an encounter is survivable, and whether the level is any good remain
+unverified by any automated run.
 
 `Scripts/AuthorErebusStormCloud.py` authors `MI_Erebus_StormCloud` from the engine cloud master; it fails loudly if the engine renames a parameter rather than writing nothing.
 

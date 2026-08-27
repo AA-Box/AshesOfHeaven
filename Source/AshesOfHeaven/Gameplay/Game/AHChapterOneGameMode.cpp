@@ -54,6 +54,18 @@ void AAHChapterOneGameMode::BeginPlay()
 				{
 					Chapter->RestoreState(FAHChapterState());
 				}
+				// Campaign completion outranks the checkpoint. The last checkpoint of a finished
+				// run is a mid-level one (Escape), so restoring it alone is what made a completed
+				// level report as unfinished after a relaunch. Applied here rather than after the
+				// pawn spawns so the director builds the completed chapter on its first frame.
+				if (!bFreshChapter && Save->IsChapterComplete(AHChapterIds::ChapterOne()))
+				{
+					FAHChapterState Completed = Chapter->GetState();
+					Completed.ObjectiveIndex = AHChapterStateConstants::ObjectiveCount;
+					// NormalizeState turns a final objective index into Stage=ChapterComplete
+					// and clears the failsafe clock, so no second source of truth is introduced.
+					Chapter->RestoreState(Completed);
+				}
 				UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Runtime] Map=%s Stage=%s ObjectiveIndex=%d Objective=%s ChapterComplete=%s CompletionWidgetVisible=false Checkpoint=%s SaveLoaded=%s FreshChapter=%s"),
 					*GetWorld()->GetMapName(),
 					*UEnum::GetValueAsString(Chapter->GetStage()),
@@ -91,6 +103,19 @@ void AAHChapterOneGameMode::RestoreCheckpointAfterSpawn()
 	{
 		GetWorldTimerManager().SetTimer(RestoreTimer, this, &AAHChapterOneGameMode::RestoreCheckpointAfterSpawn, 0.25f, false);
 		return;
+	}
+	// A completed chapter has nothing to restore: RestoreFromState would overwrite the
+	// completed state with the last mid-level checkpoint it captured.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UAHChapterSubsystem* Chapter = GameInstance->GetSubsystem<UAHChapterSubsystem>())
+		{
+			if (Chapter->IsChapterComplete())
+			{
+				LogObjective01SpatialState();
+				return;
+			}
+		}
 	}
 	if (UAHCheckpointSubsystem* Checkpoints = GetWorld()->GetSubsystem<UAHCheckpointSubsystem>())
 	{
