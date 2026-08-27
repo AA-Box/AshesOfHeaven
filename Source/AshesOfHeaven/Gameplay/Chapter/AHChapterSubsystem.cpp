@@ -194,11 +194,11 @@ void UAHChapterSubsystem::StopCountdown()
 	#endif
 }
 
-void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
+bool UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 {
 	if (!State.bCountdownActive || State.bChapterComplete)
 	{
-		return;
+		return false;
 	}
 
 	State.CountdownSeconds = FMath::Max(0.0f, State.CountdownSeconds - FMath::Max(0.0f, DeltaSeconds));
@@ -209,21 +209,25 @@ void UAHChapterSubsystem::TickCountdown(float DeltaSeconds)
 		LastCountdownMilestone = CurrentMilestone;
 		if (CurrentMilestone % 60 == 0 || CurrentMilestone <= 10)
 		{
-			// Log only. There is deliberately no milestone delegate: nothing in Source or Content
-			// ever bound one, and the failsafe clock has no authored expiry consequence to raise.
 			#if !UE_BUILD_SHIPPING
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Countdown] milestone seconds=%d"), CurrentMilestone);
 			#endif
 		}
 	}
-	if (State.CountdownSeconds <= 0.0f)
+	// Expiry is reported to the caller instead of a delegate: the director already ticks this
+	// clock every frame, so the return value reaches the one object that owns the consequence
+	// without a binding whose lifetime has to be managed across level reloads.
+	const bool bExpired = State.CountdownSeconds <= 0.0f;
+	if (bExpired)
 	{
 		State.bCountdownActive = false;
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Chapter][Countdown] failsafe_expired stage=%s"), *UEnum::GetValueAsString(State.Stage));
 	}
 	if (bWasActive && (FMath::FloorToInt(State.CountdownSeconds) != FMath::FloorToInt(State.CountdownSeconds + FMath::Max(0.0f, DeltaSeconds)) || !State.bCountdownActive))
 	{
 		OnCountdownChanged.Broadcast(State.CountdownSeconds, State.bCountdownActive);
 	}
+	return bExpired;
 }
 
 void UAHChapterSubsystem::SetFailsafeConfirmed(bool bConfirmed)

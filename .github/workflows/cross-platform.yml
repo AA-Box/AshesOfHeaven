@@ -25,6 +25,9 @@ jobs:
   automation-tests:
     if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5]
+    # Without a timeout an unregistered self-hosted runner leaves the job queued rather than
+    # failing, which reads as "still running" instead of "the gate is not configured".
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Run Unreal automation suite
@@ -55,6 +58,7 @@ jobs:
   macos-shipping:
     if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Build macOS Shipping archive
@@ -82,3 +86,63 @@ jobs:
           UE_ROOT: ${{ vars.UNREAL_ENGINE_IOS_ROOT }}
           AH_IOS_DISTRIBUTION: "0"
         run: ./Scripts/Build-iOS.sh
+
+  # The packaged campaign lifecycle: package -> play -> complete -> quit -> relaunch -> still
+  # complete. Not in required-checks: it packages a full Development build and launches the
+  # game twice, which is too heavy for every pull request. Run it before a release, or when
+  # anything touches save, checkpoint or chapter-completion code.
+  packaged-level-one-e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.UNREAL_ENGINE_MAC_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packaged Level One end-to-end
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_MAC_ROOT }}
+        run: ./Scripts/Run-LevelOneE2E.sh
+      - name: Upload playthrough logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: level-one-e2e-logs
+          path: Saved/Logs/LevelOneE2E-*.log
+          if-no-files-found: warn
+
+  # THE required check. Mark exactly this job as required in branch protection.
+  #
+  # automation-tests and macos-shipping are gated on vars.UNREAL_ENGINE_MAC_ROOT, so when the
+  # self-hosted UE5/macOS runner is not configured they are SKIPPED - and a skipped job
+  # reports neither failure nor success, which let a pull request go green with the gameplay
+  # contracts and the packaged build never having run. This job always runs, on a hosted
+  # runner, and fails on any result that is not an explicit success. A missing gate is now a
+  # red check with a message that names what to configure, instead of silence.
+  required-checks:
+    if: always()
+    needs: [source-validation, automation-tests, macos-shipping]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every required job actually ran and passed
+        env:
+          SOURCE_VALIDATION: ${{ needs.source-validation.result }}
+          AUTOMATION_TESTS: ${{ needs.automation-tests.result }}
+          MACOS_SHIPPING: ${{ needs.macos-shipping.result }}
+        run: |
+          set -euo pipefail
+          status=0
+          for job in SOURCE_VALIDATION AUTOMATION_TESTS MACOS_SHIPPING; do
+            result="${!job}"
+            echo "$job = $result"
+            if [ "$result" != "success" ]; then
+              status=1
+              if [ "$result" = "skipped" ]; then
+                echo "::error::$job was SKIPPED. It is a required check and must actually run."
+              else
+                echo "::error::$job did not succeed (result=$result)."
+              fi
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Set the repository variable UNREAL_ENGINE_MAC_ROOT and register a runner labelled [self-hosted, macOS, UE5] so the automation suite and the packaged macOS build run on every pull request."
+          fi
+          exit "$status"

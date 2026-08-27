@@ -141,12 +141,28 @@ void UAHDialogueSubsystem::RequeueActiveStageEntry()
 
 void UAHDialogueSubsystem::DrainPendingStageEntries()
 {
+	// A queued beat is only allowed to play inside its own objective window. Without this the
+	// queue is unbounded in time: an Escape beat stuck behind the long terminal sequence
+	// arrived a stage late, over dialogue for a scene the player had already left.
+	// Objective index, not the raw stage, is the window - stages that share an index
+	// (CathedralInterior/SaelTransmission, Escape/OtherLucian) are the same beat's window.
+	const UAHChapterSubsystem* Chapter = GetChapterSubsystem();
+	const int32 CurrentObjective = Chapter ? UAHChapterSubsystem::ObjectiveIndexForStage(Chapter->GetStage()) : INDEX_NONE;
+
 	// Each iteration removes one entry, so this terminates even when a queued beat is
 	// already completed (StartSequence returns without taking the channel).
 	while (!bActive && PendingStageEntries.Num() > 0)
 	{
 		const FAHPendingStageEntry Entry = PendingStageEntries[0];
 		PendingStageEntries.RemoveAt(0);
+		const int32 EntryObjective = UAHChapterSubsystem::ObjectiveIndexForStage(Entry.Stage);
+		if (CurrentObjective != INDEX_NONE && EntryObjective != INDEX_NONE && EntryObjective < CurrentObjective)
+		{
+			#if !UE_BUILD_SHIPPING
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] drop_stale_stage_entry stage=%s entryObjective=%d currentObjective=%d"), *UEnum::GetValueAsString(Entry.Stage), EntryObjective, CurrentObjective);
+			#endif
+			continue;
+		}
 		StartStageEntrySequence(Entry.Stage, Entry.ResumeLineIndex);
 	}
 }

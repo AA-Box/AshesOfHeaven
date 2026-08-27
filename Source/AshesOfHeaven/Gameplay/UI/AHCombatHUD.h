@@ -24,6 +24,7 @@ public:
 	void ShowDamageFeedback(bool bArmorBreak, float DirectionAngle);
 	void SetObjective(const FText& NewObjective, int32 NewIndex, int32 Count);
 	void ShowMissionComplete();
+	void ShowMissionFailed(const FText& Headline);
 	void HideMissionComplete();
 	const FText& GetCurrentObjective() const { return CurrentObjective; }
 	int32 GetObjectiveIndex() const { return ObjectiveIndex; }
