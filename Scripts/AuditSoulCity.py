@@ -20,9 +20,11 @@ What it measures, and what it deliberately does not:
     intersection regardless of what the placement test believed the box was. This is the check
     that catches a building turned to its street heading being cleared against its zero-yaw
     extents.
-  * NAV - how much of what was built falls outside the navmesh volume. Expected to be non-zero:
-    NAV_MAX_HALF is a deliberate playable radius, not a bug. The number is here so the size of
-    the decision stays visible.
+  * NAV - how much of what was built falls outside the navmesh volume. This must be ZERO.
+    The playable radius bounds GENERATION, not just the navmesh, so anything walkable that
+    Recast will not cover is a defect rather than a deliberate edge. Measured on each piece's
+    bounds, not its origin: a building whose centre is inside while a corner hangs out is
+    exactly the failure that origin-only sampling reports as clean.
   * FRONTAGE - buildings with no road slab anywhere near them.
 
 Two traps this script is written around, both of which produce confident wrong answers:
@@ -187,19 +189,34 @@ def main():
         report["nav"] = {"volume": None}
     else:
         norigin, nextent = bounds_of(nav)
-        built = outside = 0
-        for kind in ("Road", "Bldg", "Podium"):
-            for actor in buckets.get(kind, []):
-                point = actor.get_actor_location()
+        built, outside, worst, examples = 0, 0, 0.0, []
+        # Everything walkable, not just the three labelled kinds: scatter and collapse debris
+        # have collision too, and a rubble pile the AI cannot path around is the same defect as
+        # a building it cannot. Fences are excluded - they are walls ON the boundary by design.
+        for kind, actors in buckets.items():
+            if kind in ("Fence", "Nav"):
+                continue
+            for actor in actors:
+                if not collides(actor):
+                    continue
+                origin, extent = bounds_of(actor)
+                if origin is None:
+                    continue
                 built += 1
-                if (abs(point.x - norigin.x) > abs(nextent.x)
-                        or abs(point.y - norigin.y) > abs(nextent.y)):
+                over_x = (abs(origin.x - norigin.x) + abs(extent.x)) - abs(nextent.x)
+                over_y = (abs(origin.y - norigin.y) + abs(extent.y)) - abs(nextent.y)
+                over = max(over_x, over_y)
+                if over > 0.0:
                     outside += 1
+                    worst = max(worst, over)
+                    if len(examples) < 10:
+                        examples.append((actor.get_actor_label(), round(over / 100.0, 1)))
         report["nav"] = {
             "box_m": [round(abs(nextent.x) * 2 / 100.0), round(abs(nextent.y) * 2 / 100.0)],
             "centre_m": [round(norigin.x / 100.0), round(norigin.y / 100.0)],
-            "built_actors": built, "outside_navmesh": outside,
-            "outside_pct": round(100.0 * outside / max(1, built), 1)}
+            "walkable_actors": built, "outside_navmesh": outside,
+            "outside_pct": round(100.0 * outside / max(1, built), 1),
+            "worst_overhang_m": round(worst / 100.0, 2), "examples": examples}
 
     # --- does every building front a road that actually got laid? --------------------------
     roads = [(a.get_actor_location().x, a.get_actor_location().y)
@@ -237,10 +254,14 @@ def main():
            report["overlap"]["worst_m"]),
     ]
     if report["nav"].get("volume", True) is not None:
-        lines.append("nav: %s m box covers all but %d of %d built actors (%.1f%% outside - "
-                     "NAV_MAX_HALF is a deliberate playable radius)"
-                     % (report["nav"]["box_m"], report["nav"]["outside_navmesh"],
-                        report["nav"]["built_actors"], report["nav"]["outside_pct"]))
+        nav_data = report["nav"]
+        lines.append("nav: %s m box, measured on bounds - %d of %d walkable actors cross it%s"
+                     % (nav_data["box_m"], nav_data["outside_navmesh"],
+                        nav_data["walkable_actors"],
+                        "" if not nav_data["outside_navmesh"]
+                        else " (worst overhang %.1f m) - GENERATION IS SUPPOSED TO BE BOUNDED "
+                             "BY THE NAV RADIUS, so this is a defect"
+                             % nav_data["worst_overhang_m"]))
     lines.append("frontage: %d road slabs, %d buildings with no slab within %.0f m"
                  % (report["frontage"]["road_slabs"],
                     report["frontage"]["buildings_with_no_road_within_%.0fm"

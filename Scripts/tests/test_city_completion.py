@@ -197,21 +197,40 @@ class PlayableRadius(unittest.TestCase):
         self.assertFalse(CITY["in_play"](centre[0] + half + 1.0, centre[1], centre))
         self.assertFalse(CITY["in_play"](centre[0], centre[1] - half - 1.0, centre))
 
-    def test_no_seed_the_scan_can_produce_is_outside_the_radius(self):
-        # seed_cells() walks a lattice out to SEED_SCAN_REACH on each axis and in_play() is a
-        # per-axis box test, so this bound is what makes "every seed is navigable" true for the
-        # whole scan rather than one sampled point. It holds either way - the gate refuses the
-        # rest - but when it holds, no street can even start outside the navmesh.
-        self.assertLessEqual(CITY["SEED_SCAN_REACH"], CITY["PLAY_HALF"])
-        centre = (0.0, 0.0)
-        reach = CITY["SEED_SCAN_REACH"]
-        for x in (-reach, 0.0, reach):
-            for y in (-reach, 0.0, reach):
-                self.assertTrue(CITY["in_play"](x, y, centre), "scan corner (%s, %s)" % (x, y))
-
     def test_a_point_beyond_the_radius_is_refused(self):
         centre = (0.0, 0.0)
         self.assertFalse(CITY["in_play"](CITY["PLAY_HALF"] + 1.0, 0.0, centre))
+
+    def test_a_building_whose_box_crosses_the_bound_is_refused(self):
+        # The gap this closes: the lot CENTRE is comfortably inside, and half the building is
+        # not. Testing the centre alone accepted this.
+        centre = (0.0, 0.0)
+        edge = CITY["PLAY_HALF"] - 1000.0
+        self.assertTrue(CITY["in_play"](edge, 0.0, centre))
+        self.assertTrue(CITY["box_in_play"](edge, 0.0, 500.0, 500.0, centre))
+        self.assertFalse(CITY["box_in_play"](edge, 0.0, 4600.0, 500.0, centre))
+        self.assertFalse(CITY["box_in_play"](0.0, edge, 500.0, 4600.0, centre))
+
+    def test_the_turned_box_is_what_gets_bounded(self):
+        # A 92 x 14 m row house at 45 deg spans 75 x 75 m on world axes. Bounding it by its
+        # zero-yaw extents would let three quarters of it cross the line.
+        centre = (0.0, 0.0)
+        edge = CITY["PLAY_HALF"] - 3000.0
+        box = CITY["world_half"](9200.0, 1400.0, 45.0)
+        self.assertTrue(CITY["box_in_play"](edge, 0.0, 1400.0, 9200.0, centre))
+        self.assertFalse(CITY["box_in_play"](edge, 0.0, box[0], box[1], centre))
+
+    def test_seed_cells_never_returns_a_seed_outside_the_bound(self):
+        # The real gate, exercised through the real function, at whatever radius is configured
+        # — rather than asserting SEED_SCAN_REACH happens to be the smaller of the two, which
+        # is false for the supported AH_CITY_PLAY_RADIUS_M=800 configuration.
+        centre = (12000.0, -4000.0)
+        terrain = CITY["Terrain"](None)
+        terrain.flat_at = lambda x, y, min_normal_z=0.0: (0.0, 1.0)
+        seeds = CITY["seed_cells"](terrain, [], centre, (20000.0, 8000.0))
+        self.assertTrue(seeds, "the stub should make every scanned cell buildable")
+        for x, y in seeds:
+            self.assertTrue(CITY["in_play"](x, y, centre), "seed (%s, %s) is outside" % (x, y))
 
 
 class Ground(unittest.TestCase):

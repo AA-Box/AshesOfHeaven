@@ -736,13 +736,24 @@ def solid_ground(world, x, y):
     return False
 
 
-def in_play(x, y, centre):
-    """Is this inside the district the navmesh will cover?
+def box_in_play(x, y, half_x, half_y, centre):
+    """Is the whole footprint inside the district the navmesh will cover?
 
     Everything walkable this pass creates has to answer yes. The nav volume is a box, so this
     is a box: an inscribed circle would refuse the corners of ground Recast is going to build.
+
+    It takes extents because a lot sits a setback off its street, so testing the centre alone
+    let a street just inside the edge put its frontage outside - and let the far half of a 90 m
+    building hang over the line. Whether that reached past NAV_MARGIN depended on the pool's
+    dimensions, which is the kind of thing that stops being true when a bigger building is added.
     """
-    return abs(x - centre[0]) <= PLAY_HALF and abs(y - centre[1]) <= PLAY_HALF
+    return (abs(x - centre[0]) + half_x <= PLAY_HALF
+            and abs(y - centre[1]) + half_y <= PLAY_HALF)
+
+
+def in_play(x, y, centre):
+    """box_in_play for a point with no extents."""
+    return box_in_play(x, y, 0.0, 0.0, centre)
 
 
 def fronted(marks, at_distance):
@@ -1617,6 +1628,22 @@ def fence_local(world, terrain, start_index):
     return made
 
 
+def claim_navmesh():
+    """Tag the RecastNavMesh the engine spawns for our volume.
+
+    Called twice, and that is the point: the engine does not spawn it synchronously with the
+    NavMeshBoundsVolume, so claiming right after the volume caught nothing and left
+    RecastNavMesh-Default sitting untagged in the map - an actor the authored level never had,
+    which survives deleting the CityCompletion folder AND is invisible to the next run's
+    clear_previous(). Calling it again at the end of the pass catches the one that appeared in
+    between; a run that finds a stray from an earlier pass adopts it, so it gets cleaned up.
+    """
+    for actor in EAS.get_all_level_actors():
+        if "RecastNavMesh" in type(actor).__name__ and not has_tag(actor):
+            claim(actor, "Nav_RecastCityCompletion")
+            REPORT.append("claimed %s so a revert removes it" % actor.get_actor_label())
+
+
 def add_navigation(world, centre, half):
     """The map ships no NavMeshBoundsVolume at all, so nothing here was ever navigable.
 
@@ -1671,12 +1698,8 @@ def add_navigation(world, centre, half):
         volume.set_is_temporarily_hidden_in_editor(True)
     except Exception:
         pass
-    # Adding the volume makes the engine spawn a RecastNavMesh of its own. Untagged it would
-    # survive a revert, leaving an actor the authored map never had.
-    for actor in EAS.get_all_level_actors():
-        if "RecastNavMesh" in type(actor).__name__ and not has_tag(actor):
-            claim(actor, "Nav_RecastCityCompletion")
     unreal.SystemLibrary.execute_console_command(world, "RebuildNavigation")
+    claim_navmesh()
     REPORT.append("nav volume %.0f x %.0f x %.0f m at (%.0f, %.0f) m over the built district, "
                   "hidden, RebuildNavigation issued%s"
                   % (extent[0] / 100.0, extent[1] / 100.0, extent[2] / 100.0,
@@ -1862,6 +1885,9 @@ def place_frontage(terrain, streets, spots, street_points, paving, pool, centre,
                     stats["unpaved"] += 1
                     cursor += LOT_PITCH * 0.5
                     continue
+                # Cheap early-out only: a centreline outside the bound cannot carry a lot
+                # inside it, so this skips 16 fit attempts. The check that actually holds the
+                # invariant is on the turned building box, below.
                 if not in_play(cx, cy, centre):
                     stats["off_play"] += 1
                     cursor += LOT_PITCH * 0.5
@@ -1898,13 +1924,22 @@ def place_frontage(terrain, streets, spots, street_points, paving, pool, centre,
                     lot = ROAD_WIDTH * 0.5 + half_y + 400.0
                     try_x = cx + normal[0] * side * lot
                     try_y = cy + normal[1] * side * lot
+                    # The extents are measured at zero yaw and this building is turned to the
+                    # street, so the box every axis-aligned test needs is the turned one.
+                    try_box = world_half(half_x, half_y, try_yaw)
+                    # The BUILDING has to be inside the bound, not the centreline it fronts.
+                    # The lot sits a setback off the street, so a street just inside the edge
+                    # can put its frontage outside - and testing the centre alone would let the
+                    # far half of a 90 m building hang over the line. Whether that reaches past
+                    # NAV_MARGIN depends on the pool's dimensions, which is exactly the kind of
+                    # thing that stops being true when someone adds a bigger building.
+                    if not box_in_play(try_x, try_y, try_box[0], try_box[1], centre):
+                        stats["off_play"] += 1
+                        continue
                     found = terrain.footprint(try_x, try_y, half_x, half_y, try_yaw, why,
                                               option["height"])
                     if found is None:
                         continue
-                    # The extents are measured at zero yaw and this building is turned to the
-                    # street, so the box the axis-aligned test needs is the turned one.
-                    try_box = world_half(half_x, half_y, try_yaw)
                     if not clear_of(try_x, try_y, CLEARANCE, spots, try_box[0], try_box[1]):
                         stats["busy"] += 1
                         continue
@@ -2043,6 +2078,9 @@ def main():
     fence_local(world, terrain, fenced)
     add_navigation(world, centre, half)
     tidy_viewport()
+    # Last thing before the save: the navmesh actor the engine spawned for our volume during
+    # the fence passes did not exist when add_navigation() first looked for it.
+    claim_navmesh()
     REPORT.append("culled %d loose pieces that ended up with air beneath them" % CULLED[0])
     REPORT.append("plain (non-instanced) mesh components: %d sheared away above the break, "
                   "%d left standing at or below it" % (SOLIDS[0], SOLIDS[1]))
