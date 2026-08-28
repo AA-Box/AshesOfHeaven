@@ -16,7 +16,12 @@
 # Docs/ is deliberately excluded, so a documentation-only change does not force a re-run. The
 # evidence file itself lives in Docs/, which is also what keeps it out of its own hash.
 
+# Two separate claims, two separate files. The automation evidence comes from
+# Run-AutomationTests.sh, which builds ONLY `AshesOfHeavenEditor Mac Development` - it never
+# performs a Shipping package, so it cannot speak for the macos-shipping job. Treating one as
+# cover for the other would let a change that breaks Mac Shipping alone merge on a green gate.
 AH_EVIDENCE_FILE="Docs/automation-evidence.json"
+AH_SHIPPING_EVIDENCE_FILE="Docs/shipping-evidence.json"
 
 ah_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then

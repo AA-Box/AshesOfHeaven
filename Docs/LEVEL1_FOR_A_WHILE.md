@@ -4,8 +4,11 @@
 contract is complete and covered end to end by automation; its presentation is authored for the
 Erebus, Transit and Cathedral sections and still on the runtime primitive fallback for the
 present-day epilogue, and the characters are still mannequin proxies with no final facial
-animation, voice, music or production sound. "Complete" here means the level can be played from
-the cold open to `ChapterComplete` and back after a relaunch - not that it is shippable art. It begins on Erebus during the opening attack and ends when Lucian authorizes the planetary failsafe, escapes the Cathedral, watches Erebus burn, and receives the impossible one-word Nysa transmission: `Lucian.`
+animation, voice, music or production sound. "Complete" here means the level can **progress
+through the automated campaign contract** from the cold open to `ChapterComplete`, and still
+report complete after a relaunch. It does not mean the level plays well, or that a human has
+played it: movement, aiming, combat survivability, difficulty and controller feel are
+`UNTESTED` (see `Docs/PLATFORM_MATRIX.md`), and it is not shippable art. It begins on Erebus during the opening attack and ends when Lucian authorizes the planetary failsafe, escapes the Cathedral, watches Erebus burn, and receives the impossible one-word Nysa transmission: `Lucian.`
 
 The old `TenYearsLater` / `MayaScene` / `NysaTransmission` / `FleetDeparture` / `StarsDisappearing` enum values are retained only for save compatibility and later campaign migration. They are no longer Level One objectives.
 
@@ -129,7 +132,7 @@ A Level One implementation is not considered complete unless all of these hold i
 
 ## Known gaps (decided, not defects)
 
-- **Characters are mannequin proxies.** Lucian, Maya and the Other Lucian are `SKM_Manny_Simple`/`SKM_Quinn_Simple` with no final facial or cinematic animation. There is no character art to replace them with; this is an art-production gap, not a code one.
+- **Characters are Manny/Quinn mannequin proxies.** Lucian and the Other Lucian use `SKM_Manny_Simple`; Maya uses `SKM_Quinn_Simple`. No final facial or cinematic animation. There is no character art to replace them with; this is an art-production gap, not a code one.
 - **No voice, music or production sound.** The audio layer is an authored integration palette, not a final mix.
 - **The present-day epilogue has no authored zone.** It is retained for save compatibility and is not a Level One objective, so its section still renders from the runtime primitive fallback.
 
