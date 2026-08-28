@@ -59,6 +59,13 @@ game instance — boots a second session through the real `AAHChapterOneGameMode
 asserts Level One is still complete. `Scripts/Run-LevelOneE2E.sh` repeats the completion and
 relaunch halves across a real process boundary in a packaged Development build.
 
+How the automated half is enforced without a runner: the suite runs on a developer machine and
+records `Docs/automation-evidence.json` against a hash of `Source`, `Config`, `Content`,
+`Scripts` and the `.uproject`; `source-validation` re-checks that hash on a hosted runner on
+every pull request. `automation-tests` and `macos-shipping` stay gated on
+`vars.UNREAL_ENGINE_MAC_ROOT` and run only where a self-hosted UE5/macOS runner exists — which
+is deliberately not this public repository.
+
 Still `UNTESTED`: everything a person does. Movement and aiming, whether an encounter is
 survivable or fair, difficulty, readability under motion, controller feel, subjective art match,
 and device performance. The packaged run is driven by `-LevelOneAutoplay` because synthetic

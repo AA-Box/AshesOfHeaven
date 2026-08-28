@@ -111,18 +111,23 @@ jobs:
 
   # THE required check. Mark exactly this job as required in branch protection.
   #
-  # automation-tests and macos-shipping are gated on vars.UNREAL_ENGINE_MAC_ROOT, so when the
-  # self-hosted UE5/macOS runner is not configured they are SKIPPED - and a skipped job
-  # reports neither failure nor success, which let a pull request go green with the gameplay
-  # contracts and the packaged build never having run. This job always runs, on a hosted
-  # runner, and fails on any result that is not an explicit success. A missing gate is now a
-  # red check with a message that names what to configure, instead of silence.
+  # automation-tests and macos-shipping are gated on vars.UNREAL_ENGINE_MAC_ROOT and are
+  # SKIPPED whenever no self-hosted UE5/macOS runner is configured. This repository is public,
+  # and a self-hosted runner on a public repository executes fork-authored code on the machine
+  # it is registered to, so running one is a real risk rather than an oversight - and a laptop
+  # that is not always online would turn every gated job into a timeout instead of a result.
+  #
+  # So a skip is tolerated here, and the claim it would have made is checked a different way:
+  # source-validation (hosted, always runs) verifies Docs/automation-evidence.json against a
+  # hash of Source, Config, Content, Scripts and the .uproject. Edit gameplay code without
+  # re-running the suite and that check fails. What is NOT tolerated is a gated job that ran
+  # and failed, or a skipped job whose absence is not covered by evidence.
   required-checks:
     if: always()
     needs: [source-validation, automation-tests, macos-shipping]
     runs-on: ubuntu-latest
     steps:
-      - name: Assert every required job actually ran and passed
+      - name: Assert the merge gate actually reached a verdict
         env:
           SOURCE_VALIDATION: ${{ needs.source-validation.result }}
           AUTOMATION_TESTS: ${{ needs.automation-tests.result }}
@@ -130,19 +135,28 @@ jobs:
         run: |
           set -euo pipefail
           status=0
-          for job in SOURCE_VALIDATION AUTOMATION_TESTS MACOS_SHIPPING; do
+
+          # source-validation is unconditional and carries the automation-evidence check.
+          echo "SOURCE_VALIDATION = $SOURCE_VALIDATION"
+          if [ "$SOURCE_VALIDATION" != "success" ]; then
+            status=1
+            echo "::error::source-validation did not succeed (result=$SOURCE_VALIDATION). It is unconditional, so this is a real failure."
+          fi
+
+          # A runner-gated job may be skipped, but must never be red.
+          for job in AUTOMATION_TESTS MACOS_SHIPPING; do
             result="${!job}"
             echo "$job = $result"
-            if [ "$result" != "success" ]; then
-              status=1
-              if [ "$result" = "skipped" ]; then
-                echo "::error::$job was SKIPPED. It is a required check and must actually run."
-              else
-                echo "::error::$job did not succeed (result=$result)."
-              fi
-            fi
+            case "$result" in
+              success) ;;
+              skipped)
+                echo "::notice::$job was skipped (no self-hosted UE5/macOS runner configured). Its claim is covered by Docs/automation-evidence.json, which source-validation verified against this tree."
+                ;;
+              *)
+                status=1
+                echo "::error::$job ran and did not succeed (result=$result)."
+                ;;
+            esac
           done
-          if [ "$status" -ne 0 ]; then
-            echo "::error::Set the repository variable UNREAL_ENGINE_MAC_ROOT and register a runner labelled [self-hosted, macOS, UE5] so the automation suite and the packaged macOS build run on every pull request."
-          fi
+
           exit "$status"

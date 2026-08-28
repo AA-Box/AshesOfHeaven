@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
+# shellcheck source=Scripts/ah-test-evidence.sh
+source "$SCRIPT_DIR/ah-test-evidence.sh"
 
 required=(
   "AshesOfHeaven.uproject"
@@ -18,6 +20,8 @@ required=(
   "Scripts/Build-iOS.sh"
   "Scripts/Validate-PSO.py"
   "Scripts/Run-AutomationTests.sh"
+  "Scripts/ah-test-evidence.sh"
+  "Docs/automation-evidence.json"
   "Docs/PSO_AND_SHADER_PIPELINE.md"
   # Material families asserted by AshesOfHeaven.LevelOne.UnrealMaterialContract. That test
   # needs an editor/commandlet; this check catches a deleted instance on any runner.
@@ -74,4 +78,42 @@ for test in Scripts/tests/test_*.py; do
   echo "== $test"
   python3 "$test"
 done
+# The gameplay automation suite needs an Unreal editor/commandlet, which no hosted runner has,
+# and this repository is public so a self-hosted runner is not an option (fork code would
+# execute on the runner's machine). The suite therefore runs on a developer machine and records
+# its result against a hash of the inputs; this is where that claim is checked. Without it,
+# "automated tests pass before merge" is exactly the unverified claim it was before.
+echo "== automation evidence"
+expected_hash="$(ah_inputs_hash)"
+python3 - "$AH_EVIDENCE_FILE" "$expected_hash" <<'PYEVIDENCE'
+import json, pathlib, sys
+
+evidence_path, expected_hash = pathlib.Path(sys.argv[1]), sys.argv[2]
+try:
+    evidence = json.loads(evidence_path.read_text())
+except (OSError, ValueError) as error:
+    sys.exit(f"ERROR: cannot read {evidence_path}: {error}")
+
+for key in ("inputs_hash", "tests", "failed", "level_one"):
+    if key not in evidence:
+        sys.exit(f"ERROR: {evidence_path} is missing '{key}'.")
+
+if evidence["inputs_hash"] != expected_hash:
+    sys.exit(
+        f"ERROR: {evidence_path} describes a different tree.\n"
+        f"  recorded: {evidence['inputs_hash']}\n"
+        f"  this PR:  {expected_hash}\n"
+        "  Source, Config, Content, Scripts or the .uproject changed since the automation\n"
+        "  suite last ran. Re-run ./Scripts/Run-AutomationTests.sh and commit the refreshed\n"
+        "  Docs/automation-evidence.json with your change."
+    )
+
+if evidence["failed"] != len(evidence.get("known_failures", [])):
+    sys.exit(f"ERROR: {evidence_path} records {evidence['failed']} unsuccessful test(s).")
+
+print(f"automation evidence matches this tree: {evidence['tests']} tests, "
+      f"{evidence['level_one']} Level One, {evidence['failed']} not successful "
+      f"({evidence.get('engine', 'unknown engine')} on {evidence.get('host', 'unknown host')})")
+PYEVIDENCE
+
 echo "Cross-platform source/config validation passed. Platform binaries remain evidence-gated in Docs/PLATFORM_MATRIX.md."

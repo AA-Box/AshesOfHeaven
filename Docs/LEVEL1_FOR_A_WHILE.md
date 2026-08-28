@@ -137,6 +137,19 @@ A Level One implementation is not considered complete unless all of these hold i
 
 `Scripts/Run-AutomationTests.sh` builds `AshesOfHeavenEditor` and runs the automation suite headless (`-nullrhi -nosound`), then fails the run if any test is not `Success` or if fewer than `AH_MIN_LEVEL_ONE_TESTS` `AshesOfHeaven.LevelOne.*` tests actually executed — a filter that matches nothing must not report green.
 
+**Run it before every pull request and commit the evidence file it writes.** The suite needs an
+Unreal editor or commandlet, which no GitHub-hosted runner has, and this repository is public,
+so a self-hosted runner is not an option: it would execute fork-authored code on the machine it
+is registered to. Instead, a passing run records `Docs/automation-evidence.json` against a
+SHA-256 of `Source`, `Config`, `Content`, `Scripts` and the `.uproject`, and
+`Scripts/Validate-CrossPlatform.sh` — which runs on a hosted runner on every pull request —
+rejects the change if that hash no longer matches the tree. Editing gameplay code without
+re-running the suite therefore fails CI, which is the failure this is built to catch.
+`Docs/` is excluded from the hash, so documentation-only changes do not force a re-run.
+
+This is an honesty ratchet, not a security boundary: anyone determined to commit a false result
+can. It exists because the realistic failure is forgetting to re-run, not lying.
+
 `AshesOfHeaven.LevelOne.CampaignE2E.*` is the campaign lifecycle suite. It boots a standalone
 world named as a Chapter One map with the real director and a possessed player, then:
 

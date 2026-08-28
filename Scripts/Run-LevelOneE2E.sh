@@ -16,6 +16,12 @@ set -euo pipefail
 # still has to route through the director and OnMissionComplete to reach the save.
 #
 # Env knobs:
+# The game is launched headless (-nullrhi). It is not a rendering test - every assertion reads
+# the log - and with a real RHI the packaged process blocks in FRenderCommandFence::Wait as soon
+# as its window is not the frontmost surface, which is the normal state for an automated run.
+# Headless also means this works over SSH and on a machine with no GUI session.
+#
+# Env knobs:
 #   AH_SKIP_PACKAGE=1   reuse the existing Builds/macOS-Development app
 #   AH_E2E_TIMEOUT=600  seconds to wait for the playthrough to finish (default 420)
 
@@ -93,7 +99,7 @@ rm -f "$SAVE_FILE"
 # ---- Run 1: a complete playthrough, from a guaranteed-fresh chapter. -------------------
 launch_and_await "Run 1: playing Level One to completion" \
   "[LevelOneE2E] autoplay_finished missionComplete=true" "$PLAY_TIMEOUT" \
-  -freshchapter -LevelOneAutoplay -windowed -ResX=640 -ResY=360
+  -freshchapter -LevelOneAutoplay -nullrhi -nosound -unattended
 
 RUN1_LOG="$PROJECT_ROOT/Saved/Logs/LevelOneE2E-Run1.log"
 mkdir -p "$(dirname "$RUN1_LOG")"
@@ -114,7 +120,7 @@ echo "==> Save on disk: $(stat -f '%z bytes' "$SAVE_FILE")"
 # ---- Run 2: relaunch from that save. No -freshchapter, no autoplay. --------------------
 launch_and_await "Run 2: relaunching from the save on disk" \
   "[Phase4.4][Runtime]" "$RELAUNCH_TIMEOUT" \
-  -windowed -ResX=640 -ResY=360
+  -nullrhi -nosound -unattended
 
 RUN2_LOG="$PROJECT_ROOT/Saved/Logs/LevelOneE2E-Run2.log"
 cp "$GAME_LOG" "$RUN2_LOG"
