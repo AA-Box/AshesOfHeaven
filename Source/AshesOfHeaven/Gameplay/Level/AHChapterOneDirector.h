@@ -240,6 +240,9 @@ protected:
 
 	/** -LevelOneAutoplay: completes one objective per timer tick so a packaged run can finish unattended. */
 	void AdvanceAutoplay();
+	/** Walks the pawn into this stage's real AAHCheckpointActor so the overlap path captures it. */
+	bool TriggerAutoplayCheckpoint(class AAHCombatPlayerCharacter* Player);
+	void SetAutoplayRunState(class AAHCombatPlayerCharacter* Player, float Health, float Armor, int32 Magazine, int32 Reserve, int32 Grenades);
 
 	/** Raised on the tick the failsafe clock reaches zero: banner, fade, then checkpoint reload. */
 	void BeginFailsafeExpiryFailure();
