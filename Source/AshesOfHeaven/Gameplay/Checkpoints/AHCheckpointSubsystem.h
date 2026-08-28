@@ -50,4 +50,6 @@ private:
 	bool LoadState();
 
 	FAHCombatCheckpointState RuntimeState;
+	/** True while RestoreFromState is applying state; see CaptureCheckpoint's re-entrancy guard. */
+	bool bRestoreInProgress = false;
 };

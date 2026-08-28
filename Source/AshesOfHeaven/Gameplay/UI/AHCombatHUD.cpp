@@ -95,6 +95,14 @@ void AAHCombatHUD::ShowMissionComplete()
 	}
 }
 
+void AAHCombatHUD::ShowMissionFailed(const FText& Headline)
+{
+	if (RootWidget)
+	{
+		RootWidget->ShowMissionFailed(Headline);
+	}
+}
+
 void AAHCombatHUD::HideMissionComplete()
 {
 	bMissionComplete = false;

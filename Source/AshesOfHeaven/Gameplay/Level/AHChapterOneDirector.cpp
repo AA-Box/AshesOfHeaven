@@ -9,6 +9,9 @@
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
 #include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
+#include "Gameplay/Combat/AHArmorComponent.h"
+#include "Gameplay/Combat/AHHealthComponent.h"
+#include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
@@ -20,7 +23,9 @@
 #include "Gameplay/Weapons/AHWeaponPickup.h"
 #include "Gameplay/Objectives/AHObjectiveSubsystem.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Gameplay/UI/AHCombatHUD.h"
 #include "Gameplay/Presentation/AHPresentationData.h"
+#include "Platform/AHPlatformSaveSubsystem.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/BoxComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -209,6 +214,20 @@ void AAHChapterOneDirector::BeginPlay()
 	LogPresentationState(GetCurrentStage());
 
 #if !UE_BUILD_SHIPPING
+	#if !UE_BUILD_SHIPPING
+	// -LevelOneAutoplay drives the real objective chain in a packaged process. Synthetic
+	// keyboard/mouse input does not reach the packaged game on this platform, so this is the
+	// only way an automated run can prove the whole campaign lifecycle end to end. It does
+	// not fake completion: every objective still routes through UAHObjectiveSubsystem and
+	// AAHChapterOneDirector::HandleObjectiveCompleted, and the final one through
+	// OnMissionComplete, exactly as an in-world completer would drive it.
+	if (FParse::Param(FCommandLine::Get(), TEXT("LevelOneAutoplay")))
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_enabled"));
+		GetWorldTimerManager().SetTimer(AutoplayTimer, this, &AAHChapterOneDirector::AdvanceAutoplay, 1.5f, true, 6.0f);
+	}
+	#endif
+
 	FString ArtTarget;
 	if (FParse::Value(FCommandLine::Get(), TEXT("ArtTarget="), ArtTarget))
 	{
@@ -228,7 +247,17 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 	}
 
 	StageElapsed += DeltaSeconds;
-	Chapter->TickCountdown(DeltaSeconds);
+	if (Chapter->TickCountdown(DeltaSeconds))
+	{
+		BeginFailsafeExpiryFailure();
+	}
+	if (FailsafeFailureElapsed >= 0.0f)
+	{
+		FailsafeFailureElapsed += DeltaSeconds;
+		// Reuses the manual camera fade already applied below rather than adding a second
+		// fade path; the alpha is reset by StartStage and by the level reload that follows.
+		DestructionFadeAlpha = FMath::Max(DestructionFadeAlpha, FMath::Clamp(FailsafeFailureElapsed / FailsafeFailureFadeSeconds, 0.0f, 1.0f));
+	}
 
 	if (GetCurrentStage() == EAHChapterStage::OpeningBlack && !bOpeningSequenceStarted && StageElapsed > 0.5f)
 	{
@@ -601,7 +630,7 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 		SpawnManticore();
 		break;
 	case EAHChapterStage::FailsafeOrder:
-		Chapter->StartCountdown(522.0f);
+		Chapter->StartCountdown(AHChapterStateConstants::FailsafeCountdownSeconds);
 		if (!bOrderSequenceStarted && !Chapter->HasCompletedNarrativeEvent(FName(TEXT("Ch01_Order"))))
 		{
 			bOrderSequenceStarted = true;
@@ -856,6 +885,180 @@ void AAHChapterOneDirector::HandleMissionComplete()
 		Chapter->SetStage(EAHChapterStage::ChapterComplete);
 		Chapter->MarkNarrativeEvent(FName(TEXT("Ch01_TitleReveal")));
 	}
+	// Completion is a campaign fact, not a place in the world. Writing it here - not through
+	// CaptureCheckpoint - is what makes "finish the level, quit, relaunch" still report the
+	// level as finished: the checkpoint restore path is free to reject its own spatial data
+	// without taking the player's progress with it.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UAHPlatformSaveSubsystem* Save = GameInstance->GetSubsystem<UAHPlatformSaveSubsystem>())
+		{
+			Save->MarkChapterComplete(AHChapterIds::ChapterOne());
+		}
+	}
+}
+
+namespace
+{
+	// Process-global, deliberately: a death or a failsafe failure reopens the level, which
+	// destroys the director. A member would reset and the run would loop on the same beat
+	// forever. Globals outlive UGameplayStatics::OpenLevel within the process, which is the
+	// same reason GAHSkipFrontEndOnce is one.
+	bool GAHAutoplayDeathTaken = false;
+	bool GAHAutoplayFailsafeExpiryTaken = false;
+}
+
+void AAHChapterOneDirector::AdvanceAutoplay()
+{
+	if (!Objectives || Objectives->IsMissionComplete())
+	{
+		GetWorldTimerManager().ClearTimer(AutoplayTimer);
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_finished missionComplete=%s stage=%s"), Objectives && Objectives->IsMissionComplete() ? TEXT("true") : TEXT("false"), *UEnum::GetValueAsString(GetCurrentStage()));
+		return;
+	}
+	// -LevelOneAutoplayDeathAt=<objective>: die once, through the real damage path, so the
+	// packaged run exercises the actual lifecycle - UAHHealthComponent death ->
+	// AAHCombatPlayerController::HandlePlayerDeath -> FinishDeathRestart ->
+	// ReloadLatestCheckpoint -> OpenLevel -> AAHChapterOneGameMode restore - rather than
+	// calling RestoreLatestCheckpoint directly the way an in-process fixture has to.
+	int32 DeathObjective = INDEX_NONE;
+	if (!GAHAutoplayDeathTaken
+		&& FParse::Value(FCommandLine::Get(), TEXT("LevelOneAutoplayDeathAt="), DeathObjective)
+		&& Objectives->GetCurrentObjectiveIndex() == DeathObjective)
+	{
+		GAHAutoplayDeathTaken = true;
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+		{
+			// Autoplay advances objectives programmatically; it never walks the route, so no
+			// AAHCheckpointActor has been overlapped and the only capture on disk is the
+			// opening one - which RestoreFromState rejects as carrying no progress. Establish
+			// a real mid-level checkpoint first, through the actual trigger, or the death
+			// below proves the reload machinery and nothing about restored state.
+			SetAutoplayRunState(Player, 63.0f, 41.0f, 21, 96, 3);
+			// Manticore state is part of what a checkpoint must carry, and RestoreVehicleState
+			// puts back location, rotation, health and bDestroyed. Damage the vehicle to a
+			// distinctive value through the real TakeDamage path (500 - 213 = 287) so the
+			// restored figure cannot be confused with the spawn default. bOccupied is captured
+			// but deliberately NOT restored - a reload never resumes you inside the vehicle -
+			// so it is not asserted.
+			if (Manticore)
+			{
+				UGameplayStatics::ApplyDamage(Manticore, 213.0f, nullptr, this, nullptr);
+				UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_vehicle_seed health=%0.1f"), Manticore->GetVehicleState().Health);
+			}
+			if (!TriggerAutoplayCheckpoint(Player))
+			{
+				UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] autoplay_death aborted: no checkpoint actor reached, restore would prove nothing"));
+				return;
+			}
+			// Poison every restorable value, so the post-restore line can only report the
+			// captured numbers if they genuinely crossed the level reopen.
+			SetAutoplayRunState(Player, 7.0f, 0.0f, 0, 0, 0);
+			if (Manticore)
+			{
+				UGameplayStatics::ApplyDamage(Manticore, 100.0f, nullptr, this, nullptr);
+				Manticore->SetActorLocation(Manticore->GetActorLocation() + FVector(1500.0f, 0.0f, 0.0f));
+			}
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_death objective=%d stage=%s"), DeathObjective, *UEnum::GetValueAsString(GetCurrentStage()));
+			UGameplayStatics::ApplyDamage(Player, 999999.0f, nullptr, this, nullptr);
+			return;
+		}
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] autoplay_death skipped: no player pawn"));
+	}
+
+	// -LevelOneAutoplayFailsafeExpiry: run the failsafe clock out once, so the packaged run
+	// covers Director -> mission-failed banner -> fade -> ReloadLatestCheckpoint -> restored
+	// attempt, and proves the restored attempt gets the full window back rather than the
+	// remainder that would make the retry unwinnable.
+	// CathedralInterior, not merely "countdown active": it is the first stage inside the timed
+	// window that owns a checkpoint of its own (FailsafeOrder's definition points back at the
+	// CathedralApproach capture, which is stage-incompatible there). Capturing inside the
+	// window is what lets the reload prove the clock came back at its full value.
+	if (!GAHAutoplayFailsafeExpiryTaken
+		&& FParse::Param(FCommandLine::Get(), TEXT("LevelOneAutoplayFailsafeExpiry"))
+		&& Chapter && Chapter->IsCountdownActive()
+		&& GetCurrentStage() == EAHChapterStage::CathedralInterior)
+	{
+		GAHAutoplayFailsafeExpiryTaken = true;
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+		{
+			TriggerAutoplayCheckpoint(Player);
+		}
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_failsafe_expiry stage=%s remaining=%0.1f"), *UEnum::GetValueAsString(GetCurrentStage()), Chapter->GetCountdownSeconds());
+		Chapter->StartCountdown(0.25f);
+		return;
+	}
+
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_step objective=%d/%d stage=%s"), Objectives->GetCurrentObjectiveIndex(), Objectives->GetObjectiveCount(), *UEnum::GetValueAsString(GetCurrentStage()));
+	CompleteCurrentObjective();
+}
+
+bool AAHChapterOneDirector::TriggerAutoplayCheckpoint(AAHCombatPlayerCharacter* Player)
+{
+	// Move the pawn onto the checkpoint actor rather than calling CaptureCheckpoint directly:
+	// the overlap path is the one the game actually uses, including its stage-compatibility
+	// guard, so a checkpoint that could not be captured in play is not silently faked here.
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(GetCurrentStage());
+	for (TActorIterator<AAHCheckpointActor> It(GetWorld()); It; ++It)
+	{
+		if (It->CheckpointId != Definition.CheckpointId)
+		{
+			continue;
+		}
+		Player->SetActorLocation(It->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_checkpoint id=%s stage=%s"), *It->CheckpointId.ToString(), *UEnum::GetValueAsString(GetCurrentStage()));
+		return true;
+	}
+	return false;
+}
+
+void AAHChapterOneDirector::SetAutoplayRunState(AAHCombatPlayerCharacter* Player, float Health, float Armor, int32 Magazine, int32 Reserve, int32 Grenades)
+{
+	if (UAHHealthComponent* HealthComponent = Player->GetHealthComponent())
+	{
+		HealthComponent->SetHealth(Health);
+	}
+	if (UAHArmorComponent* ArmorComponent = Player->GetArmorComponent())
+	{
+		ArmorComponent->SetArmor(Armor);
+	}
+	if (UAHInventoryComponent* Inventory = Player->GetInventoryComponent())
+	{
+		FAHAmmoState Ammo;
+		Ammo.Magazine = Magazine;
+		Ammo.Reserve = Reserve;
+		Inventory->SetSavedAmmo(Ammo);
+		Inventory->AddGrenades(Grenades - Inventory->GetGrenades());
+	}
+}
+
+void AAHChapterOneDirector::BeginFailsafeExpiryFailure()
+{
+	if (FailsafeFailureElapsed >= 0.0f)
+	{
+		return;
+	}
+	// The outbound carrier finished transmitting: the Veil signal is away and containment
+	// failed. This is a mission failure, not a stage advance - the run restarts from the last
+	// checkpoint, which restores the failsafe clock at its full window.
+	FailsafeFailureElapsed = 0.0f;
+	UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Chapter][Failsafe] mission_failed reason=transmission_complete stage=%s"), *UEnum::GetValueAsString(GetCurrentStage()));
+	if (APlayerController* Controller = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		if (AAHCombatHUD* HUD = Cast<AAHCombatHUD>(Controller->GetHUD()))
+		{
+			HUD->ShowMissionFailed(FText::FromString(TEXT("SIGNAL TRANSMISSION COMPLETE")));
+		}
+	}
+	GetWorld()->GetTimerManager().SetTimer(FailsafeFailureTimer, this, &AAHChapterOneDirector::FinishFailsafeExpiryFailure, FailsafeFailureFadeSeconds + 1.0f, false);
+}
+
+void AAHChapterOneDirector::FinishFailsafeExpiryFailure()
+{
+	if (UAHCheckpointSubsystem* Checkpoints = GetWorld()->GetSubsystem<UAHCheckpointSubsystem>())
+	{
+		Checkpoints->ReloadLatestCheckpoint();
+	}
 }
 
 void AAHChapterOneDirector::FinishDestructionSequence()
@@ -999,21 +1202,77 @@ void AAHChapterOneDirector::BuildVisualArtTargets()
 	// gameplay blocks, triggers, checkpoints and nav data remain authoritative underneath.
 	// Erebus prefers the authored streamed level (Phase 4.5 art recovery); the legacy
 	// primitive construction below stays as the packaged-safety fallback only.
-	bErebusAuthoredZoneActive = TryLoadAuthoredErebusZone();
-	// Machine-checkable presentation mode line: visual acceptance requires Authored.
+	// Each section prefers its authored streamed level and falls back to the runtime
+	// primitives only for the sections that do not have one yet. Adding art for a section is
+	// therefore a content-only change: author the level at the zone's path and the fallback
+	// stops being used, with no code edit and no change to gameplay collision or navigation.
+	ActiveAuthoredZones.Reset();
+	for (const FAHAuthoredPresentationZone& Zone : AHAuthoredPresentationZones::Get())
+	{
+		if (TryLoadAuthoredZone(Zone))
+		{
+			ActiveAuthoredZones.Add(FName(Zone.ZoneId));
+		}
+		// Machine-checkable presentation mode line, one per zone: visual acceptance of a
+		// section requires Authored.
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Presentation] Zone=%s Mode=%s"),
+			Zone.ZoneId, IsAuthoredZoneActive(FName(Zone.ZoneId)) ? TEXT("Authored") : TEXT("PrimitiveFallback"));
+	}
+
+	bErebusAuthoredZoneActive = IsAuthoredZoneActive(FName(TEXT("Erebus")));
+	// Retained verbatim: Scripts/ErebusAcceptance.py and the packaged capture gate grep it.
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Presentation] ErebusMode=%s"),
 		bErebusAuthoredZoneActive ? TEXT("Authored") : TEXT("LegacyFallback"));
+
 	if (!bErebusAuthoredZoneActive)
 	{
 		BuildErebusArtTarget();
 		BuildErebusSkyline();
 	}
-	BuildTransitStationArtTarget();
-	BuildCathedralArtTarget();
-	BuildPresentDayArtTarget();
+	else
+	{
+		// Atmosphere/fire effects use the proven runtime spawn path: Niagara components saved
+		// into a streamed level do not render in packaged builds (the assets are set
+		// headlessly), while SpawnVisualEffect instances always have. Geometry, lights and
+		// decals stay authored in the level; these effects anchor to the same positions.
+		BuildErebusZoneEffects();
+	}
+	if (!IsAuthoredZoneActive(FName(TEXT("Transit"))))
+	{
+		BuildTransitStationArtTarget();
+	}
+	if (!IsAuthoredZoneActive(FName(TEXT("Cathedral"))))
+	{
+		BuildCathedralArtTarget();
+	}
+	// Text and dynamic-emissive presentation belongs to the runtime in both modes: neither
+	// survives being saved into a streamed level.
+	BuildTransitSignage();
+	BuildCathedralGlyphs();
+	if (!IsAuthoredZoneActive(FName(TEXT("PresentDay"))))
+	{
+		BuildPresentDayArtTarget();
+	}
 }
 
-bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
+namespace AHAuthoredPresentationZones
+{
+	const TArray<FAHAuthoredPresentationZone>& Get()
+	{
+		// Erebus is authored (Scripts/BuildErebusOpeningLevel.py). The rest name the path an
+		// art drop has to land on; until then each falls back to its primitive builder, which
+		// is why an unauthored path here is logged at Display and not as a failure.
+		static const TArray<FAHAuthoredPresentationZone> Zones = {
+			{TEXT("Erebus"),     TEXT("/Game/Ashes/Environment/Erebus/L_ErebusOpening_Presentation"),        EAHChapterStage::ErebusOpening,     20},
+			{TEXT("Transit"),    TEXT("/Game/Ashes/Environment/Transit/L_Transit_Presentation"),             EAHChapterStage::TransitStation,    20},
+			{TEXT("Cathedral"),  TEXT("/Game/Ashes/Environment/Cathedral/L_Cathedral_Presentation"),         EAHChapterStage::CathedralApproach, 20},
+			{TEXT("PresentDay"), TEXT("/Game/Ashes/Environment/PresentDay/L_PresentDay_Presentation"),       EAHChapterStage::TenYearsLater,     20}
+		};
+		return Zones;
+	}
+}
+
+bool AAHChapterOneDirector::TryLoadAuthoredZone(const FAHAuthoredPresentationZone& Zone)
 {
 	UWorld* World = GetWorld();
 	if (!World || !World->IsGameWorld())
@@ -1021,19 +1280,22 @@ bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
 		return false;
 	}
 
-	// The authored level is placed in anchor-local space: local origin = the canonical
-	// ErebusOpening stage anchor. The spatial definition stays the coordinate authority.
-	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(EAHChapterStage::ErebusOpening);
+	// Authored levels are placed in anchor-local space: local origin = the canonical stage
+	// anchor for the section. The spatial definition stays the coordinate authority, so a
+	// zone level never hard-codes world positions and survives layout moves.
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Zone.AnchorStage);
 	bool bRequestValid = false;
 	ULevelStreamingDynamic* Streaming = ULevelStreamingDynamic::LoadLevelInstance(
 		World,
-		TEXT("/Game/Ashes/Environment/Erebus/L_ErebusOpening_Presentation"),
+		Zone.LevelPath,
 		Definition.StageAnchor,
 		FRotator::ZeroRotator,
 		bRequestValid);
 	if (!bRequestValid || !Streaming)
 	{
-		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.5][Presentation] authored Erebus zone request failed; using legacy primitive fallback"));
+		// Display, not Warning: a zone with no authored level yet is the expected state for
+		// sections still on the runtime primitive layer, not a fault to raise in every run.
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] no authored zone at %s for %s; using primitive fallback"), Zone.LevelPath, Zone.ZoneId);
 		return false;
 	}
 
@@ -1044,9 +1306,9 @@ bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
 
 	ULevel* Loaded = Streaming->GetLoadedLevel();
 	const int32 ActorCount = Loaded ? Loaded->Actors.Num() : 0;
-	if (ActorCount < 20)
+	if (ActorCount < Zone.MinimumActors)
 	{
-		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.5][Presentation] authored Erebus zone loaded with %d actors; using legacy primitive fallback"), ActorCount);
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Phase4.5][Presentation] authored %s zone loaded with %d actors (needs %d); using primitive fallback"), Zone.ZoneId, ActorCount, Zone.MinimumActors);
 		return false;
 	}
 
@@ -1069,14 +1331,8 @@ bool AAHChapterOneDirector::TryLoadAuthoredErebusZone()
 	}
 	PresentationVFXCount += ActivatedVFX;
 
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] authored Erebus zone active: %d actors, %d VFX components activated, anchor (%s)"),
-		ActorCount, ActivatedVFX, *Definition.StageAnchor.ToCompactString());
-
-	// Atmosphere/fire effects use the proven runtime spawn path: Niagara components saved
-	// into the streamed level do not render in packaged builds (asset set headlessly),
-	// while SpawnVisualEffect instances always have. Geometry, lights and decals stay
-	// authored in the level; these effects anchor to the same authored positions.
-	BuildErebusZoneEffects();
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] authored %s zone active: %d actors, %d VFX components activated, anchor (%s)"),
+		Zone.ZoneId, ActorCount, ActivatedVFX, *Definition.StageAnchor.ToCompactString());
 	return true;
 }
 
@@ -1316,9 +1572,6 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 	// pale emblem tint still glowed under the practical light, so the panel goes dark steel.
 	UMaterialInterface* SignPanelMaterial = MakeTintedMaterial(HumanMetalMaterial, FLinearColor(0.10f, 0.10f, 0.095f), 0.7f, 0.0f, 0.45f);
 	SpawnVisualShape(Cube, FVector(3495.0f, -645.0f, 700.0f), FVector(0.06f, 1.4f, 0.52f), FRotator::ZeroRotator, SignPanelMaterial);
-	SpawnLabel(FVector(3500.0f, -820.0f, 770.0f), TEXT("TRANSIT\nSTATION"), FColor(224, 224, 210), 125.0f);
-	SpawnLabel(FVector(3500.0f, -760.0f, 930.0f), TEXT("NORTH LINE  /  PLATFORM 02"), FColor(232, 190, 118), 72.0f);
-	SpawnLabel(FVector(3500.0f, 790.0f, 710.0f), TEXT("CIVIL DEFENSE\nEVACUATION ROUTE"), FColor(222, 90, 62), 66.0f, FRotator(0.0f, -90.0f, 0.0f));
 
 	// Civilian traces: a few abandoned cases and a control desk, not a prop carpet.
 	SpawnVisualShape(Cube, FVector(3150.0f, -410.0f, 60.0f), FVector(0.45f, 0.30f, 0.28f), FRotator(0.0f, 18.0f, 0.0f), WallConcreteMaterial);
@@ -1334,6 +1587,27 @@ void AAHChapterOneDirector::BuildTransitStationArtTarget()
 	SpawnVisualLight(FVector(3820.0f, 500.0f, 460.0f), FLinearColor(0.95f, 0.08f, 0.03f), 360.0f, 520.0f);
 	// Authored soft smoke instead of the factory dust fountains (square sprites).
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"), FVector(3500.0f, -950.0f, 540.0f), FVector(0.8f));
+}
+
+void AAHChapterOneDirector::BuildTransitSignage()
+{
+	// Runtime, not authored into the zone level: UTextRenderComponent strings do not survive
+	// a headless level save, so the station's authored signage would silently disappear the
+	// moment the Transit zone switched from the primitive fallback to authored art.
+	SpawnLabel(FVector(3500.0f, -820.0f, 770.0f), TEXT("TRANSIT\nSTATION"), FColor(224, 224, 210), 125.0f);
+	SpawnLabel(FVector(3500.0f, -760.0f, 930.0f), TEXT("NORTH LINE  /  PLATFORM 02"), FColor(232, 190, 118), 72.0f);
+	SpawnLabel(FVector(3500.0f, 790.0f, 710.0f), TEXT("CIVIL DEFENSE\nEVACUATION ROUTE"), FColor(222, 90, 62), 66.0f, FRotator(0.0f, -90.0f, 0.0f));
+}
+
+void AAHChapterOneDirector::BuildCathedralGlyphs()
+{
+	// Runtime for the same reason as the Transit signage, plus one of its own: a glyph needs
+	// a dynamic emissive material instance, which a saved level cannot carry.
+	const FVector CathedralOrigin = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach).StageAnchor;
+	SpawnCathedralGlyph(CathedralOrigin + FVector(1500.0f, -255.0f, 630.0f), 150.0f, 1.0f);
+	SpawnCathedralGlyph(CathedralOrigin + FVector(3100.0f, -255.0f, 920.0f), 95.0f, 0.72f);
+	SpawnCathedralGlyph(CathedralOrigin + FVector(3600.0f, -250.0f, 700.0f), 210.0f, 1.35f);
+	SpawnLabel(CathedralOrigin + FVector(1200.0f, -1320.0f, 1910.0f), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
 }
 
 void AAHChapterOneDirector::BuildCathedralArtTarget()
@@ -1387,16 +1661,12 @@ void AAHChapterOneDirector::BuildCathedralArtTarget()
 	SpawnVisualShape(Cube, Local(FVector(2900.0f, -280.0f, 110.0f)), FVector(1.5f, 0.85f, 0.65f), FRotator::ZeroRotator, HumanMetalMaterial);
 	SpawnVisualShape(Cylinder, Local(FVector(2900.0f, -280.0f, 270.0f)), FVector(0.5f, 0.5f, 1.2f), FRotator::ZeroRotator, HumanMetalMaterial);
 	SpawnVisualShape(Cube, Local(FVector(3150.0f, -280.0f, 130.0f)), FVector(0.12f, 0.12f, 1.0f), FRotator(0.0f, 0.0f, 25.0f), EmissiveTechnologyMaterial);
-	SpawnCathedralGlyph(Local(FVector(1500.0f, -255.0f, 630.0f)), 150.0f, 1.0f);
-	SpawnCathedralGlyph(Local(FVector(3100.0f, -255.0f, 920.0f)), 95.0f, 0.72f);
-	SpawnCathedralGlyph(Local(FVector(3600.0f, -250.0f, 700.0f)), 210.0f, 1.35f);
 
 	SpawnVisualLight(Local(FVector(1300.0f, 0.0f, 560.0f)), FLinearColor(0.42f, 0.56f, 1.0f), 700.0f, 1000.0f);
 	SpawnVisualLight(Local(FVector(3400.0f, 0.0f, 210.0f)), FLinearColor(0.72f, 0.82f, 1.0f), 420.0f, 650.0f);
 	SpawnVisualDust(Local(FVector(1300.0f, 0.0f, 810.0f)), 1.4f);
 	SpawnVisualDust(Local(FVector(3200.0f, 260.0f, 460.0f)), 0.9f);
 	SpawnVisualEffect(TEXT("/Game/Ashes/VFX/NS_CathedralMotes.NS_CathedralMotes"), Local(FVector(2300.0f, 0.0f, 710.0f)), FVector(1.5f));
-	SpawnLabel(Local(FVector(1200.0f, -1320.0f, 1910.0f)), TEXT("CATHEDRAL / INNER VOID"), FColor(190, 200, 232), 120.0f);
 }
 
 void AAHChapterOneDirector::BuildPresentDayArtTarget()
@@ -1637,14 +1907,25 @@ void AAHChapterOneDirector::SpawnCathedralGlyph(const FVector& Location, float R
 	// Original glyph grammar: a central axis, a crossbar, four interrupted radial
 	// segments, and two short orbit marks. It is deliberately made from simple
 	// primitives so the language can scale from terminals to monumental surfaces.
-	SpawnVisualShape(Cube, Location, FVector(0.08f, 0.08f, 0.80f * SafeScale), FRotator::ZeroRotator, EmissiveTechnologyMaterial);
-	SpawnVisualShape(Cube, Location, FVector(0.08f, 0.72f * SafeScale, 0.08f), FRotator(0.0f, 0.0f, 90.0f), EmissiveTechnologyMaterial);
+	// Every segment is tagged: a glyph stroke is authored symbol geometry that happens to be a
+	// thin bar, not a placeholder standing in for a modelled asset, so the presentation audit
+	// in AshesOfHeaven.LevelOne.CampaignE2E.AuthoredPresentationZones excludes it by tag
+	// rather than by mesh. Architecture built from the same primitives is still caught.
+	const auto TagGlyphSegment = [](AStaticMeshActor* Segment)
+	{
+		if (Segment)
+		{
+			Segment->Tags.AddUnique(FAHPresentationTags::Glyph);
+		}
+	};
+	TagGlyphSegment(SpawnVisualShape(Cube, Location, FVector(0.08f, 0.08f, 0.80f * SafeScale), FRotator::ZeroRotator, EmissiveTechnologyMaterial));
+	TagGlyphSegment(SpawnVisualShape(Cube, Location, FVector(0.08f, 0.72f * SafeScale, 0.08f), FRotator(0.0f, 0.0f, 90.0f), EmissiveTechnologyMaterial));
 	for (int32 Index = 0; Index < 8; ++Index)
 	{
 		const float Angle = Index * 45.0f;
 		const float Radians = FMath::DegreesToRadians(Angle);
 		const FVector Offset(0.0f, FMath::Sin(Radians) * Radius * SafeScale, FMath::Cos(Radians) * Radius * SafeScale);
-		SpawnVisualShape(Cube, Location + Offset, FVector(0.06f, 0.34f * SafeScale, 0.06f), FRotator(0.0f, 0.0f, Angle), CathedralMaterial);
+		TagGlyphSegment(SpawnVisualShape(Cube, Location + Offset, FVector(0.06f, 0.34f * SafeScale, 0.06f), FRotator(0.0f, 0.0f, Angle), CathedralMaterial));
 	}
 }
 

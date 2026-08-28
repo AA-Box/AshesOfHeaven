@@ -1,6 +1,21 @@
 # Chapter One level and streaming architecture
 
-Chapter One currently ships as one greybox map, `/Game/ChapterOne/L_ChapterOne_Greybox`. The map selects `AHChapterOneGameMode`; the director builds the prototype geometry, encounters, objectives, checkpoints, dialogue hooks, Manticore, terminal, and navigation bounds at runtime.
+Chapter One ships as one map, `/Game/ChapterOne/L_ChapterOne_Greybox`. The map selects `AHChapterOneGameMode`; the director builds the gameplay geometry, encounters, objectives, checkpoints, dialogue hooks, Manticore, terminal, and navigation bounds at runtime.
+
+## Authored presentation zones
+
+Presentation is separate from that gameplay layer and is already streamed rather than generated. `AHAuthoredPresentationZones::Get()` is the table the director walks at `BeginPlay`; each entry names a saved level authored in **anchor-local** space and the stage anchor it is placed at, and `AAHChapterOneDirector::TryLoadAuthoredZone` streams it in synchronously:
+
+| Zone | Level | Anchor stage | Author script | State |
+| --- | --- | --- | --- | --- |
+| `Erebus` | `/Game/Ashes/Environment/Erebus/L_ErebusOpening_Presentation` | `ErebusOpening` | `Scripts/BuildErebusOpeningLevel.py` | Authored |
+| `Transit` | `/Game/Ashes/Environment/Transit/L_Transit_Presentation` | `TransitStation` | `Scripts/BuildTransitPresentationLevel.py` | Authored |
+| `Cathedral` | `/Game/Ashes/Environment/Cathedral/L_Cathedral_Presentation` | `CathedralApproach` | `Scripts/BuildCathedralPresentationLevel.py` | Authored |
+| `PresentDay` | `/Game/Ashes/Environment/PresentDay/L_PresentDay_Presentation` | `TenYearsLater` | — | Primitive fallback |
+
+A zone whose level is missing, or which loads with fewer than `MinimumActors`, logs at Display and falls back to that section's runtime primitive builder. The consequence is that shipping art for a section is a **content-only change**: author the level at the zone's path and the fallback stops being used, with no code edit and no change to gameplay collision or navigation. Every run prints one `[Presentation] Zone=<id> Mode=Authored|PrimitiveFallback` line per zone, and `AshesOfHeaven.LevelOne.CampaignE2E.AuthoredPresentationZones` fails if an authored zone silently fell back or if a visible `SM_AH_*` debug primitive is left in the Transit or Cathedral corridor.
+
+Two kinds of presentation deliberately stay in the runtime rather than in a zone level: `UTextRenderComponent` signage (`BuildTransitSignage`) and dynamic-emissive glyphs (`BuildCathedralGlyphs`). Neither survives a headless level save, so both run in authored and fallback mode alike.
 
 The logical sections are:
 

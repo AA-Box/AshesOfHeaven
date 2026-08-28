@@ -18,6 +18,8 @@ public:
 private:
 	void RestoreCheckpointAfterSpawn();
 	void LogObjective01SpatialState();
+	/** Post-restore payload, asserted by Scripts/Run-LevelOneE2E.sh across a real level reopen. */
+	void LogRestoredRunState();
 	FTimerHandle RestoreTimer;
 	int32 RestoreAttempts = 0;
 };

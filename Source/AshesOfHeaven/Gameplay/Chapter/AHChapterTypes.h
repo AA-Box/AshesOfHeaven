@@ -13,6 +13,23 @@ namespace AHChapterStateConstants
 	constexpr int32 CurrentSaveVersion = 7;
 	constexpr int32 CurrentSpatialSchemaVersion = 2;
 	constexpr int32 ObjectiveCount = 12;
+
+	/**
+	 * 08:42, the outbound Veil carrier's transmission window. It is a real deadline: reaching
+	 * zero fails the mission. Restoring a checkpoint restarts it at this value rather than the
+	 * remainder that was live at capture, so a checkpoint taken at 00:05 is not an unwinnable
+	 * loop.
+	 */
+	constexpr float FailsafeCountdownSeconds = 522.0f;
+}
+
+namespace AHChapterIds
+{
+	/**
+	 * Campaign identity of Level One, persisted in the save's CompletedChapters list.
+	 * Never rename it: an old save records completion under the name written at the time.
+	 */
+	inline FName ChapterOne() { return FName(TEXT("Ch01")); }
 }
 
 UENUM(BlueprintType)

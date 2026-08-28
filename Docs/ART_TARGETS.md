@@ -57,15 +57,23 @@ PARTIALLY IMPLEMENTED:
 - sudden evacuation is represented by a small, composed case/seat/equipment set;
 - wet reflections and failing fixtures are scaffolded by existing materials/lights.
 
+AUTHORED ZONE: `Scripts/BuildTransitPresentationLevel.py` authors
+`/Game/Ashes/Environment/Transit/L_Transit_Presentation` (206 actors, 0 missing assets) from the
+`SM_Erebus_*` modular kit — platform slabs, curbs, track bed, hall walls, columns, roof beams,
+pipes, cable runs, a service catwalk, the station gate, evacuation debris and the deeper
+revelation chamber. The director streams it at the `TransitStation` anchor and skips
+`BuildTransitStationArtTarget` entirely. `AshesOfHeaven.LevelOne.CampaignE2E.AuthoredPresentationZones`
+asserts the zone streams in and that no visible `SM_AH_*` debug primitive remains in the corridor.
+
 NOT IMPLEMENTED:
 
-- final station kit, ticket machines, route map material, luggage/clothing props, wet-surface master, leaking water, electrical hum, and authored damaged fluorescent VFX/audio.
+- ticket machines, route map material, luggage/clothing props, wet-surface master, leaking water, electrical hum, and authored damaged fluorescent VFX/audio.
 
 PHASE 4.2 AUDIO: Objective, interaction, pickup, and dialogue timing now have project-local runtime
 feedback; the station still needs authored electrical hum, failing-fixture detail, room tone, and
 environmental mix.
 
-KNOWN GAP: The station is materially more readable than the old open greybox, but it is not yet the full dense abandoned concourse in the reference.
+KNOWN GAP: The station is now built from the modular kit rather than scaled engine primitives, but it is not yet the full dense abandoned concourse in the reference: the prop vocabulary is the battlefield kit reused indoors, not a purpose-built transit set.
 
 PERFORMANCE: No visual collision/nav cost; limited lights and primitive count. Requires real GPU/draw-call/texture validation on desktop and mobile.
 
@@ -80,6 +88,7 @@ GAME LOCATION: Runtime target around X 14,200–18,100; preview with `ArtTarget=
 IMPLEMENTED:
 
 - enormous vertical fins, nested frames, suspended volumes, dark voids, and a small human expedition walkway;
+- `Scripts/BuildCathedralPresentationLevel.py` authors `/Game/Ashes/Environment/Cathedral/L_Cathedral_Presentation` (167 actors, 0 missing assets) from the `SM_Erebus_*` kit: a colonnade of oversized heavy columns, vault beams and overhangs, facade fins, monoliths in the side voids, the axial towers and spires at the far end, the terminal chamber, and the collapsing escape route. The director streams it at the `CathedralApproach` anchor and skips `BuildCathedralArtTarget`;
 - cold selective light and haze/dust;
 - three original procedural glyph families using the documented primitive grammar;
 - expedition equipment and walkway provide scale references;

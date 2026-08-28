@@ -1288,10 +1288,13 @@ bool FAHObjective01PresentationAlignedTest::RunTest(const FString& Parameters)
 
 	// At sample points along the Objective 01 corridor, the visible presentation ground and
 	// the gameplay collision ground must occupy the same space (coherent coordinates).
-	// X=900/Y=0 would land on a greybox cover block (top Z=255), so that sample is
-	// offset in Y to probe the walkable floor next to it.
+	// X=900/Y=0 and X=2000/Y=0 both land on a greybox cover block rather than the floor
+	// (measured tops Z=255 and Z=309.8), so those samples are offset in Y to probe the
+	// walkable floor beside them. Probing a block top asserts nothing about ground
+	// alignment: it only asks whether presentation happens to sit at that height, which an
+	// oversized primitive slab used to satisfy by accident.
 	const TArray<FVector2D> SamplePoints = {
-		{-1400.0f, 0.0f}, {-1000.0f, 0.0f}, {-600.0f, 0.0f}, {0.0f, 0.0f}, {900.0f, 300.0f}, {2000.0f, 0.0f}
+		{-1400.0f, 0.0f}, {-1000.0f, 0.0f}, {-600.0f, 0.0f}, {0.0f, 0.0f}, {900.0f, 300.0f}, {2000.0f, 300.0f}
 	};
 	for (const FVector2D& Point : SamplePoints)
 	{
