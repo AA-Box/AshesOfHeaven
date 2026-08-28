@@ -26,10 +26,16 @@ ah_sha256() {
   fi
 }
 
-# Hash of the WORKING TREE contents (not the git index): a dirty tree must not be able to
-# record evidence that describes the committed state instead of what was actually tested.
+# Hash of the WORKING TREE contents, not the git index: a dirty tree must not be able to record
+# evidence that describes the committed state instead of what was actually tested.
+#
+# --others --exclude-standard is what makes the hash independent of STAGING state. With
+# --cached alone the file set is "what git tracks", so `git add` of a new source file changes
+# the hash after the fact and silently invalidates evidence recorded minutes earlier. That is
+# not hypothetical: it is how this function was first written, and CI caught it. A clean CI
+# checkout has no untracked files, so --others is empty there and the two agree.
 ah_inputs_hash() {
-  git ls-files -z -- Source Config Content Scripts '*.uproject' \
+  git ls-files -z --cached --others --exclude-standard -- Source Config Content Scripts '*.uproject' \
     | xargs -0 shasum -a 256 \
     | LC_ALL=C sort \
     | ah_sha256
