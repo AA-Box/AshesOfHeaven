@@ -43,6 +43,24 @@ def _contained(root, candidate):
     return target == root or target.startswith(root + os.sep)
 
 
+def saved_path(*parts):
+    """Join a path under the project's Saved directory.
+
+    Every write this script makes outside the content browser goes through here, so this is the
+    one place the destination is checked. `unreal` only exists inside the editor; stub it - which
+    is exactly what the tests do to import this module - and unreal.Paths returns a mock that
+    os.path.join happily accepts through __fspath__. The result is a literal
+    "MagicMock/mock.Paths.convert_relative_path_to_full()" directory in the working directory,
+    which is where a 193MB animation drop unpacked, three times, before anyone noticed.
+    """
+    root = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())
+    if not isinstance(root, str) or not os.path.isabs(root):
+        raise RuntimeError(
+            "the project Saved directory resolved to %r, which is not an absolute path. "
+            "This script writes only from inside a running editor." % (root,))
+    return os.path.join(root, *parts)
+
+
 def _safe_join(root, relative):
     """Join an archive-supplied relative path to root, or None if it tries to escape.
 
@@ -132,9 +150,7 @@ def extracted_dead_bodies():
     if not os.path.isfile(archive):
         REPORT.append("MISSING dead body archive")
         return None
-    target = os.path.join(
-        unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()),
-        "DeadBodySource")
+    target = saved_path("DeadBodySource")
     if not os.path.isdir(target) or not os.listdir(target):
         os.makedirs(target, exist_ok=True)
         extract_zip(archive, target)
@@ -187,9 +203,7 @@ def extracted_unity_pack():
     if not os.path.isfile(archive):
         REPORT.append("MISSING unitypackage")
         return None
-    target = os.path.join(
-        unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()),
-        "UnityDropSource")
+    target = saved_path("UnityDropSource")
     if os.path.isdir(target) and os.listdir(target):
         return target
     staging = target + "_raw"
@@ -404,9 +418,7 @@ def main():
     if unity:
         import_unity_props(unity)
 
-    report_path = os.path.join(
-        unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()),
-        "AnimationDropReport.txt")
+    report_path = saved_path("AnimationDropReport.txt")
     with open(report_path, "w") as handle:
         handle.write("\n".join(REPORT) + "\n")
     failures = [line for line in REPORT if line.startswith(("MISSING", "FAILED"))]
