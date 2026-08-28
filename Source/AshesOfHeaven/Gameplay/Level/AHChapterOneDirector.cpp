@@ -9,6 +9,9 @@
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
 #include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Checkpoints/AHCheckpointActor.h"
+#include "Gameplay/Combat/AHArmorComponent.h"
+#include "Gameplay/Combat/AHHealthComponent.h"
+#include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Combat/AHCombatantCharacter.h"
@@ -926,6 +929,20 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 		GAHAutoplayDeathTaken = true;
 		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
 		{
+			// Autoplay advances objectives programmatically; it never walks the route, so no
+			// AAHCheckpointActor has been overlapped and the only capture on disk is the
+			// opening one - which RestoreFromState rejects as carrying no progress. Establish
+			// a real mid-level checkpoint first, through the actual trigger, or the death
+			// below proves the reload machinery and nothing about restored state.
+			SetAutoplayRunState(Player, 63.0f, 41.0f, 21, 96, 3);
+			if (!TriggerAutoplayCheckpoint(Player))
+			{
+				UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] autoplay_death aborted: no checkpoint actor reached, restore would prove nothing"));
+				return;
+			}
+			// Poison every restorable value, so the post-restore line can only report the
+			// captured numbers if they genuinely crossed the level reopen.
+			SetAutoplayRunState(Player, 7.0f, 0.0f, 0, 0, 0);
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_death objective=%d stage=%s"), DeathObjective, *UEnum::GetValueAsString(GetCurrentStage()));
 			UGameplayStatics::ApplyDamage(Player, 999999.0f, nullptr, this, nullptr);
 			return;
@@ -937,11 +954,20 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 	// covers Director -> mission-failed banner -> fade -> ReloadLatestCheckpoint -> restored
 	// attempt, and proves the restored attempt gets the full window back rather than the
 	// remainder that would make the retry unwinnable.
+	// CathedralInterior, not merely "countdown active": it is the first stage inside the timed
+	// window that owns a checkpoint of its own (FailsafeOrder's definition points back at the
+	// CathedralApproach capture, which is stage-incompatible there). Capturing inside the
+	// window is what lets the reload prove the clock came back at its full value.
 	if (!GAHAutoplayFailsafeExpiryTaken
 		&& FParse::Param(FCommandLine::Get(), TEXT("LevelOneAutoplayFailsafeExpiry"))
-		&& Chapter && Chapter->IsCountdownActive())
+		&& Chapter && Chapter->IsCountdownActive()
+		&& GetCurrentStage() == EAHChapterStage::CathedralInterior)
 	{
 		GAHAutoplayFailsafeExpiryTaken = true;
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+		{
+			TriggerAutoplayCheckpoint(Player);
+		}
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_failsafe_expiry stage=%s remaining=%0.1f"), *UEnum::GetValueAsString(GetCurrentStage()), Chapter->GetCountdownSeconds());
 		Chapter->StartCountdown(0.25f);
 		return;
@@ -949,6 +975,45 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_step objective=%d/%d stage=%s"), Objectives->GetCurrentObjectiveIndex(), Objectives->GetObjectiveCount(), *UEnum::GetValueAsString(GetCurrentStage()));
 	CompleteCurrentObjective();
+}
+
+bool AAHChapterOneDirector::TriggerAutoplayCheckpoint(AAHCombatPlayerCharacter* Player)
+{
+	// Move the pawn onto the checkpoint actor rather than calling CaptureCheckpoint directly:
+	// the overlap path is the one the game actually uses, including its stage-compatibility
+	// guard, so a checkpoint that could not be captured in play is not silently faked here.
+	const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(GetCurrentStage());
+	for (TActorIterator<AAHCheckpointActor> It(GetWorld()); It; ++It)
+	{
+		if (It->CheckpointId != Definition.CheckpointId)
+		{
+			continue;
+		}
+		Player->SetActorLocation(It->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_checkpoint id=%s stage=%s"), *It->CheckpointId.ToString(), *UEnum::GetValueAsString(GetCurrentStage()));
+		return true;
+	}
+	return false;
+}
+
+void AAHChapterOneDirector::SetAutoplayRunState(AAHCombatPlayerCharacter* Player, float Health, float Armor, int32 Magazine, int32 Reserve, int32 Grenades)
+{
+	if (UAHHealthComponent* HealthComponent = Player->GetHealthComponent())
+	{
+		HealthComponent->SetHealth(Health);
+	}
+	if (UAHArmorComponent* ArmorComponent = Player->GetArmorComponent())
+	{
+		ArmorComponent->SetArmor(Armor);
+	}
+	if (UAHInventoryComponent* Inventory = Player->GetInventoryComponent())
+	{
+		FAHAmmoState Ammo;
+		Ammo.Magazine = Magazine;
+		Ammo.Reserve = Reserve;
+		Inventory->SetSavedAmmo(Ammo);
+		Inventory->AddGrenades(Grenades - Inventory->GetGrenades());
+	}
 }
 
 void AAHChapterOneDirector::BeginFailsafeExpiryFailure()

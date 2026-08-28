@@ -1,6 +1,9 @@
 #include "Gameplay/Game/AHChapterOneGameMode.h"
 #include "AshesOfHeaven.h"
 #include "Gameplay/Characters/AHCombatPlayerCharacter.h"
+#include "Gameplay/Combat/AHArmorComponent.h"
+#include "Gameplay/Combat/AHHealthComponent.h"
+#include "Gameplay/Combat/AHInventoryComponent.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTrigger.h"
 #include "Gameplay/Checkpoints/AHCheckpointSubsystem.h"
@@ -30,8 +33,16 @@ void AAHChapterOneGameMode::BeginPlay()
 	// The explicit -freshchapter/-resetprogress launch arguments work in every build
 	// configuration, including Shipping: without them a Shipping install can never clear a
 	// stale save. Normal launches (no argument) still restore the player's checkpoint.
-	const bool bFreshChapter = FParse::Param(FCommandLine::Get(), TEXT("freshchapter"))
-		|| FParse::Param(FCommandLine::Get(), TEXT("resetprogress"));
+	// One-shot, per process. The command line survives UGameplayStatics::OpenLevel, so without
+	// this latch every death or failsafe reload re-ran ResetProgress() and deleted the save the
+	// player had just earned: die once after launching with -freshchapter and the run silently
+	// restarts from the opening checkpoint instead of the last one. "Start this session fresh"
+	// must not mean "wipe my progress every time the level reloads".
+	static bool GAHFreshChapterConsumed = false;
+	const bool bFreshChapter = !GAHFreshChapterConsumed
+		&& (FParse::Param(FCommandLine::Get(), TEXT("freshchapter"))
+			|| FParse::Param(FCommandLine::Get(), TEXT("resetprogress")));
+	GAHFreshChapterConsumed = true;
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UAHChapterSubsystem* Chapter = GameInstance->GetSubsystem<UAHChapterSubsystem>())
@@ -132,6 +143,41 @@ void AAHChapterOneGameMode::RestoreCheckpointAfterSpawn()
 		}
 	}
 	LogObjective01SpatialState();
+	LogRestoredRunState();
+}
+
+void AAHChapterOneGameMode::LogRestoredRunState()
+{
+#if !UE_BUILD_SHIPPING
+	// Emitted after the restore settles, on the far side of a real UGameplayStatics::OpenLevel.
+	// The packaged E2E asserts against this line because it is the only place that reports what
+	// actually survived the level reopen into brand-new actors, rather than what an in-process
+	// test handed straight back to itself.
+	UWorld* World = GetWorld();
+	const AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(World, 0));
+	const UAHCheckpointSubsystem* Checkpoints = World ? World->GetSubsystem<UAHCheckpointSubsystem>() : nullptr;
+	const UAHChapterSubsystem* Chapter = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr;
+	if (!Player || !Checkpoints || !Chapter)
+	{
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] restored_state unavailable player=%d checkpoints=%d chapter=%d"), Player != nullptr, Checkpoints != nullptr, Chapter != nullptr);
+		return;
+	}
+	const FAHCombatCheckpointState& Runtime = Checkpoints->GetRuntimeState();
+	const FAHChapterState& State = Chapter->GetState();
+	const FAHAmmoState Ammo = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetSavedAmmo() : FAHAmmoState();
+	UE_LOG(LogAshesOfHeaven, Display,
+		TEXT("[LevelOneE2E] restored_state checkpoint=%s stage=%s objective=%d health=%.0f armor=%.0f ammo=%d/%d grenades=%d encounters=%d vehicleSpawned=%s countdown=%.1f"),
+		*Runtime.CheckpointId.ToString(),
+		*UEnum::GetValueAsString(State.Stage),
+		State.ObjectiveIndex,
+		Player->GetHealthComponent() ? Player->GetHealthComponent()->GetHealth() : -1.0f,
+		Player->GetArmorComponent() ? Player->GetArmorComponent()->GetArmor() : -1.0f,
+		Ammo.Magazine, Ammo.Reserve,
+		Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetGrenades() : -1,
+		State.CompletedEncounters.Num(),
+		State.Vehicle.bSpawned ? TEXT("true") : TEXT("false"),
+		State.CountdownSeconds);
+#endif
 }
 
 void AAHChapterOneGameMode::LogObjective01SpatialState()

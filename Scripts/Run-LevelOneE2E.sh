@@ -33,9 +33,15 @@ EXE="$APP/Contents/MacOS/AshesOfHeaven"
 PLAY_TIMEOUT="${AH_E2E_TIMEOUT:-420}"
 # Run 1 dies once at this objective and runs the failsafe clock out once, so a single packaged
 # run covers both real lifecycles: death -> level reopen -> GameMode restore, and countdown
-# expiry -> mission-failed banner -> fade -> checkpoint reload. Objective 2 is past the opening
-# capture, so the checkpoint being restored carries real progress.
-DEATH_OBJECTIVE="${AH_E2E_DEATH_OBJECTIVE:-2}"
+# expiry -> mission-failed banner -> fade -> checkpoint reload.
+#
+# Objective 5 is ManticoreSection, chosen because it owns a stage-compatible checkpoint AND has
+# the vehicle spawned, so the capture carries objective, inventory, encounter and Manticore
+# state. Autoplay walks the pawn into that checkpoint actor before dying: it advances objectives
+# programmatically and never travels the route, so without that step the only capture on disk is
+# the opening one, which RestoreFromState rejects as carrying no progress - the death would
+# prove the reload machinery and nothing about restored state.
+DEATH_OBJECTIVE="${AH_E2E_DEATH_OBJECTIVE:-5}"
 RELAUNCH_TIMEOUT="${AH_E2E_RELAUNCH_TIMEOUT:-180}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -131,6 +137,27 @@ assert_in_run1() {
   fi
 }
 RUN1_FAILED=0
+# Assert one pattern appears at a LATER line than another. Ordering matters here: the failsafe
+# clock already starts at 522 s on the first attempt, so a bare grep for that value passes
+# whether or not the reload restored it. Only "after the failure marker" proves the seam.
+assert_after() {
+  local earlier="$1" later="$2" description="$3"
+  local earlier_line later_line
+  # `|| true` on both: under `set -euo pipefail` a grep that matches nothing fails the
+  # pipeline and kills the script mid-assertion, so a missing line reported itself as silence
+  # instead of as the failure it is.
+  earlier_line="$(grep -nF "$earlier" "$RUN1_LOG" | head -1 | cut -d: -f1 || true)"
+  later_line="$(grep -nF "$later" "$RUN1_LOG" | awk -F: -v e="${earlier_line:-0}" '$1 > e {print $1; exit}' || true)"
+  if [ -n "$earlier_line" ] && [ -n "$later_line" ]; then
+    echo "    $description (line $later_line follows line $earlier_line)"
+  else
+    echo "ERROR: $description — no '$later' after '$earlier' in Run 1." >&2
+    RUN1_FAILED=1
+  fi
+}
+
+assert_in_run1 "[LevelOneE2E] autoplay_checkpoint" "a real mid-level checkpoint was captured through its trigger"
+assert_in_run1 "[Phase3.2][Checkpoint] capture id=Ch01_Manticore objective=5" "that capture recorded objective 5, not the opening checkpoint"
 assert_in_run1 "[LevelOneE2E] autoplay_death" "the player died during the run"
 assert_in_run1 "[Phase3.2][Player] death restart_scheduled=true" "death scheduled the real restart"
 assert_in_run1 "[Phase3.2][Player] death_restart_execute" "the restart executed and reopened the level"
@@ -148,13 +175,24 @@ else
   echo "    GameMode restored $RESTORES times (boot + death reload + failsafe reload)"
 fi
 
-# The retry after a failsafe failure must get the full window back, not the remainder.
-if grep -qF "[Phase3.2][Countdown] begin seconds=522.0" "$RUN1_LOG"; then
-  echo "    the restored attempt got the full failsafe window back"
-else
-  echo "ERROR: the restored attempt did not restart the failsafe clock at its full window." >&2
-  RUN1_FAILED=1
-fi
+# The payload has to survive the level reopen into brand-new actors. Every value below was set
+# before the capture and then poisoned (health 7, armour 0, no ammo, no grenades) before the
+# kill, so this line can only read back the captured numbers if they genuinely crossed.
+assert_after "[Phase3.2][Player] death_restart_execute" \
+  "[LevelOneE2E] restored_state checkpoint=Ch01_Manticore stage=EAHChapterStage::ManticoreSection objective=5 health=63 armor=41 ammo=21/96 grenades=3" \
+  "the full run payload survived the death reload"
+assert_after "[Phase3.2][Player] death_restart_execute" \
+  "vehicleSpawned=true" \
+  "Manticore state survived the death reload"
+
+# Same seam for the failsafe: a checkpoint is captured inside the timed window, so the restored
+# attempt must come back with the full clock rather than the remainder that was live at capture.
+assert_after "[Chapter][Failsafe] mission_failed reason=transmission_complete" \
+  "[LevelOneE2E] restored_state checkpoint=Ch01_Cathedral_Interior" \
+  "the failsafe failure restored its in-window checkpoint"
+assert_after "[Chapter][Failsafe] mission_failed reason=transmission_complete" \
+  "countdown=522.0" \
+  "the restored attempt got the full failsafe window back"
 
 if [ "$RUN1_FAILED" -ne 0 ]; then
   echo "Run 1 log: $RUN1_LOG" >&2
