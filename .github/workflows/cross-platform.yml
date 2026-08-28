@@ -25,6 +25,9 @@ jobs:
   automation-tests:
     if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5]
+    # Without a timeout an unregistered self-hosted runner leaves the job queued rather than
+    # failing, which reads as "still running" instead of "the gate is not configured".
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Run Unreal automation suite
@@ -55,6 +58,7 @@ jobs:
   macos-shipping:
     if: ${{ vars.UNREAL_ENGINE_MAC_ROOT != '' }}
     runs-on: [self-hosted, macOS, UE5]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Build macOS Shipping archive
@@ -82,3 +86,85 @@ jobs:
           UE_ROOT: ${{ vars.UNREAL_ENGINE_IOS_ROOT }}
           AH_IOS_DISTRIBUTION: "0"
         run: ./Scripts/Build-iOS.sh
+
+  # The packaged campaign lifecycle: package -> play -> complete -> quit -> relaunch -> still
+  # complete. Not in required-checks: it packages a full Development build and launches the
+  # game twice, which is too heavy for every pull request. Run it before a release, or when
+  # anything touches save, checkpoint or chapter-completion code.
+  packaged-level-one-e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.UNREAL_ENGINE_MAC_ROOT != '' }}
+    runs-on: [self-hosted, macOS, UE5]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packaged Level One end-to-end
+        env:
+          UE_ROOT: ${{ vars.UNREAL_ENGINE_MAC_ROOT }}
+        run: ./Scripts/Run-LevelOneE2E.sh
+      - name: Upload playthrough logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: level-one-e2e-logs
+          path: Saved/Logs/LevelOneE2E-*.log
+          if-no-files-found: warn
+
+  # THE required check. Mark exactly this job as required in branch protection.
+  #
+  # automation-tests and macos-shipping are gated on vars.UNREAL_ENGINE_MAC_ROOT and are
+  # SKIPPED whenever no self-hosted UE5/macOS runner is configured. This repository is public,
+  # and a self-hosted runner on a public repository executes fork-authored code on the machine
+  # it is registered to, so running one is a real risk rather than an oversight - and a laptop
+  # that is not always online would turn every gated job into a timeout instead of a result.
+  #
+  # So a skip is tolerated here, and the claim it would have made is checked a different way:
+  # source-validation (hosted, always runs) verifies Docs/automation-evidence.json against a
+  # hash of Source, Config, Content, Scripts and the .uproject. Edit gameplay code without
+  # re-running the suite and that check fails. What is NOT tolerated is a gated job that ran
+  # and failed, or a skipped job whose absence is not covered by evidence.
+  required-checks:
+    if: always()
+    needs: [source-validation, automation-tests, macos-shipping]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the merge gate actually reached a verdict
+        env:
+          SOURCE_VALIDATION: ${{ needs.source-validation.result }}
+          AUTOMATION_TESTS: ${{ needs.automation-tests.result }}
+          MACOS_SHIPPING: ${{ needs.macos-shipping.result }}
+        run: |
+          set -euo pipefail
+          status=0
+
+          # source-validation is unconditional and carries the automation-evidence check.
+          echo "SOURCE_VALIDATION = $SOURCE_VALIDATION"
+          if [ "$SOURCE_VALIDATION" != "success" ]; then
+            status=1
+            echo "::error::source-validation did not succeed (result=$SOURCE_VALIDATION). It is unconditional, so this is a real failure."
+          fi
+
+          # A runner-gated job may be skipped, but must never be red - and each job is covered
+          # by its OWN evidence file, verified by source-validation above. The automation
+          # evidence does NOT cover Shipping: Run-AutomationTests.sh only builds
+          # AshesOfHeavenEditor Mac Development, so without a separate record a change that
+          # breaks Mac Shipping alone would merge on a green gate.
+          covers_AUTOMATION_TESTS="Docs/automation-evidence.json"
+          covers_MACOS_SHIPPING="Docs/shipping-evidence.json"
+          for job in AUTOMATION_TESTS MACOS_SHIPPING; do
+            result="${!job}"
+            evidence_var="covers_$job"
+            evidence="${!evidence_var}"
+            echo "$job = $result"
+            case "$result" in
+              success) ;;
+              skipped)
+                echo "::notice::$job was skipped (no self-hosted UE5/macOS runner configured). Its claim is covered by $evidence, which source-validation verified against this tree."
+                ;;
+              *)
+                status=1
+                echo "::error::$job ran and did not succeed (result=$result)."
+                ;;
+            esac
+          done
+
+          exit "$status"

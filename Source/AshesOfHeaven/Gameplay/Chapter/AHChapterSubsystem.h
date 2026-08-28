@@ -76,8 +76,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Chapter")
 	void StopCountdown();
 
+	/** Returns true on the single tick the failsafe clock reaches zero, so the caller can fail the mission. */
 	UFUNCTION(BlueprintCallable, Category="Chapter")
-	void TickCountdown(float DeltaSeconds);
+	bool TickCountdown(float DeltaSeconds);
 
 	UFUNCTION(BlueprintCallable, Category="Chapter")
 	void SetFailsafeConfirmed(bool bConfirmed);

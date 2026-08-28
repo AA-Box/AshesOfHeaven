@@ -18,6 +18,18 @@
 
 bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 {
+	// Re-entrancy guard. RestoreFromState teleports the player to the saved transform, which is
+	// usually standing on the very AAHCheckpointActor that wrote it, and the teleport fires
+	// OnTriggerBeginOverlap synchronously. Without this, the overlap captured the freshly
+	// spawned pawn's DEFAULT health/armour/ammo/grenades over RuntimeState - the exact values
+	// the restore was midway through applying - and then restored those defaults instead.
+	// Only visible after a real level reopen, which is why an in-process restore never saw it.
+	if (bRestoreInProgress)
+	{
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Spatial][Checkpoint] ignored capture id=%s: a restore is in progress"), *CheckpointId.ToString());
+		return false;
+	}
+
 	AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
 	UAHPlatformSaveSubsystem* Save = GetWorld()->GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>();
 	UAHObjectiveSubsystem* Objectives = GetWorld()->GetSubsystem<UAHObjectiveSubsystem>();
@@ -70,6 +82,13 @@ bool UAHCheckpointSubsystem::CaptureCheckpoint(FName CheckpointId)
 	}
 	RuntimeState.ChapterState = Chapter->GetState();
 	RuntimeState.ChapterState.Stage = CheckpointDefinition->Stage;
+	// The failsafe clock is a per-attempt deadline, not a global one. Persisting the live
+	// remainder would let a checkpoint captured at 00:05 restore into an unwinnable loop now
+	// that expiry actually fails the mission.
+	if (RuntimeState.ChapterState.bCountdownActive)
+	{
+		RuntimeState.ChapterState.CountdownSeconds = AHChapterStateConstants::FailsafeCountdownSeconds;
+	}
 	if (AAHManticoreVehicle* Manticore = Cast<AAHManticoreVehicle>(UGameplayStatics::GetActorOfClass(GetWorld(), AAHManticoreVehicle::StaticClass())))
 	{
 		RuntimeState.ChapterState.Vehicle = Manticore->GetVehicleState();
@@ -205,6 +224,9 @@ bool UAHCheckpointSubsystem::RestoreFromState(const FAHCombatCheckpointState& St
 		ObjectPool->ReleaseAllActive();
 	}
 
+	// Held across every write below, not just the teleport: the pawn is moved onto a checkpoint
+	// trigger and its components are written in the same breath.
+	TGuardValue<bool> RestoreGuard(bRestoreInProgress, true);
 	Player->SetActorLocationAndRotation(RuntimeState.PlayerLocation, RuntimeState.PlayerRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	if (Player->GetHealthComponent())
 	{

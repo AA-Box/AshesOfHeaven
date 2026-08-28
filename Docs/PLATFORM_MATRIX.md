@@ -24,7 +24,7 @@ The table below remains evidence-gated. The current Phase 4/4.1 machine evidence
 | Launch | UNTESTED | PASS — fresh Development and Shipping packages stayed alive for 15-second normal Metal process smokes (2026-08-22) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Main menu | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | New game | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
-| Save/load | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Save/load | UNTESTED | AUTOMATED — packaged completion write + relaunch verified by `Scripts/Run-LevelOneE2E.sh`; human load-from-menu UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | FPS controls | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Controller | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Touch input | N/A | N/A | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
@@ -34,8 +34,8 @@ The table below remains evidence-gated. The current Phase 4/4.1 machine evidence
 | Manticore | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Dialogue | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Subtitles | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
-| Checkpoints | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
-| Chapter completion | UNTESTED | UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Checkpoints | UNTESTED | AUTOMATED — capture/restore incl. inventory, encounter and Manticore state (`CampaignE2E.DeathReloadRestoresRunState`); human death-in-combat UNTESTED | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
+| Chapter completion | UNTESTED | AUTOMATED — twelve objectives to `ChapterComplete`, persisted and surviving a process restart (`CampaignE2E.*`, `Scripts/Run-LevelOneE2E.sh`) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Suspend/resume | N/A | N/A | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 | Packaging | BLOCKED BY TOOLCHAIN | PASS — fresh Development and Shipping cook/package completed; deep strict codesign passed (2026-08-21) | BLOCKED BY TOOLCHAIN | BLOCKED BY TOOLCHAIN |
 
@@ -48,7 +48,43 @@ The table below remains evidence-gated. The current Phase 4/4.1 machine evidence
 - Result: process remained alive for approximately 20 seconds and was stopped with a controlled interrupt; `codesign --verify --deep --strict --verbose=2` passed.
 - Scope: this record proves compile/package/codesign/process launch only. It does not prove interactive combat, AI, touch/controller, checkpoint, death/restart, pickup, Manticore, dialogue, or Chapter completion behavior.
 
-Interactive combat and full end-to-end checkpoint progression still require a human play session. Windows, Android, and signed iOS artifacts require their corresponding external build/signing environments.
+The campaign lifecycle now has automated evidence, and it is worth being exact about what that
+does and does not cover.
+
+Covered without a human: `AshesOfHeaven.LevelOne.CampaignE2E.*` plays all twelve objectives on
+the real director, boards and fires the Manticore, inspects and confirms the failsafe terminal,
+takes a mid-run checkpoint and restores health/armour/ammo/grenades/objective/encounter/Manticore
+state after a simulated death, finishes the chapter, and — after destroying the world and the
+game instance — boots a second session through the real `AAHChapterOneGameMode` restore path and
+asserts Level One is still complete. `Scripts/Run-LevelOneE2E.sh` repeats the completion and
+relaunch halves across a real process boundary in a packaged Development build.
+
+How the automated half is enforced without a runner: work runs on a developer machine and
+records evidence against a hash of `Source`, `Config`, `Content`, `Scripts` and the
+`.uproject`; `source-validation` re-checks those hashes on a hosted runner on every pull
+request. There are **two** records, because they are two different claims:
+
+| Record | Written by | Covers |
+| --- | --- | --- |
+| `Docs/automation-evidence.json` | `Scripts/Run-AutomationTests.sh` | the `automation-tests` job |
+| `Docs/shipping-evidence.json` | `CLIENT_CONFIG=Shipping ./Scripts/Build-Mac.sh` | the `macos-shipping` job |
+
+The automation record deliberately does **not** cover Shipping: `Run-AutomationTests.sh` builds
+only `AshesOfHeavenEditor Mac Development` and never packages, so treating it as cover would let
+a change that breaks Mac Shipping alone merge on a green gate. The shipping record is written
+only by a Shipping package, only past every failure path, and asserts `config=Shipping` and
+`platform=Mac` so a Development package cannot masquerade as one.
+
+`automation-tests` and `macos-shipping` stay gated on `vars.UNREAL_ENGINE_MAC_ROOT` and run only
+where a self-hosted UE5/macOS runner exists — deliberately not this public repository, where a
+self-hosted runner would execute fork-authored code on the runner's machine.
+
+Still `UNTESTED`: everything a person does. Movement and aiming, whether an encounter is
+survivable or fair, difficulty, readability under motion, controller feel, subjective art match,
+and device performance. The packaged run is driven by `-LevelOneAutoplay` because synthetic
+keyboard and mouse input does not reach the packaged game on this platform; it proves the
+progression and persistence contract, not that the level plays well. Windows, Android, and signed
+iOS artifacts require their corresponding external build/signing environments.
 
 ## Current Phase 3.2 evidence record
 

@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=Scripts/ah-test-evidence.sh
+source "$SCRIPT_DIR/ah-test-evidence.sh"
 
 # A project path containing a space breaks the native-shader-library step of every cook.
 # FMacPlatformProcess::CreateProc splits the command line on spaces and truncates to 256 argv
@@ -122,7 +124,21 @@ fi
 # Replace rather than ditto-merge, so removed files never survive into the next package.
 rm -rf "$FINAL_APP" "$OUTPUT_ROOT/AshesOfHeaven-Mac-$CLIENT_CONFIG.app"
 ditto "$STAGED_APP" "$FINAL_APP"
-if ! cmp -s "$STAGED_APP/Contents/MacOS/AshesOfHeaven" "$FINAL_APP/Contents/MacOS/AshesOfHeaven"; then
+# UE names the executable inside the bundle after the target, and only Development drops the
+# config suffix - Shipping ships Contents/MacOS/AshesOfHeaven-Mac-Shipping. Hardcoding the
+# Development name made this guard compare two paths that do not exist in a Shipping bundle;
+# `cmp -s` on missing files exits non-zero, so every Shipping package failed here after a
+# successful compile, cook and stage. Resolve the name, and separate "missing" from "differs"
+# so a real packaging fault is never reported as a mismatch.
+if [[ "$CLIENT_CONFIG" == "Development" ]]; then
+  CLIENT_EXE="AshesOfHeaven"
+else
+  CLIENT_EXE="AshesOfHeaven-Mac-$CLIENT_CONFIG"
+fi
+for candidate in "$STAGED_APP/Contents/MacOS/$CLIENT_EXE" "$FINAL_APP/Contents/MacOS/$CLIENT_EXE"; do
+  [[ -f "$candidate" ]] || { echo "ERROR: packaged client executable not found at $candidate" >&2; exit 2; }
+done
+if ! cmp -s "$STAGED_APP/Contents/MacOS/$CLIENT_EXE" "$FINAL_APP/Contents/MacOS/$CLIENT_EXE"; then
   echo "ERROR: archived client differs from the staged client; the archive is not this cook." >&2
   exit 2
 fi
@@ -130,3 +146,25 @@ fi
   --staged-root "$PROJECT_ROOT/Saved/StagedBuilds/Mac" \
   --archive-root "$OUTPUT_ROOT"
 find "$OUTPUT_ROOT" -maxdepth 3 -name 'AshesOfHeaven.app' -print
+
+# Only a Shipping package may record shipping evidence, and only here - past every failure
+# path above, so a broken package cannot leave a green record behind. Development packages
+# (the Level One E2E harness) deliberately write nothing: they prove the game runs, not that
+# the shipping configuration compiles, cooks and archives.
+if [[ "$CLIENT_CONFIG" == "Shipping" ]]; then
+  cd "$PROJECT_ROOT"
+  python3 - "$(ah_inputs_hash)" "$AH_SHIPPING_EVIDENCE_FILE" "$ENGINE_ROOT" "$CLIENT_CONFIG" <<'PYSHIPPING'
+import json, os, pathlib, subprocess, sys
+
+inputs_hash, evidence_path, engine_root, client_config = sys.argv[1:5]
+pathlib.Path(evidence_path).write_text(json.dumps({
+    "inputs_hash": inputs_hash,
+    "config": client_config,
+    "platform": "Mac",
+    "engine": os.path.basename(engine_root.rstrip("/")),
+    "host": subprocess.run(["uname", "-sm"], capture_output=True, text=True).stdout.strip(),
+}, indent=2, sort_keys=True) + "\n")
+print(f"Recorded Mac Shipping evidence in {evidence_path} (inputs_hash={inputs_hash[:12]}...).")
+print("Commit it with the change it describes, or source-validation will reject the pull request.")
+PYSHIPPING
+fi

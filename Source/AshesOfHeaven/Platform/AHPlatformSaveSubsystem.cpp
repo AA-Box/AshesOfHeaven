@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Platform/AHPlatformSaveSubsystem.h"
+#include "AshesOfHeaven.h"
 #include "Platform/AHPlatformSettings.h"
 #include "Gameplay/WorldState/AHWorldStateSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -107,6 +108,41 @@ bool UAHPlatformSaveSubsystem::SaveCombatCheckpoint(const FAHCombatCheckpointSta
 	SaveObject->CombatState.bValid = true;
 	CaptureLiveWorldState(SaveObject);
 	return UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
+}
+
+bool UAHPlatformSaveSubsystem::MarkChapterComplete(FName ChapterId)
+{
+	if (ChapterId == NAME_None)
+	{
+		return false;
+	}
+	// Load-then-mutate, so the write carries the existing checkpoint forward rather than
+	// replacing it: completion and "where the player was" are separate facts and both survive.
+	UAHSaveGame* SaveObject = GetOrCreateSaveObject();
+	if (!SaveObject)
+	{
+		return false;
+	}
+	if (SaveObject->CompletedChapters.Contains(ChapterId))
+	{
+		return true;
+	}
+	SaveObject->CompletedChapters.AddUnique(ChapterId);
+	SaveObject->SaveVersion = AHChapterStateConstants::CurrentSaveVersion;
+	CaptureLiveWorldState(SaveObject);
+	const bool bSaved = UGameplayStatics::SaveGameToSlot(SaveObject, GetSaveSlotName(), 0);
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Campaign][Save] chapter_complete id=%s result=%s"), *ChapterId.ToString(), bSaved ? TEXT("success") : TEXT("failure"));
+	return bSaved;
+}
+
+bool UAHPlatformSaveSubsystem::IsChapterComplete(FName ChapterId) const
+{
+	if (ChapterId == NAME_None)
+	{
+		return false;
+	}
+	const UAHSaveGame* SaveObject = LoadSaveObject();
+	return SaveObject && SaveObject->CompletedChapters.Contains(ChapterId);
 }
 
 bool UAHPlatformSaveSubsystem::LoadCombatCheckpoint(FAHCombatCheckpointState& State) const

@@ -499,6 +499,19 @@ void UAHHUDRootWidget::ShowMissionComplete()
 	PlayPresentationAnimation(ObjectiveRevealAnimation);
 }
 
+void UAHHUDRootWidget::ShowMissionFailed(const FText& Headline)
+{
+	// No IsChapterComplete() guard here: this is the opposite outcome, and it is raised while
+	// the chapter is mid-stage.
+	SetText(MissionCompleteText, Headline);
+	ApplyVisibility(ChapterTitleWidget, true);
+	ApplyVisibility(MissionCompleteText, true);
+	ApplyVisibility(ObjectiveWidget, false);
+	ApplyVisibility(InteractionText, false);
+	ApplyVisibility(CountdownText, false);
+	PlayPresentationAnimation(ObjectiveRevealAnimation);
+}
+
 void UAHHUDRootWidget::HideMissionComplete()
 {
 	ApplyVisibility(MissionCompleteText, false);
