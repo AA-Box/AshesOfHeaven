@@ -70,7 +70,11 @@ void AAHCombatPlayerController::MaybeOpenFrontEndMenu()
 	{
 		return;
 	}
+	// -LevelOneAutoplay implies -NoFrontEnd. The front end opens paused and waits for input,
+	// and an unattended run has none, so leaving it up parks the world paused forever: no
+	// timers, no dialogue, no autoplay, and a packaged E2E that looks like a hang.
 	if (FParse::Param(FCommandLine::Get(), TEXT("NoFrontEnd")) ||
+		FParse::Param(FCommandLine::Get(), TEXT("LevelOneAutoplay")) ||
 		FCString::Strifind(FCommandLine::Get(), TEXT("-ArtTarget=")) != nullptr)
 	{
 		return;

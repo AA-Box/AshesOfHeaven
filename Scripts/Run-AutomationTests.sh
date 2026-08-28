@@ -9,6 +9,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=Scripts/ah-test-evidence.sh
+source "$SCRIPT_DIR/ah-test-evidence.sh"
 
 # FMacPlatformProcess::CreateProc splits command lines on spaces, so a project path with a
 # space breaks headless editor invocations. Drive them through a space-free symlink.
@@ -63,6 +65,10 @@ EDITOR_EXIT=$?
 set -e
 echo "UnrealEditor-Cmd exited with $EDITOR_EXIT (log: $LOG_FILE)"
 
+AH_EVIDENCE_COUNTS="$(mktemp)"
+export AH_EVIDENCE_COUNTS
+trap 'rm -f "$AH_EVIDENCE_COUNTS"' EXIT
+
 python3 - "$REPORT_DIR/index.json" "$MIN_LEVEL_ONE_TESTS" <<'PYREPORT'
 import json, os, sys, pathlib
 
@@ -101,4 +107,30 @@ if len(level_one) < min_level_one:
 if problems:
     sys.exit("ERROR: " + "; ".join(problems))
 print("Automation suite passed." + (f" ({len(failed)} known failure(s) tolerated)" if failed else ""))
+
+with open(os.environ["AH_EVIDENCE_COUNTS"], "w") as handle:
+    json.dump({"tests": len(tests), "failed": len(failed), "level_one": len(level_one)}, handle)
 PYREPORT
+
+# The run passed. Record it against a hash of the inputs that produced it, so a hosted runner
+# can tell on every pull request whether this result still describes the tree being merged.
+# Only reached when the parser above exited zero, so a failing suite can never write evidence.
+cd "$PROJECT_ROOT"
+python3 - "$(ah_inputs_hash)" "$AH_EVIDENCE_COUNTS" "$AH_EVIDENCE_FILE" "$ENGINE_ROOT" <<'PYEVIDENCE'
+import json, os, pathlib, subprocess, sys
+
+inputs_hash, counts_path, evidence_path, engine_root = sys.argv[1:5]
+counts = json.loads(pathlib.Path(counts_path).read_text())
+evidence = {
+    "inputs_hash": inputs_hash,
+    "tests": counts["tests"],
+    "failed": counts["failed"],
+    "level_one": counts["level_one"],
+    "engine": os.path.basename(engine_root.rstrip("/")),
+    "host": subprocess.run(["uname", "-sm"], capture_output=True, text=True).stdout.strip(),
+    "known_failures": sorted(n.strip() for n in os.environ.get("AH_KNOWN_FAILURES", "").split(",") if n.strip()),
+}
+pathlib.Path(evidence_path).write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+print(f"Recorded automation evidence in {evidence_path} (inputs_hash={inputs_hash[:12]}...).")
+print("Commit it with the change it describes, or source-validation will reject the pull request.")
+PYEVIDENCE
