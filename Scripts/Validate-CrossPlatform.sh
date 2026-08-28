@@ -22,6 +22,7 @@ required=(
   "Scripts/Run-AutomationTests.sh"
   "Scripts/ah-test-evidence.sh"
   "Docs/automation-evidence.json"
+  "Docs/shipping-evidence.json"
   "Docs/PSO_AND_SHADER_PIPELINE.md"
   # Material families asserted by AshesOfHeaven.LevelOne.UnrealMaterialContract. That test
   # needs an editor/commandlet; this check catches a deleted instance on any runner.
@@ -83,30 +84,46 @@ done
 # execute on the runner's machine). The suite therefore runs on a developer machine and records
 # its result against a hash of the inputs; this is where that claim is checked. Without it,
 # "automated tests pass before merge" is exactly the unverified claim it was before.
-echo "== automation evidence"
+echo "== recorded evidence"
 expected_hash="$(ah_inputs_hash)"
-python3 - "$AH_EVIDENCE_FILE" "$expected_hash" <<'PYEVIDENCE'
+python3 - "$expected_hash" "$AH_EVIDENCE_FILE" "$AH_SHIPPING_EVIDENCE_FILE" <<'PYEVIDENCE'
 import json, pathlib, sys
 
-evidence_path, expected_hash = pathlib.Path(sys.argv[1]), sys.argv[2]
-try:
-    evidence = json.loads(evidence_path.read_text())
-except (OSError, ValueError) as error:
-    sys.exit(f"ERROR: cannot read {evidence_path}: {error}")
+expected_hash = sys.argv[1]
+automation_path, shipping_path = pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
 
-for key in ("inputs_hash", "tests", "failed", "level_one"):
-    if key not in evidence:
-        sys.exit(f"ERROR: {evidence_path} is missing '{key}'.")
 
-if evidence["inputs_hash"] != expected_hash:
-    sys.exit(
-        f"ERROR: {evidence_path} describes a different tree.\n"
-        f"  recorded: {evidence['inputs_hash']}\n"
-        f"  this PR:  {expected_hash}\n"
-        "  Source, Config, Content, Scripts or the .uproject changed since the automation\n"
-        "  suite last ran. Re-run ./Scripts/Run-AutomationTests.sh and commit the refreshed\n"
-        "  Docs/automation-evidence.json with your change."
-    )
+def load(path, required_keys):
+    try:
+        evidence = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        sys.exit(f"ERROR: cannot read {path}: {error}")
+    for key in required_keys:
+        if key not in evidence:
+            sys.exit(f"ERROR: {path} is missing '{key}'.")
+    if evidence["inputs_hash"] != expected_hash:
+        sys.exit(
+            f"ERROR: {path} describes a different tree.\n"
+            f"  recorded: {evidence['inputs_hash']}\n"
+            f"  this PR:  {expected_hash}\n"
+            "  Source, Config, Content, Scripts or the .uproject changed since it was written."
+        )
+    return evidence
+
+
+# macos-shipping is a SEPARATE claim: Run-AutomationTests.sh only builds
+# AshesOfHeavenEditor Mac Development, so the automation evidence says nothing about whether
+# the Shipping configuration still compiles, cooks and archives. Re-run
+# `CLIENT_CONFIG=Shipping ./Scripts/Build-Mac.sh` and commit the refreshed file.
+shipping = load(shipping_path, ("inputs_hash", "config", "platform"))
+if shipping["config"] != "Shipping" or shipping["platform"] != "Mac":
+    sys.exit(f"ERROR: {shipping_path} is not a Mac Shipping record "
+             f"(config={shipping.get('config')}, platform={shipping.get('platform')}).")
+print(f"Mac Shipping evidence matches this tree "
+      f"({shipping.get('engine', 'unknown engine')} on {shipping.get('host', 'unknown host')})")
+
+evidence_path, expected_hash = automation_path, expected_hash
+evidence = load(evidence_path, ("inputs_hash", "tests", "failed", "level_one"))
 
 if evidence["failed"] != len(evidence.get("known_failures", [])):
     sys.exit(f"ERROR: {evidence_path} records {evidence['failed']} unsuccessful test(s).")

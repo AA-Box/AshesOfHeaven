@@ -895,6 +895,16 @@ void AAHChapterOneDirector::HandleMissionComplete()
 	}
 }
 
+namespace
+{
+	// Process-global, deliberately: a death or a failsafe failure reopens the level, which
+	// destroys the director. A member would reset and the run would loop on the same beat
+	// forever. Globals outlive UGameplayStatics::OpenLevel within the process, which is the
+	// same reason GAHSkipFrontEndOnce is one.
+	bool GAHAutoplayDeathTaken = false;
+	bool GAHAutoplayFailsafeExpiryTaken = false;
+}
+
 void AAHChapterOneDirector::AdvanceAutoplay()
 {
 	if (!Objectives || Objectives->IsMissionComplete())
@@ -903,6 +913,40 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_finished missionComplete=%s stage=%s"), Objectives && Objectives->IsMissionComplete() ? TEXT("true") : TEXT("false"), *UEnum::GetValueAsString(GetCurrentStage()));
 		return;
 	}
+	// -LevelOneAutoplayDeathAt=<objective>: die once, through the real damage path, so the
+	// packaged run exercises the actual lifecycle - UAHHealthComponent death ->
+	// AAHCombatPlayerController::HandlePlayerDeath -> FinishDeathRestart ->
+	// ReloadLatestCheckpoint -> OpenLevel -> AAHChapterOneGameMode restore - rather than
+	// calling RestoreLatestCheckpoint directly the way an in-process fixture has to.
+	int32 DeathObjective = INDEX_NONE;
+	if (!GAHAutoplayDeathTaken
+		&& FParse::Value(FCommandLine::Get(), TEXT("LevelOneAutoplayDeathAt="), DeathObjective)
+		&& Objectives->GetCurrentObjectiveIndex() == DeathObjective)
+	{
+		GAHAutoplayDeathTaken = true;
+		if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0)))
+		{
+			UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_death objective=%d stage=%s"), DeathObjective, *UEnum::GetValueAsString(GetCurrentStage()));
+			UGameplayStatics::ApplyDamage(Player, 999999.0f, nullptr, this, nullptr);
+			return;
+		}
+		UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] autoplay_death skipped: no player pawn"));
+	}
+
+	// -LevelOneAutoplayFailsafeExpiry: run the failsafe clock out once, so the packaged run
+	// covers Director -> mission-failed banner -> fade -> ReloadLatestCheckpoint -> restored
+	// attempt, and proves the restored attempt gets the full window back rather than the
+	// remainder that would make the retry unwinnable.
+	if (!GAHAutoplayFailsafeExpiryTaken
+		&& FParse::Param(FCommandLine::Get(), TEXT("LevelOneAutoplayFailsafeExpiry"))
+		&& Chapter && Chapter->IsCountdownActive())
+	{
+		GAHAutoplayFailsafeExpiryTaken = true;
+		UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_failsafe_expiry stage=%s remaining=%0.1f"), *UEnum::GetValueAsString(GetCurrentStage()), Chapter->GetCountdownSeconds());
+		Chapter->StartCountdown(0.25f);
+		return;
+	}
+
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_step objective=%d/%d stage=%s"), Objectives->GetCurrentObjectiveIndex(), Objectives->GetObjectiveCount(), *UEnum::GetValueAsString(GetCurrentStage()));
 	CompleteCurrentObjective();
 }

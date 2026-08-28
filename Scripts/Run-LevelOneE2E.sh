@@ -31,6 +31,11 @@ APP_ROOT="${AH_E2E_APP_ROOT:-$PROJECT_ROOT/Builds/macOS-Development}"
 APP="$APP_ROOT/AshesOfHeaven.app"
 EXE="$APP/Contents/MacOS/AshesOfHeaven"
 PLAY_TIMEOUT="${AH_E2E_TIMEOUT:-420}"
+# Run 1 dies once at this objective and runs the failsafe clock out once, so a single packaged
+# run covers both real lifecycles: death -> level reopen -> GameMode restore, and countdown
+# expiry -> mission-failed banner -> fade -> checkpoint reload. Objective 2 is past the opening
+# capture, so the checkpoint being restored carries real progress.
+DEATH_OBJECTIVE="${AH_E2E_DEATH_OBJECTIVE:-2}"
 RELAUNCH_TIMEOUT="${AH_E2E_RELAUNCH_TIMEOUT:-180}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -99,7 +104,8 @@ rm -f "$SAVE_FILE"
 # ---- Run 1: a complete playthrough, from a guaranteed-fresh chapter. -------------------
 launch_and_await "Run 1: playing Level One to completion" \
   "[LevelOneE2E] autoplay_finished missionComplete=true" "$PLAY_TIMEOUT" \
-  -freshchapter -LevelOneAutoplay -nullrhi -nosound -unattended
+  -freshchapter -LevelOneAutoplay "-LevelOneAutoplayDeathAt=$DEATH_OBJECTIVE" \
+  -LevelOneAutoplayFailsafeExpiry -nullrhi -nosound -unattended
 
 RUN1_LOG="$PROJECT_ROOT/Saved/Logs/LevelOneE2E-Run1.log"
 mkdir -p "$(dirname "$RUN1_LOG")"
@@ -111,6 +117,49 @@ grep -qF "[Campaign][Save] chapter_complete id=Ch01 result=success" "$RUN1_LOG" 
   exit 1
 }
 echo "    campaign completion written"
+
+# Both lifecycles have to have actually happened inside that run. Asserting only the final
+# completion would pass even if the death and the failsafe expiry had silently no-opped.
+assert_in_run1() {
+  local pattern="$1"
+  local description="$2"
+  if grep -qF "$pattern" "$RUN1_LOG"; then
+    echo "    $description"
+  else
+    echo "ERROR: $description did not happen ('$pattern' absent from Run 1)." >&2
+    RUN1_FAILED=1
+  fi
+}
+RUN1_FAILED=0
+assert_in_run1 "[LevelOneE2E] autoplay_death" "the player died during the run"
+assert_in_run1 "[Phase3.2][Player] death restart_scheduled=true" "death scheduled the real restart"
+assert_in_run1 "[Phase3.2][Player] death_restart_execute" "the restart executed and reopened the level"
+assert_in_run1 "[LevelOneE2E] autoplay_failsafe_expiry" "the failsafe clock was run out"
+assert_in_run1 "[Chapter][Countdown] failsafe_expired" "the failsafe clock reported expiry"
+assert_in_run1 "[Chapter][Failsafe] mission_failed reason=transmission_complete" "expiry failed the mission"
+
+# The level must be reopened at least twice after the initial boot (once per lifecycle), and
+# each reopen re-runs AAHChapterOneGameMode's restore path.
+RESTORES="$(grep -cF "[Phase4.4][Runtime]" "$RUN1_LOG" || true)"
+if [ "$RESTORES" -lt 3 ]; then
+  echo "ERROR: expected at least 3 GameMode restores in Run 1 (boot + death reload + failsafe reload), saw $RESTORES." >&2
+  RUN1_FAILED=1
+else
+  echo "    GameMode restored $RESTORES times (boot + death reload + failsafe reload)"
+fi
+
+# The retry after a failsafe failure must get the full window back, not the remainder.
+if grep -qF "[Phase3.2][Countdown] begin seconds=522.0" "$RUN1_LOG"; then
+  echo "    the restored attempt got the full failsafe window back"
+else
+  echo "ERROR: the restored attempt did not restart the failsafe clock at its full window." >&2
+  RUN1_FAILED=1
+fi
+
+if [ "$RUN1_FAILED" -ne 0 ]; then
+  echo "Run 1 log: $RUN1_LOG" >&2
+  exit 1
+fi
 
 # The process must be gone before the save file is judged: this is the "quit the game" step.
 terminate_game

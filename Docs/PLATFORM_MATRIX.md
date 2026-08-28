@@ -59,12 +59,25 @@ game instance — boots a second session through the real `AAHChapterOneGameMode
 asserts Level One is still complete. `Scripts/Run-LevelOneE2E.sh` repeats the completion and
 relaunch halves across a real process boundary in a packaged Development build.
 
-How the automated half is enforced without a runner: the suite runs on a developer machine and
-records `Docs/automation-evidence.json` against a hash of `Source`, `Config`, `Content`,
-`Scripts` and the `.uproject`; `source-validation` re-checks that hash on a hosted runner on
-every pull request. `automation-tests` and `macos-shipping` stay gated on
-`vars.UNREAL_ENGINE_MAC_ROOT` and run only where a self-hosted UE5/macOS runner exists — which
-is deliberately not this public repository.
+How the automated half is enforced without a runner: work runs on a developer machine and
+records evidence against a hash of `Source`, `Config`, `Content`, `Scripts` and the
+`.uproject`; `source-validation` re-checks those hashes on a hosted runner on every pull
+request. There are **two** records, because they are two different claims:
+
+| Record | Written by | Covers |
+| --- | --- | --- |
+| `Docs/automation-evidence.json` | `Scripts/Run-AutomationTests.sh` | the `automation-tests` job |
+| `Docs/shipping-evidence.json` | `CLIENT_CONFIG=Shipping ./Scripts/Build-Mac.sh` | the `macos-shipping` job |
+
+The automation record deliberately does **not** cover Shipping: `Run-AutomationTests.sh` builds
+only `AshesOfHeavenEditor Mac Development` and never packages, so treating it as cover would let
+a change that breaks Mac Shipping alone merge on a green gate. The shipping record is written
+only by a Shipping package, only past every failure path, and asserts `config=Shipping` and
+`platform=Mac` so a Development package cannot masquerade as one.
+
+`automation-tests` and `macos-shipping` stay gated on `vars.UNREAL_ENGINE_MAC_ROOT` and run only
+where a self-hosted UE5/macOS runner exists — deliberately not this public repository, where a
+self-hosted runner would execute fork-authored code on the runner's machine.
 
 Still `UNTESTED`: everything a person does. Movement and aiming, whether an encounter is
 survivable or fair, difficulty, readability under motion, controller feel, subjective art match,

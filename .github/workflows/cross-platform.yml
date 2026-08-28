@@ -143,14 +143,22 @@ jobs:
             echo "::error::source-validation did not succeed (result=$SOURCE_VALIDATION). It is unconditional, so this is a real failure."
           fi
 
-          # A runner-gated job may be skipped, but must never be red.
+          # A runner-gated job may be skipped, but must never be red - and each job is covered
+          # by its OWN evidence file, verified by source-validation above. The automation
+          # evidence does NOT cover Shipping: Run-AutomationTests.sh only builds
+          # AshesOfHeavenEditor Mac Development, so without a separate record a change that
+          # breaks Mac Shipping alone would merge on a green gate.
+          covers_AUTOMATION_TESTS="Docs/automation-evidence.json"
+          covers_MACOS_SHIPPING="Docs/shipping-evidence.json"
           for job in AUTOMATION_TESTS MACOS_SHIPPING; do
             result="${!job}"
+            evidence_var="covers_$job"
+            evidence="${!evidence_var}"
             echo "$job = $result"
             case "$result" in
               success) ;;
               skipped)
-                echo "::notice::$job was skipped (no self-hosted UE5/macOS runner configured). Its claim is covered by Docs/automation-evidence.json, which source-validation verified against this tree."
+                echo "::notice::$job was skipped (no self-hosted UE5/macOS runner configured). Its claim is covered by $evidence, which source-validation verified against this tree."
                 ;;
               *)
                 status=1
