@@ -11,6 +11,7 @@
 #include "Gameplay/Combat/AHCombatantCharacter.h"
 #include "Gameplay/Encounters/AHCombatEncounter.h"
 #include "Gameplay/Enemies/AHEnemyAssetSubsystem.h"
+#include "Gameplay/Enemies/AHEncounterDefinition.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
@@ -27,6 +28,55 @@ bool FAHEnemyAssetManifestTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Every enemy and encounter manifest entry resolves and is cook-safe"),
 		UAHEnemyAssetValidationCommandlet::ValidateEnemyAssetManifest(*GLog, ValidatedAssets));
 	TestTrue(TEXT("Pilgrim, Warden, and their encounter manifests were validated"), ValidatedAssets >= 4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHEncounterSpawnSequenceTest,
+	"AshesOfHeaven.Assets.Enemies.SpawnSequenceMixesRoster",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHEncounterSpawnSequenceTest::RunTest(const FString& Parameters)
+{
+	UAHEncounterDefinition* Definition = NewObject<UAHEncounterDefinition>();
+	Definition->EncounterId = TEXT("SpawnSequenceTest");
+	Definition->DeterministicSeed = 4242;
+	Definition->PrimaryEnemy = AHEnemyAssets::EnemyId(TEXT("Pilgrim"));
+	Definition->AdditionalEnemies = {
+		AHEnemyAssets::EnemyId(TEXT("Warden")),
+		AHEnemyAssets::EnemyId(TEXT("Hound")),
+	};
+
+	TArray<FPrimaryAssetId> Sequence;
+	Definition->BuildSpawnSequence(8, Sequence);
+	TestEqual(TEXT("Sequence fills the requested count"), Sequence.Num(), 8);
+	for (const FPrimaryAssetId& Expected : Definition->AdditionalEnemies)
+	{
+		TestTrue(TEXT("Every listed archetype appears at least once"), Sequence.Contains(Expected));
+	}
+	TestTrue(TEXT("The primary archetype still appears"), Sequence.Contains(Definition->PrimaryEnemy));
+
+	// A checkpoint restores an encounter by rebuilding its draws, so the same inputs have to
+	// produce the same line-up.
+	TArray<FPrimaryAssetId> Repeat;
+	Definition->BuildSpawnSequence(8, Repeat);
+	TestTrue(TEXT("The same seed rebuilds the same line-up"), Sequence == Repeat);
+
+	// Different encounters carry different seeds; that is what makes two fights differ.
+	Definition->DeterministicSeed = 99;
+	TArray<FPrimaryAssetId> Reseeded;
+	Definition->BuildSpawnSequence(8, Reseeded);
+	TestTrue(TEXT("A different seed draws a different line-up"), Sequence != Reseeded);
+
+	// A single-archetype encounter must stay exactly what it was authored as.
+	Definition->AdditionalEnemies.Reset();
+	TArray<FPrimaryAssetId> SoloRoster;
+	Definition->BuildSpawnSequence(4, SoloRoster);
+	TestEqual(TEXT("A lone archetype fills every slot"), SoloRoster.Num(), 4);
+	for (const FPrimaryAssetId& EnemyId : SoloRoster)
+	{
+		TestEqual(TEXT("A lone archetype is the only thing spawned"), EnemyId, Definition->PrimaryEnemy);
+	}
 	return true;
 }
 
@@ -178,7 +228,8 @@ namespace AHEnemyAssetTests
 			case 2:
 				if (!S.bLastCallback) return !TimedOut() ? false : true;
 				S.Test->TestTrue(TEXT("encounter prediction preload succeeds"), S.bLastSuccess);
-				S.Test->TestEqual(TEXT("mixed encounter predicts Pilgrim and Warden"), S.LastDefinitionCount, 2);
+				// The mixed encounter is the whole creature roster: Pilgrim, Warden, Hound, Spider.
+				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 4);
 				S.Assets->ReleaseEncounterAssets(S.EncounterLease);
 				S.EncounterLease.Invalidate();
 				S.Test->TestEqual(TEXT("encounter release drops both enemy references"), S.Assets->GetResidentEnemyCount(), 0);
