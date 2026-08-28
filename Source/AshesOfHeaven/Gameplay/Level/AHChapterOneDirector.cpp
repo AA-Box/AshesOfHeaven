@@ -935,6 +935,17 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 			// a real mid-level checkpoint first, through the actual trigger, or the death
 			// below proves the reload machinery and nothing about restored state.
 			SetAutoplayRunState(Player, 63.0f, 41.0f, 21, 96, 3);
+			// Manticore state is part of what a checkpoint must carry, and RestoreVehicleState
+			// puts back location, rotation, health and bDestroyed. Damage the vehicle to a
+			// distinctive value through the real TakeDamage path (500 - 213 = 287) so the
+			// restored figure cannot be confused with the spawn default. bOccupied is captured
+			// but deliberately NOT restored - a reload never resumes you inside the vehicle -
+			// so it is not asserted.
+			if (Manticore)
+			{
+				UGameplayStatics::ApplyDamage(Manticore, 213.0f, nullptr, this, nullptr);
+				UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_vehicle_seed health=%0.1f"), Manticore->GetVehicleState().Health);
+			}
 			if (!TriggerAutoplayCheckpoint(Player))
 			{
 				UE_LOG(LogAshesOfHeaven, Warning, TEXT("[LevelOneE2E] autoplay_death aborted: no checkpoint actor reached, restore would prove nothing"));
@@ -943,6 +954,11 @@ void AAHChapterOneDirector::AdvanceAutoplay()
 			// Poison every restorable value, so the post-restore line can only report the
 			// captured numbers if they genuinely crossed the level reopen.
 			SetAutoplayRunState(Player, 7.0f, 0.0f, 0, 0, 0);
+			if (Manticore)
+			{
+				UGameplayStatics::ApplyDamage(Manticore, 100.0f, nullptr, this, nullptr);
+				Manticore->SetActorLocation(Manticore->GetActorLocation() + FVector(1500.0f, 0.0f, 0.0f));
+			}
 			UE_LOG(LogAshesOfHeaven, Display, TEXT("[LevelOneE2E] autoplay_death objective=%d stage=%s"), DeathObjective, *UEnum::GetValueAsString(GetCurrentStage()));
 			UGameplayStatics::ApplyDamage(Player, 999999.0f, nullptr, this, nullptr);
 			return;

@@ -178,12 +178,20 @@ fi
 # The payload has to survive the level reopen into brand-new actors. Every value below was set
 # before the capture and then poisoned (health 7, armour 0, no ammo, no grenades) before the
 # kill, so this line can only read back the captured numbers if they genuinely crossed.
+# ONE contiguous match, not a prefix plus a separate search for the tail. Split assertions do
+# not require the vehicle and encounter fields to belong to the same restore line, so a run
+# where they came from a different restore would still pass.
+#
+# The Manticore was damaged to 287 through the real TakeDamage path and then damaged further
+# and moved after capture, so vehicleHealth=287 can only be the restored figure. bOccupied is
+# captured but deliberately not restored - a reload never resumes you inside the vehicle - so
+# it is not asserted here; RestoreVehicleState covers location, rotation, health and destroyed.
 assert_after "[Phase3.2][Player] death_restart_execute" \
-  "[LevelOneE2E] restored_state checkpoint=Ch01_Manticore stage=EAHChapterStage::ManticoreSection objective=5 health=63 armor=41 ammo=21/96 grenades=3" \
-  "the full run payload survived the death reload"
+  "[LevelOneE2E] restored_state checkpoint=Ch01_Manticore stage=EAHChapterStage::ManticoreSection objective=5 health=63 armor=41 ammo=21/96 grenades=3 encounters=1 vehicleSpawned=true vehicleHealth=287 vehicleDestroyed=false" \
+  "the entire run payload survived the death reload on one line"
 assert_after "[Phase3.2][Player] death_restart_execute" \
-  "vehicleSpawned=true" \
-  "Manticore state survived the death reload"
+  "[Phase3.2][Manticore] restore" \
+  "the Manticore actor itself was restored from that checkpoint"
 
 # Same seam for the failsafe: a checkpoint is captured inside the timed window, so the restored
 # attempt must come back with the full clock rather than the remainder that was live at capture.
