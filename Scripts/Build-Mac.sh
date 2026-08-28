@@ -91,7 +91,10 @@ fi
 # staged a client binary from a previous run and the acceptance capture measured the previous
 # build's code - which is worse than a failed build, because it looks like a result. The compiled
 # client must be newer than the newest source file it was built from.
+# UE omits the config suffix for Development targets and appends it for every other config,
+# so an unsuffixed path here would stat the stale Development client and fail every Shipping build.
 CLIENT_BINARY="$PROJECT_ROOT/Binaries/Mac/AshesOfHeaven"
+[[ "$CLIENT_CONFIG" == "Development" ]] || CLIENT_BINARY+="-Mac-$CLIENT_CONFIG"
 if [[ ! -f "$CLIENT_BINARY" ]]; then
   echo "ERROR: client binary missing at $CLIENT_BINARY; the build phase did not produce a client." >&2
   exit 2
