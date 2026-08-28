@@ -7,6 +7,11 @@ Builds/
 Build/Mac/FileOpenOrder/
 **/__pycache__/
 
+# A stubbed `unreal` makes unreal.Paths stringify into a literal directory name, and anything
+# written under it lands here instead of Saved/. saved_path() in ImportAnimationDrop.py refuses
+# that path outright; this catches any script that still builds one by hand.
+MagicMock/
+
 # Local PSO capture evidence can be large and is regenerated per RHI/driver run.
 *.rec.upipelinecache
 *.shk

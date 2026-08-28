@@ -12,6 +12,7 @@ import os
 import sys
 import tarfile
 import tempfile
+import types
 import zipfile
 from unittest.mock import MagicMock
 
@@ -21,19 +22,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.modules["unreal"] = MagicMock()
 sys.path.insert(0, ROOT)
 
-import importlib.util
-
-# ImportAnimationDrop.py touches the filesystem at import time, and with unreal stubbed its
-# report path resolves through a MagicMock - so importing it drops a directory literally named
-# "MagicMock/mock.Paths.convert_relative_path_to_full()/..." into the current directory. That
-# was landing in the repo root on every run. Everything below uses absolute paths, so importing
-# from a scratch directory keeps the tree clean.
-os.chdir(tempfile.mkdtemp(prefix="ashes-safe-extract-"))
-
-spec = importlib.util.spec_from_file_location(
-    "import_animation_drop", os.path.join(ROOT, "ImportAnimationDrop.py"))
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+# The script calls main() at its last line, the way every script in Scripts/ does, so importing
+# it outright RUNS the whole drop - which is how 193MB of animation source came to unpack into
+# the working directory. Load the source up to that call instead, same as
+# Scripts/tests/test_city_completion.py does.
+SCRIPT = os.path.join(ROOT, "ImportAnimationDrop.py")
+SOURCE = open(SCRIPT, encoding="utf-8").read()
+TAIL = "\nmain()"
+assert SOURCE.endswith(TAIL + "\n"), "the module's entry point moved; this loader has to be updated"
+mod = types.ModuleType("import_animation_drop")
+exec(compile(SOURCE[:SOURCE.rindex(TAIL)], SCRIPT, "exec"), mod.__dict__)
 
 
 def test_safe_join():
@@ -81,9 +79,29 @@ def test_zip_traversal_is_not_written():
         assert not os.path.exists(os.path.join(work, "escaped.txt"))
 
 
+def test_saved_path_refuses_a_stubbed_editor():
+    """The guard that stops a 193MB drop unpacking into the working directory.
+
+    `unreal` is a MagicMock here, exactly as it is for anyone running this module outside the
+    editor, so this is the real failure mode and not a synthetic one.
+    """
+    try:
+        mod.saved_path("DeadBodySource")
+    except RuntimeError as error:
+        assert "not an absolute path" in str(error), error
+    else:
+        assert False, "saved_path accepted a mocked Saved directory"
+
+    real = tempfile.mkdtemp(prefix="ashes-saved-")
+    mod.unreal.Paths.convert_relative_path_to_full.return_value = real
+    assert mod.saved_path("a", "b.txt") == os.path.join(real, "a", "b.txt")
+    mod.unreal.Paths.convert_relative_path_to_full.return_value = None
+
+
 if __name__ == "__main__":
     mod.REPORT = []
     test_safe_join()
     test_tar_traversal_is_not_written()
     test_zip_traversal_is_not_written()
-    print("safe extraction: 3 checks passed")
+    test_saved_path_refuses_a_stubbed_editor()
+    print("safe extraction: 4 checks passed")
