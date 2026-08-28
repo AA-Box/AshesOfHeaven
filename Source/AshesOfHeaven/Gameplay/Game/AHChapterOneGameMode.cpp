@@ -166,7 +166,7 @@ void AAHChapterOneGameMode::LogRestoredRunState()
 	const FAHChapterState& State = Chapter->GetState();
 	const FAHAmmoState Ammo = Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetSavedAmmo() : FAHAmmoState();
 	UE_LOG(LogAshesOfHeaven, Display,
-		TEXT("[LevelOneE2E] restored_state checkpoint=%s stage=%s objective=%d health=%.0f armor=%.0f ammo=%d/%d grenades=%d encounters=%d vehicleSpawned=%s countdown=%.1f"),
+		TEXT("[LevelOneE2E] restored_state checkpoint=%s stage=%s objective=%d health=%.0f armor=%.0f ammo=%d/%d grenades=%d encounters=%d vehicleSpawned=%s vehicleHealth=%.0f vehicleDestroyed=%s countdown=%.1f"),
 		*Runtime.CheckpointId.ToString(),
 		*UEnum::GetValueAsString(State.Stage),
 		State.ObjectiveIndex,
@@ -176,6 +176,8 @@ void AAHChapterOneGameMode::LogRestoredRunState()
 		Player->GetInventoryComponent() ? Player->GetInventoryComponent()->GetGrenades() : -1,
 		State.CompletedEncounters.Num(),
 		State.Vehicle.bSpawned ? TEXT("true") : TEXT("false"),
+		State.Vehicle.Health,
+		State.Vehicle.bDestroyed ? TEXT("true") : TEXT("false"),
 		State.CountdownSeconds);
 #endif
 }
