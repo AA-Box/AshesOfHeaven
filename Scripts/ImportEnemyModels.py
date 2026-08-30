@@ -136,11 +136,16 @@ MODELS = {
         "target_height_cm": 95.0,
         # A multiplier, not an albedo. The map is a real painted trim sheet averaging 0.26, so
         # the darkness is already in it - the mistake the old spider spent months carrying was
-        # multiplying a dark map by a dark tint and bottoming the body out near black.
-        "tint": (0.90, 0.88, 0.86),
-        # Its own roughness channel drives the variation; the scalar only sets the ceiling.
-        "roughness": 0.85,
-        "specular": 0.22,
+        # multiplying a dark map by a dark tint and bottoming the body out near black. 0.72
+        # rather than 0.90: every combatant carries a 15cd warm fill light, and on the lineup
+        # bench the brighter value read as a pale cut-out next to the hound.
+        "tint": (0.72, 0.70, 0.68),
+        # The packed roughness channel is film-authored and averages 0.44 - wet-skin gloss.
+        # Under the per-combatant fill light that specular wash is what erased the painted
+        # detail, so the scalar doubles the map into a matte range (the graph multiplies
+        # tex.R by this and the renderer clamps at 1).
+        "roughness": 2.0,
+        "specular": 0.12,
         "normal_strength": 1.0,
         "detail_normal_strength": 0.55,
         # Chitin, not machinery. The source packs metal as a flat 1.0 because glTF defaults it

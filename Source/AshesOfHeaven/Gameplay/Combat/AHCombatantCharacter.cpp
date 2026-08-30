@@ -272,6 +272,7 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 			Body->PlayAnimation(Clip, true);
 		}
 		if (UPhysicsAsset* PhysicsAsset = Visuals.PhysicsAsset.Get()) Body->SetPhysicsAsset(PhysicsAsset, true);
+		BodyFillScale = Visuals.FillLightScale;
 		Body->SetRelativeScale3D(Visuals.MeshScale);
 		if (Visuals.bOverrideMeshTransform)
 		{
@@ -582,7 +583,7 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 		// faction read comes from the archetype's own body now, which is an alien, an
 		// armoured brute, a hound or a spider; it does not need a coloured lamp to carry it.
 		BodyFillLight->SetLightColor(BodyFillColor);
-		BodyFillLight->SetIntensity(BodyFillIntensity);
+		BodyFillLight->SetIntensity(BodyFillIntensity * BodyFillScale);
 	}
 	if (EnemyDefinition)
 	{

@@ -254,6 +254,14 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	bool bOverrideMeshTransform = false;
 
+	/** Multiplier on the per-combatant body fill light. The 15cd fill was tuned for bodies
+	 *  authored at ~0.04-0.12 effective albedo; a body wearing brighter film-authored maps
+	 *  (the Teuthisan's pale flesh) reflects several times more of it, clips against the
+	 *  auto-exposed frame, and reads as a texture-less cut-out. Scaling the light per
+	 *  archetype keeps the maps as authored instead of darkening them to fit the lamp. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual", meta=(ClampMin=0.0))
+	float FillLightScale = 1.0f;
+
 	bool HasAnyAssetOverride() const;
 	void OverlayOnto(FAHEnemyVisualPayload& Target) const;
 };
