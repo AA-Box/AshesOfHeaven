@@ -26,6 +26,42 @@ Run with UnrealEditor-Cmd -run=pythonscript. Reports land in Saved/TeuthisanMesh
 import json
 import unreal
 
+# Film look-dev vs the game's lighting rig: every combatant carries a 15cd warm fill light,
+# and the source MIs arrive quarter-METALLIC (Metalic 0.25-0.5) at roughness 0.10-0.35 with
+# spec 0.6-1.0 - a wet bronze mirror under that light, which is exactly how the body rendered
+# on the lineup bench: bright, warm, and with none of its 4K detail visible. These overrides
+# conform the five zone MIs to the game tier while keeping every film map: organic dielectric,
+# matte-but-varying roughness, the roster's spec range, and the baked AO/cavity pulled into
+# base colour so the darkening preserves detail instead of flattening it. Limbs also ships
+# Global Roughness = -157.447 in the source - a garbage value this pass overwrites.
+MATERIAL_GAME_TIER = {
+    "Metalic": 0.0,
+    "MinRoughness": 0.55,
+    "MaxRoughness": 0.90,
+    "GlobalRoughness": 1.0,
+    "Global Roughness": 1.0,
+    "MinSpec": 0.10,
+    "MaxSpec": 0.30,
+    "Global Spec": 1.0,
+    "BaseColorAO": 0.65,
+    "BaseColorCavity": 0.5,
+}
+MATERIAL_ZONES = ("Torso", "Arms", "Legs", "Limbs", "Tentacles")
+
+
+def conform_materials():
+    library = unreal.MaterialEditingLibrary
+    for zone in MATERIAL_ZONES:
+        path = "/Game/Characters/Teuthisan/Materials/MI_Alien_%s" % zone
+        instance = unreal.load_asset(path)
+        if not instance:
+            raise RuntimeError("missing zone MI: " + path)
+        for name, value in MATERIAL_GAME_TIER.items():
+            library.set_material_instance_scalar_parameter_value(instance, name, value)
+        unreal.EditorAssetLibrary.save_asset(path, only_if_is_dirty=False)
+        w("conformed " + path)
+
+
 TAG = "TMESHPREP"
 import os
 D = unreal.Paths.convert_relative_path_to_full(
@@ -188,7 +224,10 @@ for i in range(1, count):
     else:
         w("lod%d: precision flags already cleared" % i)
 
-# --------------------------------------------------------------------- 6. save
+# ----------------------------------------------- 6. conform the zone materials
+conform_materials()
+
+# --------------------------------------------------------------------- 6b. save
 if not unreal.EditorAssetLibrary.save_loaded_asset(lods, only_if_is_dirty=False):
     fail("save failed: " + LODS_PATH)
 if not unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False):

@@ -83,6 +83,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Appearance")
 	FLinearColor BodyFillColor = FLinearColor(1.0f, 0.82f, 0.62f);
 
+	/** Archetype multiplier on BodyFillIntensity, taken from the definition's visuals. */
+	UPROPERTY(Transient)
+	float BodyFillScale = 1.0f;
+
 	/** Clips this body plays, taken from its archetype. Empty on the mannequin combatants,
 	 *  which still run their own AnimBlueprint. */
 	UPROPERTY(Transient)
