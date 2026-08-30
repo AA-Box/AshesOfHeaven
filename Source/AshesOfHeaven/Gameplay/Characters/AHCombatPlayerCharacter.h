@@ -96,6 +96,16 @@ protected:
 	void RefreshMovementSpeed();
 
 	bool bSprinting = false;
+
+	/** The sprint footstep loop. A recorded running-feet loop replaces per-step one-shots
+	 *  while sprinting: at sprint cadence a 6-second sample retriggered every step stacks
+	 *  twenty deep, and a loop is what the recording actually is. Spawned lazily from the
+	 *  palette's Player.Footstep.Run event; when that event is unbound the per-step path
+	 *  keeps working untouched. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> SprintLoop;
+
+	void UpdateSprintLoop();
 	bool bCrouched = false;
 	bool bGodMode = false;
 	float LookInputEnableTime = 0.0f;

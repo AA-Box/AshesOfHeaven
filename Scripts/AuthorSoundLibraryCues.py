@@ -35,7 +35,8 @@ REPORT = []
 # different information, so they are different banks even though both are "impact".
 BANKS = {
     "Explosion":      ["ExplosionLarge11", "ExplosionMedium21"],
-    "GunshotHeavy":   ["Gunshot11", "Gunshot71"],
+    # Gunshot11 alone, by direction: the M91 fires "Gunshot 1-1.wav", not a random pair.
+    "GunshotHeavy":   ["Gunshot11"],
     "WeaponHandling": ["DrawWeaponMetal11"],
     "ImpactRock":     ["RockImpact11", "RockImpact37"],
     "Melee":          ["Punch21"],
@@ -44,13 +45,19 @@ BANKS = {
     "Door":           ["DoorOpen41", "DoorClose41", "WoodAndDoorCreak01"],
     "Pickup":         ["BagHandle15", "CoinBag31"],
     "Industry":       ["Blacksmithing11"],
+    # The player's feet. Walk steps are the rock impact, one per stride; the sprint layer is
+    # a recorded running loop the player character carries while sprinting (a 6-second sample
+    # retriggered every step would stack twenty deep). RockImpact11 is deliberately shared
+    # with the ImpactRock bank - same clip, two semantic jobs.
+    "FootstepRock":   ["RockImpact11"],
+    "FootstepSprint": ["SpinopelRunningInPackedSnow475140"],
     # Loops get a SoundNodeLooping and stay LoadOnDemand; the rest are inlined one-shots.
     "AmbienceWind":   ["AmbientWindLoop1"],
     "AmbienceBirds":  ["AmbientBirdsLoop04"],
     "AmbienceFire":   ["FireBurningLoop2"],
 }
 
-LOOPING_BANKS = {"AmbienceWind", "AmbienceBirds", "AmbienceFire"}
+LOOPING_BANKS = {"AmbienceWind", "AmbienceBirds", "AmbienceFire", "FootstepSprint"}
 # No bank is UI. Pickup used to be, and that was wrong: UI.Pickup is raised through
 # PlayWorldCue at the item's location, so ATT_UI/SM_UI made a dropped magazine audible at
 # full volume from the far end of the level. Everything here is a world sound.
@@ -68,6 +75,11 @@ PALETTE_EVENTS = {
     "Weapon.M91.Reload": "WeaponHandling",
     "Weapon.M91.Impact": "ImpactRock",
     "UI.Pickup": "Pickup",
+    # Taken over from the SciFi metal steps, by direction. The run event is new: the player
+    # character resolves it into a looping component (AAHCombatPlayerCharacter::UpdateSprintLoop)
+    # and silences its per-step one-shots while the loop carries the feet.
+    "Player.Footstep": "FootstepRock",
+    "Player.Footstep.Run": "FootstepSprint",
 }
 # Events bound straight to an existing cue instead of to a library bank.
 PALETTE_CUES = {

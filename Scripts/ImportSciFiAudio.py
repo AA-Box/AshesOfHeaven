@@ -63,8 +63,10 @@ BANKS = {
 # Weapon.M91.Fire and UI.Pickup are NOT here: the M91 is a bolt-action rifle, not a laser, and
 # a picked-up magazine is foley, not a menu blip. Both belong to recorded banks bound by
 # Scripts/AuthorSoundLibraryCues.py, and re-running this script must not take them back.
+# Player.Footstep is NOT here any more: it moved to the recorded rock-step bank in
+# Scripts/AuthorSoundLibraryCues.py, and re-running this script must not take it back -
+# the same contract Weapon.M91.Fire already follows.
 PALETTE_EVENTS = {
-    "Player.Footstep": "SC_SciFi_MetalStep",
     "UI.Objective": "SC_SciFi_UIPositive",
     # UISelect, not UINegative: UINegative is the "denied" stinger and made every line of
     # dialogue sound like a rejected input.

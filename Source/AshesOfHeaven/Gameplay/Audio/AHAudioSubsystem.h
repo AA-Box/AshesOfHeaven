@@ -25,6 +25,9 @@ enum class EAHAudioCue : uint8
 	Dialogue,
 	Pickup,
 	Footstep,
+	/** The sprint layer: a continuous running-feet loop the player carries while
+	 *  sprinting, replacing the per-step one-shots that would stack at sprint cadence. */
+	FootstepRun,
 	Ambient
 };
 
@@ -48,6 +51,10 @@ public:
 
 	bool IsAudioPaletteReady() const { return bAudioPaletteReady; }
 	bool HasAuthoredCue(EAHAudioCue Cue) const;
+
+	/** The authored sound itself, for callers that manage their own component - a loop
+	 *  cannot go through PlayWorldCue, which is fire-and-forget. */
+	USoundBase* GetAuthoredCueSound(EAHAudioCue Cue) { return ResolveAuthoredCue(Cue); }
 
 private:
 	FName GetSemanticEventName(EAHAudioCue Cue) const;
