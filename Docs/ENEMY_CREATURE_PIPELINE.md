@@ -79,12 +79,18 @@ Three things in that script are worth knowing before editing it:
 
 ## Known gap
 
-The spider's maps do not reach its surface. Every texture parameter on `MI_Spider_00` is wired,
-every map imports, and the same code path textures the other three bodies - but this mesh renders
-perfectly smooth and perfectly flat at any tint, which is what a sampler reading a single texel
-looks like. Its five source meshes each carry a UV layout that Blender bakes into cleanly, so the
-loss is somewhere in the merge Unreal does when it folds them into one skeletal mesh. Until that
-is found, `BaseTint` is this body's entire albedo and is set as one rather than as a multiplier.
+The alien's surface has no local contrast. `BakeCreatureTextures.bake_chitin` writes its albedo
+across 0.055-0.185, which is both dark and nearly flat, and `MI_Stalker_00` then multiplies it by
+a 0.20/0.11/0.055 tint. The quadruped lands at a comparable surface value (0.316 albedo x 0.14
+tint) and still reads, because its 4K map carries real local variation and a metal mask; the
+alien's does not, so it renders as a silhouette. The fix is a wider bake range, not a tint.
+
+Resolved: the spider was carrying a note in this section claiming Unreal's merge of its five
+sub-meshes dropped its UVs. It does not. Any high-contrast map assigned to `MI_Spider_00` lands
+with full detail on every leg segment, and so does its own composite. The flat body was a tint
+that had been authored as an albedo back when no map was bound and left in place after one was:
+a dark map multiplied by a dark albedo value bottoms out near 0.05, which looks exactly like a
+single-texel sample. `BaseTint` is now the near-white multiplier it is everywhere else.
 
 ## Animation playback
 

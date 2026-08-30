@@ -125,18 +125,18 @@ MODELS = {
         "fbx": "4/BioMechSpider.fbx",
         "import_animations": False,
         "target_height_cm": 140.0,
-        # KNOWN: this body's maps do not reach its surface. Every texture parameter is wired
-        # and every map imports, but the mesh renders perfectly smooth and flat at any tint -
-        # 0.155 gave a uniform dark grey, 0.88 a uniform near-white - which is what a sampler
-        # reading one texel looks like. Its five source meshes each carry a UV layout (Blender
-        # bakes occlusion into them cleanly), so the loss is somewhere in the merge Unreal does
-        # when it folds them into one skeletal mesh. Until that is found, the tint is this
-        # body's whole albedo, so it is set as an albedo rather than as a multiplier: a dark
-        # bio-mech shell that sits just above the road it stands on.
-        # The packaged enemy bench is the authority here: 0.36 red became a pale tan cut-out
-        # because this mesh's broken UVs reduce the material to one sampled colour. Keep the
-        # whole-surface fallback dark and rough until the skeletal merge preserves its UVs.
-        "tint": (0.15, 0.035, 0.012),
+        # The UVs are fine. This body was carrying a note saying its maps never reached its
+        # surface and that Unreal's merge of the five sub-meshes had dropped the UVs; both
+        # halves were wrong. Assigning any high-contrast map (the quadruped's 4K albedo was
+        # the test) lands with full detail on every leg segment, and so does this body's own
+        # composite once the tint stops crushing it.
+        # What actually happened: while the material had no albedo bound, the tint WAS the
+        # albedo and was authored as one - 0.15 red, a dark shell colour. The map was wired up
+        # later and the tint stayed, so the shader now multiplies a dark map by a dark albedo
+        # value and bottoms the whole body out near 0.05, which reads on screen exactly like a
+        # sampler stuck on one texel. Near-white is what a multiplier should be: the darkness
+        # belongs to the baked map, the same way it does for the alien.
+        "tint": (0.85, 0.80, 0.78),
         "roughness": 0.95,
         "specular": 0.10,
         "normal_strength": 1.0,
