@@ -132,9 +132,7 @@ ARCHETYPES = {
         # the legs reach toward negative Y and the tail lies along positive Y - so +90 still turns
         # it down +X with the rest of the roster.
         "mesh_yaw": 90.0,
-        # Painted trim sheet at ~0.09 effective albedo - brighter than the near-black roster
-        # bodies the fill was tuned for, so it takes a dimmer lamp rather than a darker map.
-        "fill_light_scale": 0.65,
+
         # No pose_bounds. The old body needed it because its bind pose was not a stance; this one
         # was modelled crouched on its legs, so the imported bounds already describe it. Fitting
         # to the authored stance would be wrong here in the other direction: that stance measures
@@ -187,10 +185,6 @@ ARCHETYPES = {
         "currency": 35,
         "marker_color": (0.85, 0.22, 0.10, 1.0),
         "voice": "Alien",
-        # The 15cd fill was tuned for the roster's near-black bodies; this one wears pale
-        # film-authored flesh and clipped to a texture-less cut-out under it on the bench.
-        # The maps stay as authored and the lamp dims instead.
-        "fill_light_scale": 0.3,
         # Melee only, like every beast: it crawls in and rears up. The rifle stays the Pilgrim's
         # alone - AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion pins exactly one
         # armed archetype.
