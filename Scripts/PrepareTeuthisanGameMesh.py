@@ -26,40 +26,78 @@ Run with UnrealEditor-Cmd -run=pythonscript. Reports land in Saved/TeuthisanMesh
 import json
 import unreal
 
-# Film look-dev vs the game's lighting rig: every combatant carries a 15cd warm fill light,
-# and the source MIs arrive quarter-METALLIC (Metalic 0.25-0.5) at roughness 0.10-0.35 with
-# spec 0.6-1.0 - a wet bronze mirror under that light, which is exactly how the body rendered
-# on the lineup bench: bright, warm, and with none of its 4K detail visible. These overrides
-# conform the five zone MIs to the game tier while keeping every film map: organic dielectric,
-# matte-but-varying roughness, the roster's spec range, and the baked AO/cavity pulled into
-# base colour so the darkening preserves detail instead of flattening it. Limbs also ships
-# Global Roughness = -157.447 in the source - a garbage value this pass overwrites.
-MATERIAL_GAME_TIER = {
-    "Metalic": 0.0,
-    "MinRoughness": 0.55,
-    "MaxRoughness": 0.90,
-    "GlobalRoughness": 1.0,
-    "Global Roughness": 1.0,
-    "MinSpec": 0.10,
-    "MaxSpec": 0.30,
-    "Global Spec": 1.0,
-    "BaseColorAO": 0.65,
-    "BaseColorCavity": 0.5,
-}
+# The body wears the ROSTER's shader, not its film one. The film MIs (quarter-metallic,
+# roughness 0.10-0.35, spec 0.6-1.0, SSS) are a wet bronze mirror under the per-combatant
+# fill light, and even conformed they sit stops brighter than the rest of the roster - the
+# direction was "exactly like the hound", and the hound is a pipeline: M_EnemyCreature, the
+# body's own maps, and a dark warm tint that lands near 0.04 effective albedo. So each zone
+# gets an MI parented to M_EnemyCreature sampling its own film-grade D/N/R/AO set with the
+# hound's exact tint, and the mesh's slots are reassigned to those. The film MIs under
+# Materials/ are left untouched for anyone who wants the pale cinematic look back.
+ENEMY_MASTER = "/Game/Ashes/Materials/M_EnemyCreature"
+GAME_MATS_DIR = "/Game/Characters/Teuthisan/GameMats"
 MATERIAL_ZONES = ("Torso", "Arms", "Legs", "Limbs", "Tentacles")
+# The hound's numbers, verbatim: tint (0.14, 0.095, 0.075) over a 4K albedo, specular 0.20,
+# detail normal 0.85. Roughness scalar 2.0 rather than the hound's 0.88 because these film
+# roughness maps average ~0.35 where the hound's averages rougher - the graph multiplies
+# map by scalar and the renderer clamps at 1, so 2.0 lands the body in the same matte band.
+GAME_MAT_PARAMS = {
+    "UseBaseColorTex": 1.0, "UseRoughnessTex": 1.0, "UseAOTex": 1.0, "UseMetallicTex": 0.0,
+    "Metallic": 0.0, "Roughness": 2.0, "Specular": 0.20,
+    "NormalStrength": 1.10, "DetailNormalStrength": 0.85, "EmissiveStrength": 0.0,
+}
+HOUND_TINT = (0.14, 0.095, 0.075)
 
 
-def conform_materials():
+def build_game_materials(mesh):
     library = unreal.MaterialEditingLibrary
+    master = unreal.load_asset(ENEMY_MASTER)
+    if not master:
+        fail("enemy master material missing: " + ENEMY_MASTER)
+    unreal.EditorAssetLibrary.make_directory(GAME_MATS_DIR)
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    zone_mis = {}
     for zone in MATERIAL_ZONES:
-        path = "/Game/Characters/Teuthisan/Materials/MI_Alien_%s" % zone
+        name = "MI_Teuthisan_%s" % zone
+        path = "%s/%s" % (GAME_MATS_DIR, name)
         instance = unreal.load_asset(path)
         if not instance:
-            raise RuntimeError("missing zone MI: " + path)
-        for name, value in MATERIAL_GAME_TIER.items():
-            library.set_material_instance_scalar_parameter_value(instance, name, value)
+            factory = unreal.MaterialInstanceConstantFactoryNew()
+            instance = tools.create_asset(name, GAME_MATS_DIR,
+                                          unreal.MaterialInstanceConstant, factory)
+            if not instance:
+                fail("could not create " + path)
+        library.set_material_instance_parent(instance, master)
+        for suffix, param in (("D", "BaseColorTex"), ("N", "NormalTex"),
+                              ("R", "RoughnessTex"), ("AO", "AOTex")):
+            texture = unreal.load_asset("/Game/Characters/Teuthisan/Textures/T_Alien_%s_%s"
+                                        % (zone, suffix))
+            if not texture:
+                fail("missing zone texture T_Alien_%s_%s" % (zone, suffix))
+            library.set_material_instance_texture_parameter_value(instance, param, texture)
+        for param, value in GAME_MAT_PARAMS.items():
+            library.set_material_instance_scalar_parameter_value(instance, param, value)
+        library.set_material_instance_vector_parameter_value(
+            instance, "BaseTint", unreal.LinearColor(*HOUND_TINT, 1.0))
         unreal.EditorAssetLibrary.save_asset(path, only_if_is_dirty=False)
-        w("conformed " + path)
+        zone_mis[zone] = instance
+        w("authored " + path)
+
+    # Reassign the mesh slots. Slot names carry the film material names; the saliva slot keeps
+    # its own translucent material - it is a few hundred verts of drool.
+    materials = mesh.get_editor_property("materials")
+    assigned = 0
+    for index, slot in enumerate(materials):
+        slot_name = str(slot.get_editor_property("material_slot_name"))
+        for zone in MATERIAL_ZONES:
+            if slot_name.endswith("_" + zone):
+                slot.set_editor_property("material_interface", zone_mis[zone])
+                materials[index] = slot   # struct copies: write the element back
+                assigned += 1
+    mesh.set_editor_property("materials", materials)
+    if assigned != len(MATERIAL_ZONES):
+        fail("assigned %d zone materials, expected %d" % (assigned, len(MATERIAL_ZONES)))
+    w("mesh slots -> game MIs (%d assigned, saliva kept)" % assigned)
 
 
 TAG = "TMESHPREP"
@@ -224,8 +262,8 @@ for i in range(1, count):
     else:
         w("lod%d: precision flags already cleared" % i)
 
-# ----------------------------------------------- 6. conform the zone materials
-conform_materials()
+# ------------------------------------- 6. the roster's materials on the film mesh
+build_game_materials(mesh)
 
 # --------------------------------------------------------------------- 6b. save
 if not unreal.EditorAssetLibrary.save_loaded_asset(lods, only_if_is_dirty=False):

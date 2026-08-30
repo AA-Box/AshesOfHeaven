@@ -134,20 +134,18 @@ MODELS = {
         # legs, which is a crab the size of a large dog. The old 140 was a height for a body that
         # stood up; this one lies along the ground and 140 would have made it a car.
         "target_height_cm": 95.0,
-        # A multiplier, not an albedo. The map is a real painted trim sheet averaging 0.26, so
-        # the darkness is already in it - the mistake the old spider spent months carrying was
-        # multiplying a dark map by a dark tint and bottoming the body out near black. 0.72
-        # rather than 0.90: every combatant carries a 15cd warm fill light, and on the lineup
-        # bench the brighter value read as a pale cut-out next to the hound.
-        "tint": (0.72, 0.70, 0.68),
+        # The hound's look, arithmetically: its 0.14 warm tint over a 0.316-mean map lands at
+        # ~0.044 effective albedo. This body's painted sheet is darker (0.121 linear mean), so
+        # the same landing point takes 0.36 - with the hound's exact hue ratio, so the two
+        # bodies read as one species under the shared warm fill.
+        "tint": (0.36, 0.244, 0.193),
         # The packed roughness channel is film-authored and averages 0.44 - wet-skin gloss.
-        # Under the per-combatant fill light that specular wash is what erased the painted
-        # detail, so the scalar doubles the map into a matte range (the graph multiplies
-        # tex.R by this and the renderer clamps at 1).
+        # The scalar doubles the map into the hound's matte band (the graph multiplies tex.R
+        # by this and the renderer clamps at 1).
         "roughness": 2.0,
-        "specular": 0.12,
+        "specular": 0.20,
         "normal_strength": 1.0,
-        "detail_normal_strength": 0.55,
+        "detail_normal_strength": 0.85,
         # Chitin, not machinery. The source packs metal as a flat 1.0 because glTF defaults it
         # that way, which would make a fleshy body a mirror - see prepare_facehugger().
         "metallic": 0.0,
