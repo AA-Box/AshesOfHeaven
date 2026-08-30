@@ -13,6 +13,11 @@ is the restore path.
 
     python3 Scripts/MigrateTeuthisan.py [--dry-run]
 
+After migrating, the derived game assets are rebuilt in this order (all UnrealEditor-Cmd):
+BakeTeuthisanTakes.py (cinematic takes -> AnimSequences), AuthorTeuthisanAnimations.py (the
+five gameplay clips), PrepareTeuthisanGameMesh.py (Nanite + the authored LOD chain), then
+AuthorEnemyDefinitions.py to re-author DA_Enemy_Teuthisan against the measured mesh.
+
 Source project: $AH_TEUTHISAN (default ~/Documents/Unreal Projects/ASCTeuthisan). The source
 project is UE 5.3 and this one is 5.8; the packages upgrade on load, which costs a slow first
 open and nothing after that. Nothing in the source is modified.

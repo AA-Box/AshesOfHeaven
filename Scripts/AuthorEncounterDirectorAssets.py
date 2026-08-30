@@ -11,10 +11,11 @@ ENCOUNTER_PATH = "/Game/Ashes/Data/Encounters"
 PILGRIM = "Pilgrim"
 HOUND = "Hound"
 SPIDER = "Spider"
+TEUTHISAN = "Teuthisan"
 ALL_DIRECTIONS = 1 | 2 | 4 | 8
 
 # Spawn costs come from each archetype's authored ThreatCost when the pool entry does not override
-# it: Pilgrim 1.0, Hound 1.5, Spider 2.5. Fixed composition slots are charged against
+# it: Pilgrim 1.0, Hound 1.5, Spider 2.5, Teuthisan 4.0. Fixed composition slots are charged against
 # the same credits as pool draws, so every composition below is written to fit the encounter's
 # StartingCredits exactly - a slot the director cannot afford is silently skipped, and a fight that
 # quietly drops its heaviest body is worse than one that is simply tuned wrong.
@@ -221,8 +222,11 @@ def _author_defensive_line():
         # (1.5) and one reinforcement Pilgrim for a Spider (2.5) costs 2.0 more threat, and the
         # west-lane bonus rises with it so the pool fill still has something to spend. The extra
         # total slot is the body that swap would otherwise have taken out of the fight.
-        budget=18.0,
-        starting_credits=8.5,
+        # 19.5: the heavy is back. When the Warden was cut its 4.0 was split across the light
+        # bodies; the Teuthisan restores a real boss slot, and the opening purse grows from 8.5
+        # to cover it while the pool's late-fight spend stays where it was.
+        budget=19.5,
+        starting_credits=10.0,
         active_cap=8,
         mobile_cap=5,
         total_cap=10,
@@ -235,9 +239,9 @@ def _author_defensive_line():
             _region(west, (4200.0, -1600.0, 120.0), (900.0, 400.0, 260.0), unreal.AHEncounterDirection.WEST),
         ],
         phases=[
-            # The heavy is gone, and its 4.0 is split rather than dropped: a second Hound (1.5)
-            # joins the opening line and the boss slot becomes a Spider (2.5). 3 Pilgrim (3.0) +
-            # 2 Hound (3.0) + the boss Spider (2.5) = 8.5, the same opening purse as before.
+            # 3 Pilgrim (3.0) + 2 Hound (3.0) + the boss Teuthisan (4.0) = 10.0, the whole
+            # opening purse. The second Hound stays: it joined when the Warden's threat was
+            # split, and the line reads thinner without it now that players have met it.
             _phase(
                 "InitialAssault",
                 unreal.AHEncounterPhaseTrigger.IMMEDIATE,
@@ -262,13 +266,13 @@ def _author_defensive_line():
         ],
         pool=[
             _pool(PILGRIM, 1.0, 1.0, maximum=8),
-            # The Warden's pool weight is split the same way its slot was: the Hound takes the
-            # extra draws at the top of the curve, the Spider takes the heavy end, and its cap
-            # rises from 2 to 3 so the 18.0 budget still has somewhere to spend late credits.
             _pool(HOUND, 0.95, 1.5, maximum=5, veteran=1.15, damnation=1.30),
             _pool(SPIDER, 0.65, 2.5, minimum_phase=1, maximum=3, veteran=1.10, damnation=1.25),
+            # One more heavy at most, and never in the opening phase: a second Teuthisan is a
+            # reinforcement event, not a doubling of the boss.
+            _pool(TEUTHISAN, 0.40, 4.0, minimum_phase=1, maximum=1, veteran=1.10, damnation=1.25),
         ],
-        boss_slots=[_slot(SPIDER, 1, [initial])],
+        boss_slots=[_slot(TEUTHISAN, 1, [initial])],
     )
 
 
@@ -337,12 +341,15 @@ def _author_cathedral_manifest():
             _pool(PILGRIM, 1.0, 1.0, maximum=7),
             _pool(HOUND, 0.75, 1.5, maximum=4),
             _pool(SPIDER, 0.55, 2.5, maximum=2),
+            # The steps can afford one heavy out of the 4.5 the fixed slots leave unspent -
+            # the same occasional-Warden pressure this approach used to carry.
+            _pool(TEUTHISAN, 0.35, 4.0, maximum=1, veteran=1.10, damnation=1.25),
         ],
     )
 
 
 def main():
-    for archetype in (PILGRIM, HOUND, SPIDER):
+    for archetype in (PILGRIM, HOUND, SPIDER, TEUTHISAN):
         path = "/Game/Ashes/Data/Enemies/DA_Enemy_%s.DA_Enemy_%s" % (archetype, archetype)
         if unreal.load_asset(path) is None:
             raise RuntimeError(

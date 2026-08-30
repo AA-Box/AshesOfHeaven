@@ -38,7 +38,7 @@ The temporary soldiers use faction materials and a readable body proxy. Human so
 
 ## Veil language
 
-The Veil is reconstructed, ancient, synthetic, and haunted by biological memory. The target is matte dark ceramic, pale metal only where it helps silhouette, and rare cold internal illumination. It must not become a generic robot, zombie, or neon alien. Pilgrim remains the fast humanoid infantry silhouette; the beasts carry the weight the Warden used to, the Hound by closing fast and the Spider by being slow and hard to kill.
+The Veil is reconstructed, ancient, synthetic, and haunted by biological memory. The target is matte dark ceramic, pale metal only where it helps silhouette, and rare cold internal illumination. It must not become a generic robot, zombie, or neon alien. Pilgrim remains the fast humanoid infantry silhouette; the Teuthisan is the heavy - a film-grade alien that crawls in low and rears to full height to strike - with the Hound closing fast and the Spider as the expendable skirmisher.
 
 ## Cathedral language
 

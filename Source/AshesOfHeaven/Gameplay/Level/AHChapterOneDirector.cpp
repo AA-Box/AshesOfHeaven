@@ -2481,7 +2481,7 @@ void AAHChapterOneDirector::SpawnEnemyLineupBench()
 
 	// Every archetype the game can field. Adding one here is how it joins the review bench.
 	TArray<FPrimaryAssetId> Roster;
-	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") })
+	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider"), TEXT("Teuthisan") })
 	{
 		Roster.Add(AHEnemyAssets::EnemyId(FName(ArchetypeName)));
 	}

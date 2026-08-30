@@ -7,10 +7,22 @@ one is an FBX version no current DCC will open, one ships its maps only inside a
 crawler is scene dressing with no skeleton at all. The scripts below turn those drops into the
 roster, in this order.
 
-Two archetypes have left. The `Warden` / Veil Revenant was built from the armoured-figure model and
-its 4.0 threat was split across the bodies that remain. The `Spider` archetype kept its id but
-changed body entirely: it was a 6,955-vert bio-mech spider wearing procedural noise, and it is now
-the crawler, which ships a painted 2048 trim sheet.
+The roster has churned. The `Warden` / Veil Revenant (armoured-figure model) was cut and its 4.0
+threat split across the light bodies; the `Teuthisan` has since taken that heavy slot back. The
+`Spider` archetype kept its id but changed body entirely: it was a 6,955-vert bio-mech spider
+wearing procedural noise, and it is now the crawler, which ships a painted 2048 trim sheet.
+
+The `Teuthisan` is the exception to everything below: it does not come from a drop and never
+passes through `ImportEnemyModels.py`. It is a film-grade character (809k verts, 717 bones, SSS
+materials, per-zone 4K textures) migrated whole and path-preserving from its own project by
+`Scripts/MigrateTeuthisan.py` into `/Game/Characters/Teuthisan` (gitignored, ~871 MB; the script
+is the restore path). Its five gameplay clips are baked from its cinematic Control Rig level
+sequences by `Scripts/AuthorTeuthisanAnimations.py`, and `Scripts/PrepareTeuthisanGameMesh.py`
+makes the body affordable: Nanite on for desktop, an authored LOD chain (screen sizes authored,
+never auto - auto sizes facet inside the engagement band), auxiliary bone stripping on LOD1+.
+Desktop renders its native materials untouched; mobile takes the shared cheap override like
+every other archetype. `AuthorEnemyDefinitions.py` measures it live (`mesh_asset` spec key)
+instead of reading the import manifest.
 
 | # | Script | Runs under | Produces |
 |---|--------|------------|----------|
@@ -35,6 +47,7 @@ anything step 5 wrote; step 5 reads the skeletons step 4 imported; step 6 reads 
 | `Pilgrim` - Veil Stalker | x-com alien | rifle | one idle take in the FBX, plus authored walk/run/attack/death | procedural chitin |
 | `Hound` | Alien-Animal | none - bites | six takes in the FBX, plus a rate-scaled walk | 4096 albedo / normal / roughness / metallic, unpacked from the `.blend` |
 | `Spider` - Veil Crawler | facehugger, from the alien-eggs diorama | none - bites | all five takes authored | 2048 painted trim sheet + its packed roughness, normal derived from albedo luminance |
+| `Teuthisan` | migrated ASCTeuthisan character | none - rears up and strikes | baked from its cinematic Control Rig takes | its own film-grade per-zone sets, untouched on desktop |
 
 Only the Stalker carries a weapon. `AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion`
 pins that, because a loadout is a soft array in a data asset and nothing in the engine objects to
