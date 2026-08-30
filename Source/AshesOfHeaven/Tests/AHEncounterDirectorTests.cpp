@@ -213,20 +213,19 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 	if (DefensiveLine)
 	{
 		TestEqual(TEXT("Defensive Line is the migrated encounter ID"), DefensiveLine->EncounterId, FName(TEXT("Erebus_DefensiveLine")));
-		// 18.0, raised from 16.0 when the roster gained the Hound (1.5) and Spider (2.5): the
-		// opening wave swapped one Pilgrim for a Hound and the reinforcement swapped one for a
-		// Spider, which is exactly 2.0 more threat. It stayed at 18.0 when the Warden was cut,
-		// because its 4.0 was split across the remaining bodies rather than dropped. The number
-		// is asserted so the budget cannot drift silently.
-		TestEqual(TEXT("Defensive Line owns eighteen tactical budget"), DefensiveLine->EnemyBudget, 18.0f);
+		// 19.5: raised from 18.0 when the Teuthisan restored the heavy boss slot the Warden
+		// vacated - the opening purse grew by 1.5 to afford the 4.0 boss on top of the line that
+		// had absorbed the Warden's split threat. The number is asserted so the budget cannot
+		// drift silently.
+		TestEqual(TEXT("Defensive Line owns its authored tactical budget"), DefensiveLine->EnemyBudget, 19.5f);
 		TestEqual(TEXT("Defensive Line has two authored phases"), DefensiveLine->Phases.Num(), 2);
 		TestNotNull(TEXT("Defensive Line has an EQS spawn query"), DefensiveLine->SpawnQuery.Get());
 		TestFalse(TEXT("Defensive Line spawn regions are explicitly bounded"), DefensiveLine->AllowedSpawnRegions.IsEmpty());
 
 		// The opening purse has to cover the whole authored opening or a fixed slot is silently
-		// skipped: 3 Pilgrim (3.0) + 2 Hound (3.0) + the boss Spider (2.5) = 8.5.
+		// skipped: 3 Pilgrim (3.0) + 2 Hound (3.0) + the boss Teuthisan (4.0) = 10.0.
 		TestEqual(TEXT("Defensive Line opens with its whole authored composition affordable"),
-			DefensiveLine->StartingCredits, 8.5f);
+			DefensiveLine->StartingCredits, 10.0f);
 
 		// The spawn-placement contract, asserted because nothing else observes it: these two
 		// values are the whole reason enemies used to appear a few metres away instead of being
@@ -250,7 +249,7 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 		// which is both the streaming manifest and the roster the player actually meets.
 		TArray<FPrimaryAssetId> Predicted;
 		DefensiveLine->GetPredictedEnemySet(Predicted);
-		for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") })
+		for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider"), TEXT("Teuthisan") })
 		{
 			TestTrue(*FString::Printf(TEXT("Defensive Line can field %s"), ArchetypeName),
 				Predicted.Contains(AHEnemyAssets::EnemyId(FName(ArchetypeName))));

@@ -4,11 +4,13 @@ Run with UnrealEditor-Cmd after the AshesOfHeavenEditor target has been built, a
 ImportEnemyModels.py has written Saved/EnemyModelManifest.json. The script is idempotent:
 existing assets are updated in place instead of duplicated.
 
-The roster is three creature archetypes sharing one streaming and AI pipeline:
+The roster is four creature archetypes sharing one streaming and AI pipeline:
 
-  Pilgrim  humanoid alien skirmisher, rifle, keeps its distance
-  Hound    quadruped biter, no weapon at all, closes and attacks in contact
-  Spider   armoured bio-mech crawler, no weapon, slower and much harder to kill
+  Pilgrim    humanoid alien skirmisher, rifle, keeps its distance
+  Hound      quadruped biter, no weapon at all, closes and attacks in contact
+  Spider     small crawler, no weapon, fast and expendable
+  Teuthisan  the heavy - a film-grade alien migrated whole from its own project, crawls in
+             low and rears up to strike; fills the threat-4.0 slot the Warden vacated
 
 Sizes are not authored here. Each source model is in its own units - one is in metres, one is
 a forty-metre spider - so the mesh scale, capsule and body offset are derived from the imported
@@ -153,14 +155,64 @@ ARCHETYPES = {
         },
         "abilities": {},
     },
+    "Teuthisan": {
+        # Not an imported model: the whole character - mesh, skeleton, materials, textures -
+        # was migrated path-preserving from its own project (Scripts/MigrateTeuthisan.py), and
+        # its clips are baked from its cinematic Control Rig takes rather than imported
+        # (Scripts/AuthorTeuthisanAnimations.py). mesh_asset is what routes _author_enemy to a
+        # live-measured manifest entry instead of the ImportEnemyModels one.
+        "model": "Teuthisan",
+        "mesh_asset": "/Game/Characters/Teuthisan/Rig/SKM_Teuthisan_rig_v001",
+        "physics_asset": "/Game/Characters/Teuthisan/Rig/PA_Teuthisan_rig_v001",
+        "combat_class": PILGRIM_CLASS,
+        "display_name": "Teuthisan",
+        # The bind pose stands 168cm, and the capsule has to cover the standing attack pose, not
+        # the crawl - so the native size is kept exactly (scale 1.0) and the body simply sits low
+        # in its capsule while it crawls.
+        "target_height_cm": 168.0,
+        "capsule_radius": 50.0,
+        # The heavy's numbers, inherited from the Warden slot it fills: the roster lost its
+        # threat-4.0 body when that archetype was cut, and every encounter has been spending the
+        # difference on extra Hounds since.
+        "health": 260.0,
+        "armor": 120.0,
+        # Matches the run clip: the crawl travels 75 cm/s natural and the run is that gait
+        # rate-scaled to about 300, so the pawn's top speed is the speed the feet animate at.
+        "speed": 300.0,
+        "headshot": 1.5,
+        "threat": 4.0,
+        "currency": 35,
+        "marker_color": (0.85, 0.22, 0.10, 1.0),
+        "voice": "Alien",
+        # Melee only, like every beast: it crawls in and rears up. The rifle stays the Pilgrim's
+        # alone - AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion pins exactly one
+        # armed archetype.
+        "melee": {
+            "damage": 62.0,
+            "range": 220.0,
+            "radius": 55.0,
+            "cooldown": 1.9,
+            "sight_range": 4500.0,
+        },
+        "locomotion": {
+            "idle": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Idle",
+            "walk": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Walk",
+            "run": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Run",
+            "attack": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Attack",
+            "death": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Death",
+        },
+        "abilities": {},
+    },
 }
 
 # Every archetype appears in at least one encounter. The two manifests differ by seed and by
 # which beast leads the mix: the patrol opens on Pilgrims with the beasts behind them, and the
 # battlefield manifest leads with the Hound, which is the body that closes the distance.
+# The Teuthisan is held back from the routine patrol so an ordinary contact does not open on
+# the heaviest body in the roster - the same reasoning that once kept the Warden out of it.
 ENCOUNTERS = {
     "PilgrimPatrol": {"primary": "Pilgrim", "additional": ["Hound", "Spider"], "seed": 1337},
-    "PilgrimHound": {"primary": "Pilgrim", "additional": ["Hound", "Spider"], "seed": 8821},
+    "PilgrimHound": {"primary": "Pilgrim", "additional": ["Hound", "Spider", "Teuthisan"], "seed": 8821},
 }
 
 
@@ -298,7 +350,9 @@ def _locomotion_payload(name, spec, definition):
         relative = clips.get(field)
         if not relative:
             continue
-        path = "%s/%s" % (ENEMY_CONTENT_ROOT, relative)
+        # The Teuthisan's clips live with its migrated character folder, not under the enemy
+        # content root, so an absolute path passes through untouched.
+        path = relative if relative.startswith("/Game/") else "%s/%s" % (ENEMY_CONTENT_ROOT, relative)
         clip = _load(path)
         if not clip:
             raise RuntimeError("%s locomotion take missing: %s" % (name, path))
@@ -310,8 +364,33 @@ def _locomotion_payload(name, spec, definition):
     return payload
 
 
+def _in_engine_entry(spec):
+    """A synthetic manifest record for a model that never went through ImportEnemyModels.
+
+    The Teuthisan arrived as finished uassets migrated from its own project, so there is no FBX
+    import to measure it during. The manifest entry is built here instead, from the same source
+    of truth the import script uses: the mesh's own bounds.
+    """
+    mesh = unreal.load_asset(spec["mesh_asset"])
+    if not mesh:
+        raise RuntimeError("in-engine model missing: " + spec["mesh_asset"])
+    bounds = mesh.get_bounds()
+    entry = {
+        "mesh": spec["mesh_asset"],
+        "origin": (bounds.origin.x, bounds.origin.y, bounds.origin.z),
+        "extent": (bounds.box_extent.x, bounds.box_extent.y, bounds.box_extent.z),
+        "height_cm": 2.0 * bounds.box_extent.z,
+    }
+    if spec.get("physics_asset"):
+        entry["physics_asset"] = spec["physics_asset"]
+    return entry
+
+
 def _author_enemy(name, spec, manifest):
-    entry = manifest.get(spec["model"])
+    if spec.get("mesh_asset"):
+        entry = _in_engine_entry(spec)
+    else:
+        entry = manifest.get(spec["model"])
     if not entry:
         raise RuntimeError("%s has no imported model %s in the manifest" % (name, spec["model"]))
 

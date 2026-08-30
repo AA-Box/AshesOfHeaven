@@ -63,7 +63,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FAHEnemyDeathsAvoidGenericFireVFXTest::RunTest(const FString& Parameters)
 {
-	const TArray<FString> Names = {TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider")};
+	const TArray<FString> Names = {TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider"), TEXT("Teuthisan")};
 	for (const FString& Name : Names)
 	{
 		const FString Path = FString::Printf(
@@ -94,7 +94,7 @@ bool FAHRosterWeaponAndLocomotionTest::RunTest(const FString& Parameters)
 	// data asset, and re-running the authoring script with a stray "ranged" block would quietly
 	// arm a hound. It is also invisible from a screenshot, because an enemy shooting from 30m
 	// looks like an enemy shooting from 30m whichever archetype it is.
-	const TArray<FString> Names = { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") };
+	const TArray<FString> Names = { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider"), TEXT("Teuthisan") };
 	int32 Armed = 0;
 	for (const FString& Name : Names)
 	{
@@ -402,8 +402,8 @@ namespace AHEnemyAssetTests
 			case 2:
 				if (!S.bLastCallback) return !TimedOut() ? false : true;
 				S.Test->TestTrue(TEXT("encounter prediction preload succeeds"), S.bLastSuccess);
-				// The mixed encounter is the whole creature roster: Pilgrim, Hound, Spider.
-				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 3);
+				// The mixed encounter is the whole creature roster: Pilgrim, Hound, Spider, Teuthisan.
+				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 4);
 				S.Assets->ReleaseEncounterAssets(S.EncounterLease);
 				S.EncounterLease.Invalidate();
 				S.Test->TestEqual(TEXT("encounter release drops both enemy references"), S.Assets->GetResidentEnemyCount(), 0);
