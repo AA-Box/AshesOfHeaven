@@ -85,6 +85,7 @@ FName UAHAudioSubsystem::GetSemanticEventName(EAHAudioCue Cue) const
 	case EAHAudioCue::Dialogue: return FName(TEXT("UI.Dialogue"));
 	case EAHAudioCue::Pickup: return FName(TEXT("UI.Pickup"));
 	case EAHAudioCue::Footstep: return FName(TEXT("Player.Footstep"));
+	case EAHAudioCue::FootstepRun: return FName(TEXT("Player.Footstep.Run"));
 	case EAHAudioCue::Ambient: return FName(TEXT("Environment.Erebus"));
 	default: return NAME_None;
 	}
