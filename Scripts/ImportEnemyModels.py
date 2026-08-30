@@ -157,65 +157,6 @@ MODELS = {
         "slot_sets": [],
         "default_set": "body",
     },
-    # The old Warden body. Re-exported from the .blend beside the model, because the FBX that
-    # ships next to the textures has no skin cluster: Unreal imports it as sixteen rigid parts
-    # named after the mesh pieces, which is a pile of armour plates standing in bind position,
-    # not a figure. The .blend has the same body on a Rigify rig with a hand-keyed walk cycle.
-    "Ravager": {
-        "fbx": "prepared:Ravager_Mesh.fbx",
-        "import_animations": False,
-        "anim_files": {
-            "Walk": "prepared:Ravager_Walk.fbx",
-            "Idle": "prepared:Ravager_Idle.fbx",
-            "Attack": "prepared:Ravager_Attack.fbx",
-            "Death": "prepared:Ravager_Death.fbx",
-        },
-        "target_height_cm": 235.0,
-        # This body went nearly black in Erebus at 0.30 over already-dark rock and leather.
-        "tint": (0.16, 0.085, 0.04),
-        "roughness": 0.68,
-        "metallic": 0.32,
-        "specular": 0.22,
-        "normal_strength": 1.10,
-        "detail_normal_strength": 0.90,
-        "emissive": (0.90, 0.16, 0.025),
-        "emissive_strength": 0.55,
-        # The source's five slots are stable across its prepared FBXs. Give metal, leather,
-        # glow, and rock their own response instead of one pale multiplier over every surface.
-        "slot_tuning": {
-            1: {"tint": (0.11, 0.05, 0.025), "roughness": 0.90,
-                "metallic": 0.04, "specular": 0.18,
-                "normal_strength": 1.05, "detail_normal_strength": 0.85},
-            2: {"tint": (0.10, 0.03, 0.012), "roughness": 0.36,
-                "metallic": 0.0, "specular": 0.20,
-                "normal_strength": 0.0, "detail_normal_strength": 0.0},
-            3: {"tint": (0.10, 0.03, 0.012), "roughness": 0.36,
-                "metallic": 0.0, "specular": 0.20,
-                "normal_strength": 0.0, "detail_normal_strength": 0.0},
-            4: {"tint": (0.18, 0.095, 0.045), "roughness": 0.92,
-                "metallic": 0.03, "specular": 0.18,
-                "normal_strength": 1.05, "detail_normal_strength": 0.80},
-        },
-        "texture_sets": {
-            "metal": {
-                "color": "3/FBX+only+model/TEXTUR/Metal color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Metal Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Metal Rough.png",
-            },
-            "leather": {
-                "color": "3/FBX+only+model/TEXTUR/Leather color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Leather Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Leather Rough.png",
-            },
-            "rock": {
-                "color": "3/FBX+only+model/TEXTUR/Rock Color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Rock Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Rock Rough.png",
-            },
-        },
-        "slot_sets": [("rock", "rock"), ("leather", "leather"), ("metal", "metal")],
-        "default_set": "metal",
-    },
 }
 
 # Source material names that mark the part of a body meant to glow. Everything else stays dark;

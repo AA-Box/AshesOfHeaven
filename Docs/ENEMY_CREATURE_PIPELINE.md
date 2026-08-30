@@ -1,9 +1,12 @@
 # Enemy creature pipeline
 
-Four enemy archetypes are built from external models dropped in `~/Downloads/enemy` (override with
-`AH_ENEMY_SOURCE`). None of the four arrives game-ready: one is an FBX version no current DCC will
-open, one ships its maps only inside a `.blend`, one has no skin cluster at all, and one has
-neither textures nor animation. The scripts below turn that drop into the roster, in this order.
+Three enemy archetypes are built from external models dropped in `~/Downloads/enemy` (override
+with `AH_ENEMY_SOURCE`). None of the three arrives game-ready: one is an FBX version no current DCC
+will open, one ships its maps only inside a `.blend`, and one has neither textures nor animation.
+The scripts below turn that drop into the roster, in this order.
+
+A fourth archetype, the `Warden` / Veil Revenant, was built from the armoured-figure model in the
+same drop and has been removed; its 4.0 threat was split across the three bodies that remain.
 
 | # | Script | Runs under | Produces |
 |---|--------|------------|----------|
@@ -26,7 +29,6 @@ anything step 5 wrote; step 5 reads the skeletons step 4 imported; step 6 reads 
 | Archetype | Model | Weapon | Animation source | Textures |
 |-----------|-------|--------|------------------|----------|
 | `Pilgrim` - Veil Stalker | x-com alien | rifle | one idle take in the FBX, plus authored walk/run/attack/death | procedural chitin |
-| `Warden` - Veil Revenant | armoured figure | none - claws | walk cycle from the `.blend`, plus authored idle/attack/death | rock / leather / metal, from the drop |
 | `Hound` | Alien-Animal | none - bites | six takes in the FBX, plus a rate-scaled walk | 4096 albedo / normal / roughness / metallic, unpacked from the `.blend` |
 | `Spider` - Bio-Mech Crawler | BioMechSpider | none - bites | all five takes authored | procedural carapace folded with occlusion and cavity baked from this mesh |
 
@@ -36,15 +38,7 @@ a hound holding a rifle.
 
 ## Why each script exists
 
-**`PrepareCreatureSources.py`** covers the three things Unreal cannot do for itself.
-
-*The armoured figure has two FBX variants and the one next to its textures has no skin cluster.*
-Unreal imports it as sixteen rigid parts named after the mesh pieces - `claws_hip_001`,
-`LEATHER_002`, `Mask_003` - which is a pile of armour plates standing in bind position, not a
-figure that can ever move. The `.blend` beside it has the same body on a Rigify rig with a
-hand-keyed walk cycle, so that is the real source. The walk travels 1.765 units forward over 24
-frames; Unreal drives translation from the movement component, so the travel is cancelled by
-counter-animating the rig's `root` bone before the take is baked.
+**`PrepareCreatureSources.py`** covers the two things Unreal cannot do for itself.
 
 *The quadruped's glTF export packs metallic and roughness into one image.* In the glTF convention
 that is occlusion in red, roughness in green, metal in blue - and a roughness sampler reads red,

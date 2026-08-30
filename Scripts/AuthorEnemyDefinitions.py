@@ -4,10 +4,9 @@ Run with UnrealEditor-Cmd after the AshesOfHeavenEditor target has been built, a
 ImportEnemyModels.py has written Saved/EnemyModelManifest.json. The script is idempotent:
 existing assets are updated in place instead of duplicated.
 
-The roster is four creature archetypes sharing one streaming and AI pipeline:
+The roster is three creature archetypes sharing one streaming and AI pipeline:
 
   Pilgrim  humanoid alien skirmisher, rifle, keeps its distance
-  Warden   heavy armoured revenant, rifle, shield and teleport ability scalars
   Hound    quadruped biter, no weapon at all, closes and attacks in contact
   Spider   armoured bio-mech crawler, no weapon, slower and much harder to kill
 
@@ -27,14 +26,13 @@ ENCOUNTER_PATH = "/Game/Ashes/Data/Encounters"
 MANIFEST_PATH = os.path.join(unreal.Paths.project_saved_dir(), "EnemyModelManifest.json")
 
 PILGRIM_CLASS = "/Script/AshesOfHeaven.AHVeilPilgrimCharacter"
-WARDEN_CLASS = "/Script/AshesOfHeaven.AHVeilWardenCharacter"
 
 
 # --- roster ----------------------------------------------------------------------------
 # ponytail: the beasts reuse AAHVeilPilgrimCharacter as their concrete combat class. It is the
 # only thing the class still supplies (AAHCombatantCharacter is abstract, and every other value
-# comes from the definition), so two more empty subclasses would buy nothing. Add real classes
-# when a beast needs C++ behaviour of its own, the way the Warden needed its shield cycle.
+# comes from the definition), so two more empty subclasses would buy nothing. Add a real class
+# only when a beast needs C++ behaviour of its own.
 ARCHETYPES = {
     "Pilgrim": {
         "model": "Stalker",
@@ -70,50 +68,6 @@ ARCHETYPES = {
             "death": "Stalker/AS_Stalker_Death",
         },
         "abilities": {},
-    },
-    "Warden": {
-        "model": "Ravager",
-        "combat_class": WARDEN_CLASS,
-        "display_name": "Veil Revenant",
-        "target_height_cm": 235.0,
-        "capsule_radius": 46.0,
-        "health": 260.0,
-        "armor": 120.0,
-        "speed": 215.0,
-        "headshot": 1.5,
-        "threat": 4.0,
-        "currency": 35,
-        "marker_color": (0.85, 0.22, 0.10, 1.0),
-        "voice": "Robo",
-        # The heavy body gets the heavy bank, so the Revenant is audibly a different threat from
-        # the skirmishers before the player has picked it out of the fog.
-        "shot_cue": "SC_SciFi_LazerHeavy",
-        # No rifle. Only the Stalker - the archetype this roster started from - carries one now;
-        # the other three close and strike. This body was modelled around its claws (its own
-        # mesh parts are named CLAWS, claws_head, claws_hip) and the .blend it came from has a
-        # walk cycle and no weapon pose at all, so a rifle in its hands was always a placeholder.
-        # 62 damage on a 1.9s cadence is roughly 33 dps: slower than a hound pack but survivable
-        # only for a few seconds, which is the pressure a heavy is meant to apply.
-        "melee": {
-            "damage": 62.0,
-            "range": 235.0,
-            "radius": 52.0,
-            "cooldown": 1.9,
-            "sight_range": 4500.0,
-        },
-        "locomotion": {
-            "idle": "Ravager/AS_Ravager_Idle",
-            "walk": "Ravager/AS_Ravager_Walk",
-            "run": "Ravager/AS_Ravager_Run",
-            "attack": "Ravager/AS_Ravager_Attack",
-            "death": "Ravager/AS_Ravager_Death",
-        },
-        "abilities": {
-            "ShieldCycleSeconds": 8.0,
-            "ShieldDamageMultiplier": 0.35,
-            "TeleportCycleSeconds": 6.0,
-            "TeleportDistance": 520.0,
-        },
     },
     "Hound": {
         "model": "Hound",
@@ -189,11 +143,12 @@ ARCHETYPES = {
     },
 }
 
-# Every archetype appears in at least one encounter. The Warden is held back from the generic
-# patrol so a routine contact does not open on the heaviest body in the roster.
+# Every archetype appears in at least one encounter. The two manifests differ by seed and by
+# which beast leads the mix: the patrol opens on Pilgrims with the beasts behind them, and the
+# battlefield manifest leads with the Hound, which is the body that closes the distance.
 ENCOUNTERS = {
     "PilgrimPatrol": {"primary": "Pilgrim", "additional": ["Hound", "Spider"], "seed": 1337},
-    "PilgrimWarden": {"primary": "Pilgrim", "additional": ["Warden", "Hound", "Spider"], "seed": 8821},
+    "PilgrimHound": {"primary": "Pilgrim", "additional": ["Hound", "Spider"], "seed": 8821},
 }
 
 
@@ -237,9 +192,9 @@ def _set_struct(owner, property_name, **values):
     """Author the whole struct. Never merge into what is already on the asset.
 
     Reading the existing struct and setting only the named keys leaves every other field frozen
-    at whatever a previous version of this script wrote. That is how DA_Enemy_Pilgrim and
-    DA_Enemy_Warden kept Visuals.AnimClass = ABP_TP_Rifle - the UE mannequin's third-person rifle
-    AnimBP - long after they stopped using the mannequin: AAHCombatantCharacter checks AnimClass
+    at whatever a previous version of this script wrote. That is how DA_Enemy_Pilgrim kept
+    Visuals.AnimClass = ABP_TP_Rifle - the UE mannequin's third-person rifle AnimBP - long
+    after it stopped using the mannequin: AAHCombatantCharacter checks AnimClass
     before AnimationSet, so the alien's one idle clip could never play, and re-running the script
     could not clear it because the script never names the field.
     """

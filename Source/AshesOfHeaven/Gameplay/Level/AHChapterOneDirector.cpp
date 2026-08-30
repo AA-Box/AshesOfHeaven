@@ -2481,7 +2481,7 @@ void AAHChapterOneDirector::SpawnEnemyLineupBench()
 
 	// Every archetype the game can field. Adding one here is how it joins the review bench.
 	TArray<FPrimaryAssetId> Roster;
-	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") })
+	for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") })
 	{
 		Roster.Add(AHEnemyAssets::EnemyId(FName(ArchetypeName)));
 	}
@@ -3071,7 +3071,7 @@ AAHCombatEncounter* AAHChapterOneDirector::SpawnEncounter(FName Id, const FVecto
 		Encounter->EncounterId = Id;
 		if (Id == FName(TEXT("Ch01_Battlefield")) || Id == FName(TEXT("Ch01_Escape")))
 		{
-			Encounter->EncounterDefinitionId = AHEnemyAssets::EncounterId(TEXT("PilgrimWarden"));
+			Encounter->EncounterDefinitionId = AHEnemyAssets::EncounterId(TEXT("PilgrimHound"));
 		}
 		Encounter->EnemyCount = Count;
 		Encounter->ObjectiveOnComplete = ObjectiveOnComplete;

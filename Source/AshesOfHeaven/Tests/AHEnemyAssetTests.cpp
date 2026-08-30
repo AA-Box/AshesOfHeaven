@@ -31,7 +31,7 @@ bool FAHEnemyBodyMaterialsAreProjectAssetsTest::RunTest(const FString& Parameter
 	// on every mobile device. Surfaces must come from authored /Game materials on both tiers.
 	const TArray<FString> DefinitionPaths = {
 		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Pilgrim.DA_Enemy_Pilgrim"),
-		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Warden.DA_Enemy_Warden")
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Hound.DA_Enemy_Hound")
 	};
 	for (const FString& DefinitionPath : DefinitionPaths)
 	{
@@ -63,7 +63,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FAHEnemyDeathsAvoidGenericFireVFXTest::RunTest(const FString& Parameters)
 {
-	const TArray<FString> Names = {TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider")};
+	const TArray<FString> Names = {TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider")};
 	for (const FString& Name : Names)
 	{
 		const FString Path = FString::Printf(
@@ -94,7 +94,7 @@ bool FAHRosterWeaponAndLocomotionTest::RunTest(const FString& Parameters)
 	// data asset, and re-running the authoring script with a stray "ranged" block would quietly
 	// arm a hound. It is also invisible from a screenshot, because an enemy shooting from 30m
 	// looks like an enemy shooting from 30m whichever archetype it is.
-	const TArray<FString> Names = { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") };
+	const TArray<FString> Names = { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") };
 	int32 Armed = 0;
 	for (const FString& Name : Names)
 	{
@@ -193,7 +193,7 @@ bool FAHEnemyAssetManifestTest::RunTest(const FString& Parameters)
 	int32 ValidatedAssets = 0;
 	TestTrue(TEXT("Every enemy and encounter manifest entry resolves and is cook-safe"),
 		UAHEnemyAssetValidationCommandlet::ValidateEnemyAssetManifest(*GLog, ValidatedAssets));
-	TestTrue(TEXT("Pilgrim, Warden, and their encounter manifests were validated"), ValidatedAssets >= 4);
+	TestTrue(TEXT("Pilgrim, the beasts and their encounter manifests were validated"), ValidatedAssets >= 4);
 	return true;
 }
 
@@ -209,7 +209,7 @@ bool FAHEncounterSpawnSequenceTest::RunTest(const FString& Parameters)
 	Definition->DeterministicSeed = 4242;
 	Definition->PrimaryEnemy = AHEnemyAssets::EnemyId(TEXT("Pilgrim"));
 	Definition->AdditionalEnemies = {
-		AHEnemyAssets::EnemyId(TEXT("Warden")),
+		AHEnemyAssets::EnemyId(TEXT("Spider")),
 		AHEnemyAssets::EnemyId(TEXT("Hound")),
 	};
 
@@ -394,7 +394,7 @@ namespace AHEnemyAssetTests
 
 				S.ResetCallback();
 				S.EncounterLease = S.Assets->PreloadEncounterAssets(
-					AHEnemyAssets::EncounterId(TEXT("PilgrimWarden")), TEXT("Test.EncounterPreload"), S.MakeCallback());
+					AHEnemyAssets::EncounterId(TEXT("PilgrimHound")), TEXT("Test.EncounterPreload"), S.MakeCallback());
 				S.Stage = 2;
 				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;
 				return false;
@@ -402,15 +402,15 @@ namespace AHEnemyAssetTests
 			case 2:
 				if (!S.bLastCallback) return !TimedOut() ? false : true;
 				S.Test->TestTrue(TEXT("encounter prediction preload succeeds"), S.bLastSuccess);
-				// The mixed encounter is the whole creature roster: Pilgrim, Warden, Hound, Spider.
-				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 4);
+				// The mixed encounter is the whole creature roster: Pilgrim, Hound, Spider.
+				S.Test->TestEqual(TEXT("mixed encounter predicts the full roster"), S.LastDefinitionCount, 3);
 				S.Assets->ReleaseEncounterAssets(S.EncounterLease);
 				S.EncounterLease.Invalidate();
 				S.Test->TestEqual(TEXT("encounter release drops both enemy references"), S.Assets->GetResidentEnemyCount(), 0);
 
 				S.ResetCallback();
 				S.CoreLease = S.Assets->PreloadEnemyAssets(
-					{ AHEnemyAssets::EnemyId(TEXT("Warden")) }, { AHEnemyAssets::CoreBundle, AHEnemyAssets::VisualBundle },
+					{ AHEnemyAssets::EnemyId(TEXT("Hound")) }, { AHEnemyAssets::CoreBundle, AHEnemyAssets::VisualBundle },
 					TEXT("Test.Cancel"), S.MakeCallback());
 				{
 					const bool bWasPending = S.Assets->HasRequest(S.CoreLease)
@@ -429,7 +429,7 @@ namespace AHEnemyAssetTests
 				S.ResetCallback();
 				S.ChapterLease = S.Assets->PreloadChapterAssets(
 					TEXT("ChapterOne"),
-					{ AHEnemyAssets::EnemyId(TEXT("Pilgrim")), AHEnemyAssets::EnemyId(TEXT("Warden")) },
+					{ AHEnemyAssets::EnemyId(TEXT("Pilgrim")), AHEnemyAssets::EnemyId(TEXT("Hound")) },
 					true, true, S.MakeCallback());
 				S.Stage = 3;
 				S.Deadline = FPlatformTime::Seconds() + AHEnemyAssetTests::StageTimeoutSeconds;

@@ -711,8 +711,8 @@ def author_rate_scaled(source_path, target_path, rate, note):
     """A second take built from an existing one by play rate alone.
 
     Honest for a gait that does not change shape with speed - a quadruped's run slowed down is
-    its walk, and the armoured figure's hand-keyed cycle sped up is its run. Not honest for a
-    biped, which is why the alien has three separately authored cycles.
+    its walk. Not honest for a biped, which is why the alien has three separately authored
+    cycles.
     """
     source = unreal.load_asset(source_path)
     if not source:
@@ -728,16 +728,10 @@ def author_rate_scaled(source_path, target_path, rate, note):
     return target_path
 
 
-def author_ravager_run():
-    return author_rate_scaled(ENEMY_ROOT + "/Ravager/AS_Ravager_Walk",
-                              ENEMY_ROOT + "/Ravager/AS_Ravager_Run", 1.65, "walk cycle")
-
-
 def main():
     author_stalker()
     author_spider()
     author_hound_walk()
-    report["ravager"] = {"AS_Ravager_Run": author_ravager_run()}
     with open(REPORT_PATH, "w") as handle:
         json.dump(report, handle, indent=1, default=str)
     _log("report " + REPORT_PATH)

@@ -4,7 +4,6 @@
 
 #include "Misc/AutomationTest.h"
 #include "Gameplay/Characters/AHVeilPilgrimCharacter.h"
-#include "Gameplay/Characters/AHVeilWardenCharacter.h"
 #include "Gameplay/Encounters/AHEncounterDirectorSubsystem.h"
 #include "Gameplay/Enemies/AHEncounterDefinition.h"
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
@@ -32,13 +31,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterDeterministicSelectionTest, "AshesO
 bool FAHEncounterDeterministicSelectionTest::RunTest(const FString& Parameters)
 {
 	const FPrimaryAssetId PilgrimId = ArchetypeId(TEXT("Pilgrim"));
-	const FPrimaryAssetId WardenId = ArchetypeId(TEXT("Warden"));
+	const FPrimaryAssetId SpiderId = ArchetypeId(TEXT("Spider"));
 	TArray<FAHEncounterEnemyPoolEntry> Pool;
 	Pool.Add({PilgrimId, 1.0f, 1.0f, 0, 0, 1.0f, 1.0f});
-	Pool.Add({WardenId, 3.0f, 1.0f, 0, 0, 1.0f, 1.0f});
+	Pool.Add({SpiderId, 3.0f, 1.0f, 0, 0, 1.0f, 1.0f});
 	TMap<FPrimaryAssetId, TObjectPtr<UAHEnemyDefinition>> Archetypes;
 	Archetypes.Add(PilgrimId, MakeArchetype(TEXT("Pilgrim"), 1.0f));
-	Archetypes.Add(WardenId, MakeArchetype(TEXT("Warden"), 1.0f));
+	Archetypes.Add(SpiderId, MakeArchetype(TEXT("Spider"), 1.0f));
 	TMap<FPrimaryAssetId, int32> Counts;
 	FRandomStream First(81421);
 	FRandomStream Second(81421);
@@ -67,22 +66,22 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHEncounterWeightingTest, "AshesOfHeaven.Encou
 bool FAHEncounterWeightingTest::RunTest(const FString& Parameters)
 {
 	const FPrimaryAssetId PilgrimId = ArchetypeId(TEXT("Pilgrim"));
-	const FPrimaryAssetId WardenId = ArchetypeId(TEXT("Warden"));
+	const FPrimaryAssetId SpiderId = ArchetypeId(TEXT("Spider"));
 	TArray<FAHEncounterEnemyPoolEntry> Pool;
 	Pool.Add({PilgrimId, 1.0f, 1.0f, 0, 0, 1.0f, 1.0f});
-	Pool.Add({WardenId, 9.0f, 1.0f, 0, 0, 1.1f, 1.25f});
+	Pool.Add({SpiderId, 9.0f, 1.0f, 0, 0, 1.1f, 1.25f});
 	TMap<FPrimaryAssetId, TObjectPtr<UAHEnemyDefinition>> Archetypes;
 	Archetypes.Add(PilgrimId, MakeArchetype(TEXT("Pilgrim"), 1.0f));
-	Archetypes.Add(WardenId, MakeArchetype(TEXT("Warden"), 1.0f));
+	Archetypes.Add(SpiderId, MakeArchetype(TEXT("Spider"), 1.0f));
 	TMap<FPrimaryAssetId, int32> Counts;
 	FRandomStream Stream(77);
-	int32 WardenDraws = 0;
+	int32 SpiderDraws = 0;
 	for (int32 Draw = 0; Draw < 200; ++Draw)
 	{
-		WardenDraws += UAHEncounterDirectorSubsystem::SelectWeightedPoolEntry(Pool, Archetypes, Counts, 0, EAHEncounterDifficulty::Soldier, 10.0f, 0.0f, 10.0f, Stream) == 1 ? 1 : 0;
+		SpiderDraws += UAHEncounterDirectorSubsystem::SelectWeightedPoolEntry(Pool, Archetypes, Counts, 0, EAHEncounterDifficulty::Soldier, 10.0f, 0.0f, 10.0f, Stream) == 1 ? 1 : 0;
 	}
-	TestTrue(TEXT("higher authored weight dominates deterministic samples"), WardenDraws > 150);
-	TestTrue(TEXT("Veteran Warden modifier increases effective weight"), UAHEncounterDirectorSubsystem::CalculateEffectiveWeight(Pool[1], EAHEncounterDifficulty::Veteran) > Pool[1].Weight);
+	TestTrue(TEXT("higher authored weight dominates deterministic samples"), SpiderDraws > 150);
+	TestTrue(TEXT("Veteran Spider modifier increases effective weight"), UAHEncounterDirectorSubsystem::CalculateEffectiveWeight(Pool[1], EAHEncounterDifficulty::Veteran) > Pool[1].Weight);
 	return true;
 }
 
@@ -216,15 +215,16 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Defensive Line is the migrated encounter ID"), DefensiveLine->EncounterId, FName(TEXT("Erebus_DefensiveLine")));
 		// 18.0, raised from 16.0 when the roster gained the Hound (1.5) and Spider (2.5): the
 		// opening wave swapped one Pilgrim for a Hound and the reinforcement swapped one for a
-		// Spider, which is exactly 2.0 more threat. The number is asserted so the budget cannot
-		// drift silently - it is what decides whether the boss Warden is affordable at all.
+		// Spider, which is exactly 2.0 more threat. It stayed at 18.0 when the Warden was cut,
+		// because its 4.0 was split across the remaining bodies rather than dropped. The number
+		// is asserted so the budget cannot drift silently.
 		TestEqual(TEXT("Defensive Line owns eighteen tactical budget"), DefensiveLine->EnemyBudget, 18.0f);
 		TestEqual(TEXT("Defensive Line has two authored phases"), DefensiveLine->Phases.Num(), 2);
 		TestNotNull(TEXT("Defensive Line has an EQS spawn query"), DefensiveLine->SpawnQuery.Get());
 		TestFalse(TEXT("Defensive Line spawn regions are explicitly bounded"), DefensiveLine->AllowedSpawnRegions.IsEmpty());
 
 		// The opening purse has to cover the whole authored opening or a fixed slot is silently
-		// skipped: 3 Pilgrim (3.0) + 1 Hound (1.5) + the boss Warden (4.0) = 8.5.
+		// skipped: 3 Pilgrim (3.0) + 2 Hound (3.0) + the boss Spider (2.5) = 8.5.
 		TestEqual(TEXT("Defensive Line opens with its whole authored composition affordable"),
 			DefensiveLine->StartingCredits, 8.5f);
 
@@ -250,7 +250,7 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 		// which is both the streaming manifest and the roster the player actually meets.
 		TArray<FPrimaryAssetId> Predicted;
 		DefensiveLine->GetPredictedEnemySet(Predicted);
-		for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider") })
+		for (const TCHAR* ArchetypeName : { TEXT("Pilgrim"), TEXT("Hound"), TEXT("Spider") })
 		{
 			TestTrue(*FString::Printf(TEXT("Defensive Line can field %s"), ArchetypeName),
 				Predicted.Contains(AHEnemyAssets::EnemyId(FName(ArchetypeName))));
