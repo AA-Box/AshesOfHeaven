@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Bake tileable PBR texture sets for the enemy creature bodies. Pure numpy, procedural.
+"""Bake the enemy creature texture sets: procedural where a model shipped nothing, unpacked
+where it shipped something.
 
-Two of the four imported creature models ship no images at all - the x-com alien FBX has no
-texture references and the bio-mech spider has one untextured material - so they shaded from a
-flat tint and read as plastic no matter how the tint was set. These are the maps they were
-missing, plus a shared fine detail normal that breaks up the flatness on the two models that DID
-arrive with textures.
+The x-com alien FBX has no texture references at all, so its chitin is generated here. The
+crawler that replaced the bio-mech spider is the opposite case - it arrives with a painted trim
+sheet and a packed roughness map, and what it needs is splitting into the channels this project
+samples. The shared fine detail normal breaks up flatness on every body.
 
 Outputs 1024x1024 PNGs into Saved/CreatureTextureSource, which Scripts/ImportEnemyModels.py
 reads with the "baked:" prefix. Helpers come from BakeErebusTextures so there is one noise
@@ -65,76 +65,61 @@ def bake_chitin():
     write_png(f"{OUT}/T_Creature_Chitin_AO.png", to_u8(np.clip(cavity * 0.85 + 0.15, 0, 1)))
 
 
-def bake_carapace():
-    """Bio-mech shell: tighter panels, machined scratches, pitted edges."""
-    panels = 1.0 - np.clip(worley(11, 3201) * 1.20, 0, 1)
-    scratch = fbm(70, 2, 3202, gain=0.35)
-    pits = np.clip(worley(34, 3203) * 1.6, 0, 1)
-    height = np.clip(0.60 * warp(panels, 14, 3204) + 0.24 * pits + 0.16 * scratch, 0, 1)
-    cavity = _cavity(height, 3205)
-
-    write_png(f"{OUT}/T_Creature_Carapace_D.png", _albedo(height, cavity, 0.040, 0.150, (0.92, 0.97, 1.00)))
-    write_png(f"{OUT}/T_Creature_Carapace_N.png", normal_from_height(height, 3.0))
-    rough = 0.30 + 0.50 * (1.0 - cavity) + 0.16 * scratch
-    write_png(f"{OUT}/T_Creature_Carapace_R.png", to_u8(np.clip(rough, 0, 1)))
-    write_png(f"{OUT}/T_Creature_Carapace_AO.png", to_u8(np.clip(cavity * 0.80 + 0.20, 0, 1)))
+FACEHUGGER_SOURCE = os.environ.get(
+    "AH_FACEHUGGER_SOURCE", os.path.expanduser("~/Downloads/spider-new"))
+FACEHUGGER_TEXTURES = os.path.join(
+    FACEHUGGER_SOURCE, "this_is_us_the_last_survivors_signing_off_gltf", "textures")
 
 
-PREPARED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "Saved", "CreatureSource")
+def prepare_facehugger():
+    """Split the crawler's authored glTF maps into the channels this project's material wants.
 
+    This body is the one creature in the roster whose albedo is not procedural. The map is a
+    TILEABLE trim sheet - dark ribbed panelling, shared in the source scene by the crawler, the
+    statues and the terrain - not an atlas baked against one model's UVs. That distinction is what
+    makes it safe to reuse: a foreign atlas lands another model's anatomy on this one, a tiling
+    sheet just repeats, so the UV layout underneath it does not have to match anything.
 
-def _read_gray(path, size):
+    Its roughness and metal arrive packed into one image in the glTF convention - occlusion in
+    red, roughness in green, metal in blue. Feeding that packed image straight to a roughness
+    sampler reads red, and the surface comes out inverted; the same trap the quadruped's export
+    set two models ago. Only green carries data here: red and blue are both flat 1.0, so there is
+    no occlusion to keep, and the blue would otherwise declare a fleshy body fully metallic
+    because glTF's default metallic factor is 1. Metal is a scalar on the material instead.
+
+    The normal is derived from the albedo's luminance rather than baked from a sculpt, because no
+    high-poly ships with this model. That is honest surface breakup, not invented detail: it puts
+    the shading where the painted detail already is, and the shared detail normal carries the fine
+    grain on top.
+    """
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = None
-    image = Image.open(path).convert("L").resize((size, size), Image.LANCZOS)
-    return np.asarray(image, dtype=np.float32) / 255.0
 
-
-def composite_spider():
-    """Fold the spider's own baked occlusion and cavity into its procedural carapace.
-
-    The procedural maps are tileable noise. Sampled through the model's UVs they are the same
-    soft blobs everywhere, which is exactly the clay look the body had - the detail is not
-    wrong, it is simply not attached to anything. Blender bakes occlusion and pointiness from
-    the mesh into that same UV layout, so multiplying the two lands the dark in the model's own
-    creases and the light on its own edges.
-
-    Skipped rather than failed when the bakes are absent: Scripts/PrepareCreatureSources.py
-    needs Blender, and the procedural set alone still produces a usable body.
-    """
-    ao_path = os.path.join(PREPARED, "Spider_AO.png")
-    cavity_path = os.path.join(PREPARED, "Spider_Cavity.png")
-    if not (os.path.isfile(ao_path) and os.path.isfile(cavity_path)):
-        print("skip composite: run Scripts/PrepareCreatureSources.py -- bakes first")
-        return False
+    color_path = os.path.join(FACEHUGGER_TEXTURES, "4e969798_baseColor.jpeg")
+    packed_path = os.path.join(FACEHUGGER_TEXTURES, "4e969798_metallicRoughness.png")
+    for path in (color_path, packed_path):
+        if not os.path.isfile(path):
+            raise SystemExit("facehugger source missing: %s (set AH_FACEHUGGER_SOURCE)" % path)
 
     size = 2048
-    ao = _read_gray(ao_path, size)
-    cavity = _read_gray(cavity_path, size)
-    base = _read_gray(f"{OUT}/T_Creature_Carapace_D.png", size)
-    rough = _read_gray(f"{OUT}/T_Creature_Carapace_R.png", size)
+    color = Image.open(color_path).convert("RGB").resize((size, size), Image.LANCZOS)
+    write_png(f"{OUT}/T_Facehugger_D.png", np.asarray(color, dtype=np.uint8))
 
-    # Occlusion at full strength would crush the whole body; these weights keep the detail
-    # readable rather than turning every crease black.
-    shade = np.clip(0.45 + 0.55 * ao, 0, 1) * np.clip(0.70 + 0.30 * cavity, 0, 1)
+    packed = Image.open(packed_path).convert("RGB").resize((size, size), Image.LANCZOS)
+    occlusion, roughness, metallic = [np.asarray(c, dtype=np.float32) / 255.0 for c in packed.split()]
+    # Written out only if it carries something. A constant map costs a sampler and a texture
+    # stream to deliver a number the material could have held as a scalar.
+    for name, channel in (("R", roughness), ("M", metallic), ("AO", occlusion)):
+        if float(channel.std()) < 1e-4:
+            print("facehugger %s channel is flat at %.3f - using a scalar instead"
+                  % (name, float(channel.mean())))
+            continue
+        write_png(f"{OUT}/T_Facehugger_{name}.png", to_u8(np.clip(channel, 0, 1)))
 
-    # The procedural albedo is written as raw linear values into an sRGB-tagged PNG, so the
-    # numbers in the file are already about a stop and a half darker than they read as. Passing
-    # them through and multiplying by occlusion on top landed this body at 0.0055 linear - black
-    # - and everything visible on it was specular sheen, which is exactly the smooth pale plastic
-    # the model was reading as. Renormalise into an explicit sRGB band instead.
-    detail = base - base.min()
-    detail = detail / max(detail.max(), 1e-6)
-    albedo = np.clip((0.21 + 0.23 * detail) * (0.55 + 0.45 * shade), 0, 1)
-    write_png(f"{OUT}/T_Spider_Composite_D.png",
-              np.stack([to_u8(albedo * 0.96), to_u8(albedo * 0.99), to_u8(albedo)], axis=-1))
-    # Exposed edges wear smooth, sheltered creases stay dusty. Floored well above the source
-    # map's 0.47 average: a shell this smooth at 0.47 is a mirror for the one light on it.
-    write_png(f"{OUT}/T_Spider_Composite_R.png",
-              to_u8(np.clip(0.62 + 0.33 * rough * (0.5 + 0.5 * (1.0 - cavity)), 0, 1)))
-    write_png(f"{OUT}/T_Spider_Composite_AO.png", to_u8(np.clip(ao * 0.85 + 0.15, 0, 1)))
-    print("composited spider maps from", PREPARED)
+    luminance = np.asarray(color.convert("L"), dtype=np.float32) / 255.0
+    write_png(f"{OUT}/T_Facehugger_N.png", normal_from_height(luminance, 2.2))
+    print("facehugger maps: albedo %dx%d from %s, normal derived from its luminance"
+          % (size, size, os.path.basename(color_path)))
     return True
 
 
@@ -150,12 +135,13 @@ def bake_detail_normal():
 
 if __name__ == "__main__":
     bake_chitin()
-    bake_carapace()
     bake_detail_normal()
-    composited = composite_spider()
+    prepare_facehugger()
     import glob
     files = sorted(glob.glob(OUT + "/*.png"))
-    assert len(files) == (12 if composited else 9), files
+    # 4 chitin + 1 detail normal + 3 crawler maps. The crawler's metal and occlusion channels
+    # are deliberately absent: they arrive flat and live on the material as scalars.
+    assert len(files) == 8, files
     for f in files:
         assert os.path.getsize(f) > 20000, (f, os.path.getsize(f))
     print("OK", len(files), "creature textures ->", OUT)

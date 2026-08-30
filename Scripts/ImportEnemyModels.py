@@ -122,36 +122,39 @@ MODELS = {
     # Scripts/AuthorCreatureAnimations.py, the maps by folding occlusion and cavity baked from
     # this mesh into the procedural carapace so the detail lands in the model's own creases.
     "Spider": {
-        "fbx": "4/BioMechSpider.fbx",
+        # The bio-mech crawler this archetype started from is gone. It was a 6,955-vert body with
+        # no textures of its own, and every map it wore was numpy noise; next to the quadruped's
+        # authored 4K set it read as a grey blob no tint could rescue. This is the crawler out of
+        # the alien-eggs diorama instead, rigged by Scripts/RigFacehugger.py - the drop ships it
+        # as static scene dressing with no armature at all, so the skeleton is built from its own
+        # geometry before it ever reaches Unreal.
+        "fbx": "prepared:Facehugger_Mesh.fbx",
         "import_animations": False,
-        "target_height_cm": 140.0,
-        # The UVs are fine. This body was carrying a note saying its maps never reached its
-        # surface and that Unreal's merge of the five sub-meshes had dropped the UVs; both
-        # halves were wrong. Assigning any high-contrast map (the quadruped's 4K albedo was
-        # the test) lands with full detail on every leg segment, and so does this body's own
-        # composite once the tint stops crushing it.
-        # What actually happened: while the material had no albedo bound, the tint WAS the
-        # albedo and was authored as one - 0.15 red, a dark shell colour. The map was wired up
-        # later and the tint stayed, so the shader now multiplies a dark map by a dark albedo
-        # value and bottoms the whole body out near 0.05, which reads on screen exactly like a
-        # sampler stuck on one texel. Near-white is what a multiplier should be: the darkness
-        # belongs to the baked map, the same way it does for the alien.
-        "tint": (0.85, 0.80, 0.78),
-        "roughness": 0.95,
-        "specular": 0.10,
+        # Flat and long rather than tall: at 95 the body is about 130cm from tail tip to front
+        # legs, which is a crab the size of a large dog. The old 140 was a height for a body that
+        # stood up; this one lies along the ground and 140 would have made it a car.
+        "target_height_cm": 95.0,
+        # A multiplier, not an albedo. The map is a real painted trim sheet averaging 0.26, so
+        # the darkness is already in it - the mistake the old spider spent months carrying was
+        # multiplying a dark map by a dark tint and bottoming the body out near black.
+        "tint": (0.90, 0.88, 0.86),
+        # Its own roughness channel drives the variation; the scalar only sets the ceiling.
+        "roughness": 0.85,
+        "specular": 0.22,
         "normal_strength": 1.0,
-        "detail_normal_strength": 0.75,
-        # Low, not zero: a bio-mech shell has some conductor in it, but 0.60 made the whole body
-        # a mirror with nothing to reflect except fog, which reads as a bright grey blob.
+        "detail_normal_strength": 0.55,
+        # Chitin, not machinery. The source packs metal as a flat 1.0 because glTF defaults it
+        # that way, which would make a fleshy body a mirror - see prepare_facehugger().
         "metallic": 0.0,
-        "emissive": (0.25, 0.85, 0.75),
-        "emissive_strength": 2.5,
+        # No emissive mask ships with this body, and EmissiveMask defaults to white, so any
+        # strength above zero lights the entire creature rather than an eye.
+        "emissive": (0.55, 0.85, 0.60),
+        "emissive_strength": 0.0,
         "texture_sets": {
             "body": {
-                "color": "baked:T_Spider_Composite_D.png",
-                "normal": "baked:T_Creature_Carapace_N.png",
-                "roughness": "baked:T_Spider_Composite_R.png",
-                "ao": "baked:T_Spider_Composite_AO.png",
+                "color": "baked:T_Facehugger_D.png",
+                "normal": "baked:T_Facehugger_N.png",
+                "roughness": "baked:T_Facehugger_R.png",
             },
         },
         "slot_sets": [],
