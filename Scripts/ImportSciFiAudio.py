@@ -60,12 +60,15 @@ BANKS = {
 # Which bank drives which semantic event in DA_AudioPalette_Default. Combat.Hurt/Death stay on
 # the existing synthesised cues: those are the PLAYER's, and a human taking a hit should not
 # chitter. Creature voices are bound per archetype in AuthorEnemyDefinitions.py instead.
+# Weapon.M91.Fire and UI.Pickup are NOT here: the M91 is a bolt-action rifle, not a laser, and
+# a picked-up magazine is foley, not a menu blip. Both belong to recorded banks bound by
+# Scripts/AuthorSoundLibraryCues.py, and re-running this script must not take them back.
 PALETTE_EVENTS = {
-    "Weapon.M91.Fire": "SC_SciFi_Lazer",
     "Player.Footstep": "SC_SciFi_MetalStep",
     "UI.Objective": "SC_SciFi_UIPositive",
-    "UI.Pickup": "SC_SciFi_UISelect",
-    "UI.Dialogue": "SC_SciFi_UINegative",
+    # UISelect, not UINegative: UINegative is the "denied" stinger and made every line of
+    # dialogue sound like a rejected input.
+    "UI.Dialogue": "SC_SciFi_UISelect",
 }
 
 UI_BANKS = {"UISelect", "UIPositive", "UINegative"}

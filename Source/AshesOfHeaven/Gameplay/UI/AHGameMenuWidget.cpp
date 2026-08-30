@@ -18,6 +18,7 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
 #include "Gameplay/Game/AHCombatPlayerController.h"
+#include "Platform/AHPlatformManagerSubsystem.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Brushes/SlateColorBrush.h"
 #include "Components/SizeBox.h"
@@ -266,6 +267,11 @@ UWidget* UAHGameMenuWidget::BuildOptionsPage()
 		else { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleResolutionDown); }
 	});
 
+	AddOptionRow(TEXT("INVERT LOOK Y"), InvertLookValue, [this](UButton* Button, bool)
+	{
+		Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleToggleInvertLook);
+	});
+
 	MakeMenuButton(FText::FromString(TEXT("BACK")), TEXT("Back"), Page);
 	RefreshOptionRows();
 	return Page;
@@ -273,6 +279,13 @@ UWidget* UAHGameMenuWidget::BuildOptionsPage()
 
 void UAHGameMenuWidget::RefreshOptionRows()
 {
+	// Read before the GameUserSettings guard: this row is stored in our own config section and
+	// must still render if the engine settings object is unavailable.
+	if (InvertLookValue)
+	{
+		InvertLookValue->SetText(FText::FromString(
+			UAHPlatformManagerSubsystem::IsLookYInverted() ? TEXT("ON") : TEXT("OFF")));
+	}
 	UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr;
 	if (!Settings)
 	{
@@ -443,6 +456,13 @@ void UAHGameMenuWidget::HandleCycleQuality()
 		Settings->ApplySettings(false);
 		Settings->SaveSettings();
 	}
+	PlayMenuClick(this);
+	RefreshOptionRows();
+}
+
+void UAHGameMenuWidget::HandleToggleInvertLook()
+{
+	UAHPlatformManagerSubsystem::SetLookYInverted(!UAHPlatformManagerSubsystem::IsLookYInverted());
 	PlayMenuClick(this);
 	RefreshOptionRows();
 }

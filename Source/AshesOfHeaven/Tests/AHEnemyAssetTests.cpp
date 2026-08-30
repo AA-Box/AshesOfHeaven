@@ -57,6 +57,32 @@ bool FAHEnemyBodyMaterialsAreProjectAssetsTest::RunTest(const FString& Parameter
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHEnemyDeathsAvoidGenericFireVFXTest,
+	"AshesOfHeaven.Assets.Enemies.DeathsAvoidGenericFireVFX",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHEnemyDeathsAvoidGenericFireVFXTest::RunTest(const FString& Parameters)
+{
+	const TArray<FString> Names = {TEXT("Pilgrim"), TEXT("Warden"), TEXT("Hound"), TEXT("Spider")};
+	for (const FString& Name : Names)
+	{
+		const FString Path = FString::Printf(
+			TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_%s.DA_Enemy_%s"), *Name, *Name);
+		UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr, *Path);
+		TestNotNull(*FString::Printf(TEXT("%s definition resolves"), *Name), Definition);
+		if (!Definition)
+		{
+			continue;
+		}
+		TestTrue(*FString::Printf(TEXT("%s desktop death remains a physical collapse"), *Name),
+			Definition->ResolveVFX(false).DeathEffect.IsNull());
+		TestTrue(*FString::Printf(TEXT("%s mobile death remains a physical collapse"), *Name),
+			Definition->ResolveVFX(true).DeathEffect.IsNull());
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAHRosterWeaponAndLocomotionTest,
 	"AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
@@ -147,6 +173,13 @@ bool FAHCreatureLocomotionStateTest::RunTest(const FString& Parameters)
 	RunOnly.RunSpeed = 400.0f;
 	TestEqual(TEXT("a body with only a run take uses it at walking speed"),
 		SelectLocomotionState(RunOnly, 120.0f, EAHCreatureAnimState::Idle), EAHCreatureAnimState::Run);
+
+	TestEqual(TEXT("walk cadence is native in the middle of the authored walk band"),
+		CalculateLocomotionPlayRate(Set, 300.0f, 640.0f, EAHCreatureAnimState::Walk), 1.0f);
+	TestEqual(TEXT("run cadence is native at maximum movement speed"),
+		CalculateLocomotionPlayRate(Set, 640.0f, 640.0f, EAHCreatureAnimState::Run), 1.0f);
+	TestEqual(TEXT("idle never inherits a locomotion rate"),
+		CalculateLocomotionPlayRate(Set, 0.0f, 640.0f, EAHCreatureAnimState::Idle), 1.0f);
 	return true;
 }
 

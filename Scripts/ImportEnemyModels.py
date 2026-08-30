@@ -63,10 +63,12 @@ MODELS = {
         # Tint is a multiplier over a real albedo, so it sits near white; the darkness lives in
         # the baked map. Metallic 0: this is a shell, and a metallic organic body is exactly what
         # made it read as painted plastic.
-        "tint": (0.44, 0.40, 0.32),
-        "roughness": 1.0,
+        "tint": (0.20, 0.11, 0.055),
+        "roughness": 0.82,
         "metallic": 0.0,
         "specular": 0.18,
+        "normal_strength": 1.15,
+        "detail_normal_strength": 0.90,
         "emissive": (0.95, 0.28, 0.10),
         "emissive_strength": 2.0,
         "texture_sets": {
@@ -92,12 +94,18 @@ MODELS = {
         "target_height_cm": 115.0,
         # This model's albedo means 0.316 where the baked creature maps mean 0.10, so it needs
         # roughly a third of their tint to land on the same surface value.
-        "tint": (0.105, 0.098, 0.088),
-        "roughness": 0.95,
-        "metallic": 1.0,          # a real metallic map now drives this, so leave the scalar open
-        "specular": 0.22,
-        "emissive": (1.0, 0.20, 0.12),
-        "emissive_strength": 3.5,
+        "tint": (0.14, 0.095, 0.075),
+        "roughness": 0.88,
+        "metallic": 0.75,
+        "specular": 0.20,
+        "normal_strength": 1.10,
+        "detail_normal_strength": 0.85,
+        "emissive": (1.0, 0.12, 0.035),
+        "emissive_strength": 1.8,
+        "slot_tuning": {
+            1: {"tint": (0.10, 0.055, 0.035), "roughness": 0.24,
+                "metallic": 0.0, "specular": 0.18, "detail_normal_strength": 0.0},
+        },
         "texture_sets": {
             "body": {
                 "color": "prepared:Hound_Color.png",
@@ -125,12 +133,17 @@ MODELS = {
         # when it folds them into one skeletal mesh. Until that is found, the tint is this
         # body's whole albedo, so it is set as an albedo rather than as a multiplier: a dark
         # bio-mech shell that sits just above the road it stands on.
-        "tint": (0.190, 0.196, 0.205),
-        "roughness": 1.0,
-        "specular": 0.16,
+        # The packaged enemy bench is the authority here: 0.36 red became a pale tan cut-out
+        # because this mesh's broken UVs reduce the material to one sampled colour. Keep the
+        # whole-surface fallback dark and rough until the skeletal merge preserves its UVs.
+        "tint": (0.15, 0.035, 0.012),
+        "roughness": 0.95,
+        "specular": 0.10,
+        "normal_strength": 1.0,
+        "detail_normal_strength": 0.75,
         # Low, not zero: a bio-mech shell has some conductor in it, but 0.60 made the whole body
         # a mirror with nothing to reflect except fog, which reads as a bright grey blob.
-        "metallic": 0.06,
+        "metallic": 0.0,
         "emissive": (0.25, 0.85, 0.75),
         "emissive_strength": 2.5,
         "texture_sets": {
@@ -159,12 +172,30 @@ MODELS = {
         },
         "target_height_cm": 235.0,
         # This body went nearly black in Erebus at 0.30 over already-dark rock and leather.
-        "tint": (0.28, 0.26, 0.23),
-        "roughness": 0.88,
-        "metallic": 0.22,
-        "specular": 0.28,
-        "emissive": (0.95, 0.42, 0.08),
-        "emissive_strength": 2.5,
+        "tint": (0.16, 0.085, 0.04),
+        "roughness": 0.68,
+        "metallic": 0.32,
+        "specular": 0.22,
+        "normal_strength": 1.10,
+        "detail_normal_strength": 0.90,
+        "emissive": (0.90, 0.16, 0.025),
+        "emissive_strength": 0.55,
+        # The source's five slots are stable across its prepared FBXs. Give metal, leather,
+        # glow, and rock their own response instead of one pale multiplier over every surface.
+        "slot_tuning": {
+            1: {"tint": (0.11, 0.05, 0.025), "roughness": 0.90,
+                "metallic": 0.04, "specular": 0.18,
+                "normal_strength": 1.05, "detail_normal_strength": 0.85},
+            2: {"tint": (0.10, 0.03, 0.012), "roughness": 0.36,
+                "metallic": 0.0, "specular": 0.20,
+                "normal_strength": 0.0, "detail_normal_strength": 0.0},
+            3: {"tint": (0.10, 0.03, 0.012), "roughness": 0.36,
+                "metallic": 0.0, "specular": 0.20,
+                "normal_strength": 0.0, "detail_normal_strength": 0.0},
+            4: {"tint": (0.18, 0.095, 0.045), "roughness": 0.92,
+                "metallic": 0.03, "specular": 0.18,
+                "normal_strength": 1.05, "detail_normal_strength": 0.80},
+        },
         "texture_sets": {
             "metal": {
                 "color": "3/FBX+only+model/TEXTUR/Metal color.png",
@@ -743,6 +774,10 @@ def build_material_instances(name, spec, mesh, texture_sets):
         is_glow_slot = any(token in lowered for token in GLOW_TOKENS)
         set_name = _set_for_slot(spec, source_name)
         maps = texture_sets.get(set_name) or {}
+        # Stable slot-specific overrides let one multi-material body keep distinct metal, hide,
+        # glow, and stone response without multiplying every surface by the same value.
+        tuning = dict(spec)
+        tuning.update((spec.get("slot_tuning") or {}).get(index, {}))
 
         instance_name = "MI_%s_%02d" % (name, index)
         full = "%s/%s" % (instance_dir, instance_name)
@@ -759,13 +794,16 @@ def build_material_instances(name, spec, mesh, texture_sets):
         emissive = _load(maps["emissive"]) if maps.get("emissive") else None
         albedo = emissive if (is_glow_slot and emissive) else (_load(maps["color"]) if maps.get("color") else None)
         MEL.set_material_instance_vector_parameter_value(
-            instance, "BaseTint", unreal.LinearColor(*(list(spec["tint"]) + [1.0])))
+            instance, "BaseTint", unreal.LinearColor(*(list(tuning["tint"]) + [1.0])))
         MEL.set_material_instance_scalar_parameter_value(instance, "UseBaseColorTex", 1.0 if albedo else 0.0)
         if albedo:
             set_texture(instance, "BaseColorTex", albedo)
 
         normal = None if is_glow_slot else (_load(maps["normal"]) if maps.get("normal") else None)
-        MEL.set_material_instance_scalar_parameter_value(instance, "NormalStrength", 1.0 if normal else 0.0)
+        MEL.set_material_instance_scalar_parameter_value(
+            instance, "NormalStrength", tuning.get("normal_strength", 1.0) if normal else 0.0)
+        MEL.set_material_instance_scalar_parameter_value(
+            instance, "DetailNormalStrength", tuning.get("detail_normal_strength", 0.65))
         if normal:
             set_texture(instance, "NormalTex", normal)
 
@@ -776,23 +814,23 @@ def build_material_instances(name, spec, mesh, texture_sets):
 
         rough = None if is_glow_slot else (_load(maps["roughness"]) if maps.get("roughness") else None)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Roughness", 0.18 if is_glow_slot else spec["roughness"])
+            instance, "Roughness", tuning["roughness"])
         MEL.set_material_instance_scalar_parameter_value(instance, "UseRoughnessTex", 1.0 if rough else 0.0)
         if rough:
             set_texture(instance, "RoughnessTex", rough)
         metal = None if is_glow_slot else (_load(maps["metallic"]) if maps.get("metallic") else None)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Metallic", 0.0 if is_glow_slot else spec["metallic"])
+            instance, "Metallic", tuning["metallic"])
         MEL.set_material_instance_scalar_parameter_value(instance, "UseMetallicTex", 1.0 if metal else 0.0)
         if metal:
             set_texture(instance, "MetallicTex", metal)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Specular", spec.get("specular", 0.28))
+            instance, "Specular", tuning.get("specular", 0.28))
 
         MEL.set_material_instance_vector_parameter_value(
-            instance, "EmissiveColor", unreal.LinearColor(*(list(spec["emissive"]) + [1.0])))
+            instance, "EmissiveColor", unreal.LinearColor(*(list(tuning["emissive"]) + [1.0])))
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "EmissiveStrength", spec["emissive_strength"] if is_glow_slot else 0.0)
+            instance, "EmissiveStrength", tuning["emissive_strength"] if is_glow_slot else 0.0)
         if is_glow_slot and emissive:
             set_texture(instance, "EmissiveMask", emissive)
 

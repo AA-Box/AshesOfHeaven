@@ -71,6 +71,7 @@ protected:
 	UFUNCTION() void HandleCycleQuality();
 	UFUNCTION() void HandleResolutionDown();
 	UFUNCTION() void HandleResolutionUp();
+	UFUNCTION() void HandleToggleInvertLook();
 
 	class AAHCombatPlayerController* GetOwningCombatController() const;
 
@@ -81,6 +82,7 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> WindowModeValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> QualityValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> ResolutionValue;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> InvertLookValue;
 	UPROPERTY(Transient) TObjectPtr<UButton> ContinueButton;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> PrimaryLabel;
 };

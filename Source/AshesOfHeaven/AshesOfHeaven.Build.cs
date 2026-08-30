@@ -12,6 +12,7 @@ public class AshesOfHeaven : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"AnimGraphRuntime",
 			"AssetRegistry",
 			"InputCore",
 			"EnhancedInput",
