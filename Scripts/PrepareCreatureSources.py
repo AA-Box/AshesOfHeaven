@@ -6,16 +6,10 @@ Run under Blender, not Unreal:
         -P Scripts/PrepareCreatureSources.py -- <task> [<source root>] [<out dir>]
 
 Tasks
-    ravager    re-export the armoured figure as a SKINNED mesh plus locomotion takes
     hound      unpack the 4K maps the quadruped's .blend carries but its glTF export mangled
     bakes      bake per-model ambient occlusion and cavity for the two untextured bodies
 
 Why this exists
-    * The armoured figure ships two FBX variants and the one next to the textures has no skin
-      cluster at all - Unreal imports it as sixteen rigid parts named after the mesh pieces
-      ("claws_hip_001", "LEATHER_002"), which is a pile of armour plates in bind position, not
-      a figure. The .blend beside it holds the same model on a Rigify rig plus a hand-keyed
-      walk cycle, so that is the real source.
     * The quadruped's glTF export packs metallic and roughness into one image. Feeding that to
       a roughness sampler reads the RED channel, which in the glTF convention is occlusion and
       is 1.0 nearly everywhere - so the map does nothing and the metal never appears. The
@@ -41,16 +35,10 @@ SOURCE_ROOT = ARGS[1] if len(ARGS) > 1 else os.path.expanduser("~/Downloads/enem
 OUT_DIR = ARGS[2] if len(ARGS) > 2 else os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "Saved", "CreatureSource")
 
-RAVAGER_BLEND = os.path.join(SOURCE_ROOT, "3/BLEND+(Model+++animation)/personaje  modelo.blend")
 HOUND_BLEND = os.path.join(SOURCE_ROOT, "2/Alien-Animal-Blender_2.93-5_Baked_Animations.blend")
 SPIDER_FBX = os.path.join(SOURCE_ROOT, "4/BioMechSpider.fbx")
 STALKER_OBJ = os.path.join(SOURCE_ROOT, "1/x-com+alien+180601.obj")
 
-# The walk take in the .blend. The second take there is a fall-land-walk and has no usable
-# standing hold in it, so the idle is authored instead.
-RAVAGER_WALK = ("rigAction", 1, 25)
-
-FPS = 30
 manifest = {}
 
 
@@ -60,314 +48,6 @@ def log(msg):
 
 def ensure_out():
     os.makedirs(OUT_DIR, exist_ok=True)
-
-
-# --- action helpers --------------------------------------------------------------------
-def action_fcurves(action):
-    """Blender 4.4+ moved f-curves behind layers/strips/channelbags."""
-    direct = getattr(action, "fcurves", None)
-    if direct is not None:
-        return list(direct)
-    out = []
-    for layer in getattr(action, "layers", []):
-        for strip in getattr(layer, "strips", []):
-            for bag in getattr(strip, "channelbags", []):
-                out.extend(bag.fcurves)
-    return out
-
-
-def assign_action(obj, action):
-    obj.animation_data_create()
-    obj.animation_data.action = action
-    slots = getattr(action, "slots", None)
-    if slots:
-        # Slotted actions bind to nothing by default, so the pose never moves.
-        obj.animation_data.action_slot = slots[0]
-
-
-def bake_pose(rig, start, end, name):
-    """Bake the evaluated pose - IK, constraints and all - into a plain action.
-
-    visual_keying is the whole point: the walk take drives foot IK targets, and the deform
-    bones only follow through constraints that the FBX exporter would otherwise not resolve.
-    """
-    bpy.context.view_layer.objects.active = rig
-    rig.select_set(True)
-    bpy.ops.object.mode_set(mode="POSE")
-    bpy.ops.pose.select_all(action="SELECT")
-    bpy.ops.nla.bake(frame_start=start, frame_end=end, only_selected=False,
-                     visual_keying=True, clear_constraints=True, clear_parents=False,
-                     use_current_action=False, bake_types={"POSE"})
-    bpy.ops.object.mode_set(mode="OBJECT")
-    baked = rig.animation_data.action
-    baked.name = name
-    return baked
-
-
-def export_fbx(path, objects, bake_anim, start=1, end=1):
-    for ob in bpy.data.objects:
-        ob.select_set(ob in objects)
-    bpy.context.view_layer.objects.active = objects[0]
-    bpy.ops.export_scene.fbx(
-        filepath=path,
-        use_selection=True,
-        apply_scale_options="FBX_SCALE_NONE",
-        object_types={"ARMATURE", "MESH"},
-        use_mesh_modifiers=True,
-        add_leaf_bones=False,
-        primary_bone_axis="Y",
-        secondary_bone_axis="X",
-        use_armature_deform_only=True,
-        bake_anim=bake_anim,
-        bake_anim_use_all_bones=True,
-        bake_anim_use_nla_strips=False,
-        bake_anim_use_all_actions=False,
-        bake_anim_force_startend_keying=True,
-        bake_anim_step=1.0,
-        bake_anim_simplify_factor=0.0,
-        path_mode="STRIP",
-        axis_forward="-Z",
-        axis_up="Y",
-    )
-    log("wrote " + path)
-
-
-# --- ravager ---------------------------------------------------------------------------
-def ravager_scene():
-    bpy.ops.wm.open_mainfile(filepath=RAVAGER_BLEND)
-    rig = bpy.data.objects.get("rig")
-    if rig is None:
-        raise RuntimeError("no 'rig' armature in " + RAVAGER_BLEND)
-
-    # Keep the armature and only the meshes it actually deforms. The .blend carries a second,
-    # unskinned copy of every part (the modelling originals) plus Rigify's widget meshes; both
-    # would export as extra geometry standing beside the character.
-    keep = {rig}
-    for ob in bpy.data.objects:
-        if ob.type != "MESH":
-            continue
-        if ob.name.startswith("WGT-") or ob.name == "WGTS_rig":
-            continue
-        if any(m.type == "ARMATURE" and m.object is rig for m in ob.modifiers) and ob.vertex_groups:
-            keep.add(ob)
-    for ob in list(bpy.data.objects):
-        if ob not in keep:
-            bpy.data.objects.remove(ob, do_unlink=True)
-
-    # Geometry-nodes modifiers have to go before export. Five of these parts carry one, and the
-    # geometry it generates has no vertex groups - the exporter writes it out unskinned, so it
-    # stays at the bind position while the body walks away from it. In frame that is a floating
-    # mass of quills hanging beside the creature.
-    dropped = 0
-    for ob in keep:
-        for modifier in list(ob.modifiers):
-            if modifier.type == "NODES":
-                ob.modifiers.remove(modifier)
-                dropped += 1
-    if dropped:
-        log("dropped %d geometry-nodes modifier(s) that would export unskinned" % dropped)
-
-    meshes = sorted((o for o in keep if o.type == "MESH"), key=lambda o: o.name)
-    if not meshes:
-        raise RuntimeError("no skinned meshes survived the cull")
-    log("ravager keeps %d skinned meshes, %d deform bones"
-        % (len(meshes), sum(1 for b in rig.data.bones if b.use_deform)))
-    return rig, meshes
-
-
-def bone_world(rig, name):
-    pb = rig.pose.bones[name]
-    return (rig.matrix_world @ pb.matrix).translation.copy()
-
-
-def strip_forward_drift(rig, action, start, end):
-    """Cancel the walk take's travel so the clip loops in place.
-
-    The take is hand-keyed with real forward motion; Unreal drives translation from the
-    movement component, so a clip that also travels slides forward and snaps back every loop.
-    Every control in a Rigify rig hangs off `root`, so counter-translating that one bone moves
-    the feet and the body together and leaves the gait untouched.
-
-    Two passes on purpose. Writing a key into the action while sampling it changes what the
-    next frame evaluates to, so the whole path is measured first and only then written.
-    """
-    assign_action(rig, action)
-    root = rig.pose.bones["root"]
-    rest_basis = root.bone.matrix_local.to_3x3()
-
-    torso = []
-    root_local = []
-    for f in range(start, end + 1):
-        bpy.context.scene.frame_set(f)
-        bpy.context.view_layer.update()
-        torso.append(bone_world(rig, "torso"))
-        root_local.append(root.location.copy())
-
-    travel = torso[-1] - torso[0]
-    travel.z = 0.0
-    log("ravager walk travels %.3f units over %d frames" % (travel.length, end - start))
-    if travel.length < 0.2:
-        raise RuntimeError("walk take does not travel - wrong action?")
-
-    span = float(end - start)
-    to_armature = rig.matrix_world.to_3x3().inverted()
-    basis_inverse = rest_basis.inverted()
-    for index, f in enumerate(range(start, end + 1)):
-        offset = to_armature @ (travel * (index / span))
-        root.location = root_local[index] - (basis_inverse @ offset)
-        root.keyframe_insert("location", frame=f, group="root")
-
-    # The correction has to actually land, or the clip exports with its travel intact and the
-    # creature moonwalks in game - a failure that only shows up once it is in a level.
-    bpy.context.scene.frame_set(end)
-    bpy.context.view_layer.update()
-    residual = (bone_world(rig, "torso") - torso[0])
-    residual.z = 0.0
-    if residual.length > 0.05:
-        raise RuntimeError("drift removal left %.3f units of travel" % residual.length)
-    return travel.length / (span / FPS)
-
-
-def author_ravager_attack(rig, start, end):
-    """A two-beat overhead claw swing, keyed on the FK controls.
-
-    Hand-keyed rather than borrowed: the .blend has no attack take, and this body's silhouette
-    reads from the arms - a melee enemy that closes and then does nothing visible is the single
-    worst thing about the current roster.
-    """
-    action = bpy.data.actions.new("AH_Ravager_Attack")
-    assign_action(rig, action)
-    bones = rig.pose.bones
-    for pb in bones:
-        pb.rotation_mode = "XYZ"
-
-    # (frame, bone, euler radians) - wind up, strike, recover.
-    keys = [
-        (start, "upper_arm_fk.R", (0.0, 0.0, 0.0)),
-        (start, "forearm_fk.R", (0.0, 0.0, 0.0)),
-        (start, "chest", (0.0, 0.0, 0.0)),
-        (start + 6, "upper_arm_fk.R", (-1.9, 0.0, 0.5)),
-        (start + 6, "forearm_fk.R", (-1.1, 0.0, 0.0)),
-        (start + 6, "chest", (0.0, 0.0, -0.35)),
-        (start + 11, "upper_arm_fk.R", (1.35, 0.0, -0.35)),
-        (start + 11, "forearm_fk.R", (0.25, 0.0, 0.0)),
-        (start + 11, "chest", (0.12, 0.0, 0.45)),
-        (start + 16, "upper_arm_fk.R", (0.35, 0.0, -0.1)),
-        (start + 16, "forearm_fk.R", (0.55, 0.0, 0.0)),
-        (start + 16, "chest", (0.0, 0.0, 0.12)),
-        (end, "upper_arm_fk.R", (0.0, 0.0, 0.0)),
-        (end, "forearm_fk.R", (0.0, 0.0, 0.0)),
-        (end, "chest", (0.0, 0.0, 0.0)),
-    ]
-    for frame, bone, euler in keys:
-        pb = bones.get(bone)
-        if pb is None:
-            raise RuntimeError("attack needs missing bone " + bone)
-        pb.rotation_euler = euler
-        pb.keyframe_insert("rotation_euler", frame=frame, group=bone)
-    return action
-
-
-def author_ravager_idle(rig, start, end):
-    """A standing idle, keyed from the rest pose.
-
-    Not taken from the second take in the .blend: that take is a fall, a landing and a walk-off,
-    and the stretch of it that holds still holds a crouch - torso at 0.82 against the walk's
-    1.17. Cutting an idle out of it gave a heavy that stands permanently braced for impact.
-    """
-    action = bpy.data.actions.new("AH_Ravager_Idle")
-    assign_action(rig, action)
-    bones = rig.pose.bones
-    for pb in bones:
-        pb.rotation_mode = "XYZ"
-
-    span = float(end - start)
-    for frame in range(start, end + 1):
-        phase = (frame - start) / span
-        breath = math.sin(2.0 * math.pi * phase)
-        bones["chest"].rotation_euler = (0.035 * breath, 0.0, 0.0)
-        bones["chest"].keyframe_insert("rotation_euler", frame=frame, group="chest")
-        bones["torso"].rotation_euler = (0.0, 0.0, 0.045 * math.sin(math.pi * phase * 2.0 + 0.7))
-        bones["torso"].keyframe_insert("rotation_euler", frame=frame, group="torso")
-        bones["torso"].location = Vector((0.0, 0.0, 0.018 * breath))
-        bones["torso"].keyframe_insert("location", frame=frame, group="torso")
-    return action
-
-
-def author_ravager_death(rig, start, end):
-    """Buckle at the knees, fold forward, drop. Ends flat so the ragdoll has somewhere to go."""
-    action = bpy.data.actions.new("AH_Ravager_Death")
-    assign_action(rig, action)
-    bones = rig.pose.bones
-    for pb in bones:
-        pb.rotation_mode = "XYZ"
-
-    keys = [
-        (start, "torso", (0.0, 0.0, 0.0)),
-        (start, "chest", (0.0, 0.0, 0.0)),
-        (start + 8, "torso", (0.35, 0.0, 0.0)),
-        (start + 8, "chest", (-0.5, 0.0, 0.2)),
-        (start + 18, "torso", (1.15, 0.0, 0.15)),
-        (start + 18, "chest", (0.35, 0.0, 0.1)),
-        (end, "torso", (1.45, 0.0, 0.2)),
-        (end, "chest", (0.5, 0.0, 0.0)),
-    ]
-    for frame, bone, euler in keys:
-        pb = bones[bone]
-        pb.rotation_euler = euler
-        pb.keyframe_insert("rotation_euler", frame=frame, group=bone)
-    # Sink the body over the same span so the collapse reaches the ground.
-    torso = bones["torso"]
-    for frame, drop in ((start, 0.0), (start + 8, -0.25), (start + 18, -0.75), (end, -0.95)):
-        bpy.context.scene.frame_set(frame)
-        torso.location = Vector((0.0, 0.0, drop))
-        torso.keyframe_insert("location", frame=frame, group="torso")
-    return action
-
-
-def task_ravager():
-    ensure_out()
-    results = {}
-
-    # The mesh, with no animation on it. Imported first in Unreal so the takes have a skeleton.
-    rig, meshes = ravager_scene()
-    bpy.context.scene.frame_set(1)
-    export_fbx(os.path.join(OUT_DIR, "Ravager_Mesh.fbx"), meshes + [rig], bake_anim=False)
-    results["mesh"] = "Ravager_Mesh.fbx"
-
-    # Each take gets a clean file opened from the .blend, because baking a Rigify rig has to
-    # clear its constraints and a cleared rig cannot evaluate the next take.
-    def take(name, build):
-        rig, _meshes = ravager_scene()
-        start, end, action = build(rig)
-        baked = bake_pose(rig, start, end, "AH_" + name)
-        bpy.context.scene.frame_start = start
-        bpy.context.scene.frame_end = end
-        assign_action(rig, baked)
-        path = os.path.join(OUT_DIR, "Ravager_%s.fbx" % name)
-        export_fbx(path, [rig], bake_anim=True, start=start, end=end)
-        results[name.lower()] = os.path.basename(path)
-
-    def build_walk(rig):
-        act = bpy.data.actions[RAVAGER_WALK[0]]
-        speed = strip_forward_drift(rig, act, RAVAGER_WALK[1], RAVAGER_WALK[2])
-        results["walk_speed_units_per_second"] = round(speed, 3)
-        return RAVAGER_WALK[1], RAVAGER_WALK[2], act
-
-    def build_idle(rig):
-        return 1, 60, author_ravager_idle(rig, 1, 60)
-
-    def build_attack(rig):
-        return 1, 24, author_ravager_attack(rig, 1, 24)
-
-    def build_death(rig):
-        return 1, 30, author_ravager_death(rig, 1, 30)
-
-    take("Walk", build_walk)
-    take("Idle", build_idle)
-    take("Attack", build_attack)
-    take("Death", build_death)
-    manifest["ravager"] = results
 
 
 # --- hound -----------------------------------------------------------------------------
@@ -541,7 +221,7 @@ def task_bakes():
     _bake_model(load_spider, "Spider")
 
 
-TASKS = {"ravager": task_ravager, "hound": task_hound, "bakes": task_bakes}
+TASKS = {"hound": task_hound, "bakes": task_bakes}
 
 if TASK == "all":
     for fn in TASKS.values():

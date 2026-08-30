@@ -9,13 +9,12 @@ import unreal
 
 ENCOUNTER_PATH = "/Game/Ashes/Data/Encounters"
 PILGRIM = "Pilgrim"
-WARDEN = "Warden"
 HOUND = "Hound"
 SPIDER = "Spider"
 ALL_DIRECTIONS = 1 | 2 | 4 | 8
 
 # Spawn costs come from each archetype's authored ThreatCost when the pool entry does not override
-# it: Pilgrim 1.0, Hound 1.5, Spider 2.5, Warden 4.0. Fixed composition slots are charged against
+# it: Pilgrim 1.0, Hound 1.5, Spider 2.5. Fixed composition slots are charged against
 # the same credits as pool draws, so every composition below is written to fit the encounter's
 # StartingCredits exactly - a slot the director cannot afford is silently skipped, and a fight that
 # quietly drops its heaviest body is worse than one that is simply tuned wrong.
@@ -236,11 +235,13 @@ def _author_defensive_line():
             _region(west, (4200.0, -1600.0, 120.0), (900.0, 400.0, 260.0), unreal.AHEncounterDirection.WEST),
         ],
         phases=[
-            # 3 Pilgrim (3.0) + 1 Hound (1.5) + the boss Warden (4.0) = 8.5, the whole opening purse.
+            # The heavy is gone, and its 4.0 is split rather than dropped: a second Hound (1.5)
+            # joins the opening line and the boss slot becomes a Spider (2.5). 3 Pilgrim (3.0) +
+            # 2 Hound (3.0) + the boss Spider (2.5) = 8.5, the same opening purse as before.
             _phase(
                 "InitialAssault",
                 unreal.AHEncounterPhaseTrigger.IMMEDIATE,
-                [_slot(PILGRIM, 3, [initial]), _slot(HOUND, 1, [initial])],
+                [_slot(PILGRIM, 3, [initial]), _slot(HOUND, 2, [initial])],
                 [initial],
                 2,
             ),
@@ -261,11 +262,13 @@ def _author_defensive_line():
         ],
         pool=[
             _pool(PILGRIM, 1.0, 1.0, maximum=8),
-            _pool(HOUND, 0.85, 1.5, maximum=4, veteran=1.15, damnation=1.30),
-            _pool(SPIDER, 0.50, 2.5, minimum_phase=1, maximum=2, veteran=1.10, damnation=1.25),
-            _pool(WARDEN, 0.55, 4.0, minimum_phase=1, maximum=2, veteran=1.10, damnation=1.25),
+            # The Warden's pool weight is split the same way its slot was: the Hound takes the
+            # extra draws at the top of the curve, the Spider takes the heavy end, and its cap
+            # rises from 2 to 3 so the 18.0 budget still has somewhere to spend late credits.
+            _pool(HOUND, 0.95, 1.5, maximum=5, veteran=1.15, damnation=1.30),
+            _pool(SPIDER, 0.65, 2.5, minimum_phase=1, maximum=3, veteran=1.10, damnation=1.25),
         ],
-        boss_slots=[_slot(WARDEN, 1, [initial])],
+        boss_slots=[_slot(SPIDER, 1, [initial])],
     )
 
 
@@ -317,29 +320,29 @@ def _author_cathedral_manifest():
         total_cap=8,
         seed=91273,
         regions=[_region(region, (15100.0, 0.0, 890.0), (350.0, 750.0, 220.0), unreal.AHEncounterDirection.EAST)],
-        # 2 Pilgrim (2.0) + 1 Hound (1.5) + 1 Warden (4.0) = 7.5 of the 8.0 opening credits, where
-        # 4 Pilgrim + 1 Warden was 8.0. The Spider stays in the pool rather than the fixed slots:
-        # the steps are a narrow approach and a guaranteed crawler there is a wall, not a fight.
+        # 3 Pilgrim (3.0) + 3 Hound (4.5) = 7.5 of the 8.0 opening credits, holding the total the
+        # Warden's 4.0 used to make up. It is split between the two light bodies rather than
+        # handed to the Spider: the steps are a narrow approach and a guaranteed crawler there is
+        # a wall, not a fight, so the Spider stays in the pool where the director can decline it.
         phases=[
             _phase(
                 "OuterSteps",
                 unreal.AHEncounterPhaseTrigger.IMMEDIATE,
-                [_slot(PILGRIM, 2, [region]), _slot(HOUND, 1, [region]), _slot(WARDEN, 1, [region])],
+                [_slot(PILGRIM, 3, [region]), _slot(HOUND, 3, [region])],
                 [region],
                 2,
             )
         ],
         pool=[
             _pool(PILGRIM, 1.0, 1.0, maximum=7),
-            _pool(HOUND, 0.75, 1.5, maximum=3),
-            _pool(SPIDER, 0.40, 2.5, maximum=1),
-            _pool(WARDEN, 0.4, 4.0, maximum=1),
+            _pool(HOUND, 0.75, 1.5, maximum=4),
+            _pool(SPIDER, 0.55, 2.5, maximum=2),
         ],
     )
 
 
 def main():
-    for archetype in (PILGRIM, WARDEN, HOUND, SPIDER):
+    for archetype in (PILGRIM, HOUND, SPIDER):
         path = "/Game/Ashes/Data/Enemies/DA_Enemy_%s.DA_Enemy_%s" % (archetype, archetype)
         if unreal.load_asset(path) is None:
             raise RuntimeError(
