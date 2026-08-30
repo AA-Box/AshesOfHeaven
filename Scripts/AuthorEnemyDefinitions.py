@@ -107,9 +107,17 @@ ARCHETYPES = {
     "Spider": {
         "model": "Spider",
         "combat_class": PILGRIM_CLASS,
-        "display_name": "Bio-Mech Crawler",
-        "target_height_cm": 140.0,
-        "capsule_radius": 52.0,
+        # The bio-mech spider this archetype was built on is gone; the body is now the crawler
+        # from the alien-eggs drop, which is organic rather than machine. The archetype id stays
+        # "Spider" because the encounters, the streaming manifests and four test files name it.
+        "display_name": "Veil Crawler",
+        # 95cm tall works out to about 130cm from tail tip to front claws - a body that reads as
+        # a large dog crossed with a crab, low to the ground. The old 140 was a height for a
+        # spider that stood up on its legs.
+        "target_height_cm": 95.0,
+        # The legs span 75cm but the mass is central; a radius that covered the leg tips would
+        # block doorways the creature visibly fits through.
+        "capsule_radius": 44.0,
         "health": 165.0,
         "armor": 55.0,
         "speed": 430.0,
@@ -118,13 +126,17 @@ ARCHETYPES = {
         "currency": 18,
         "marker_color": (0.20, 0.80, 0.70, 1.0),
         "voice": "Robo",
-        # This body faces -Y, unlike the other three; +90 turns it down +X with the rest.
+        # This body faces -Y like the one it replaced - measured off the imported skeleton, where
+        # the legs reach toward negative Y and the tail lies along positive Y - so +90 still turns
+        # it down +X with the rest of the roster.
         "mesh_yaw": 90.0,
-        # Measured from the authored stance rather than the bind pose. The bind pose has one leg
-        # folded under the belly and another stretched flat out behind, so its bounds describe a
-        # 783cm box that no pose the creature ever holds actually fills - fitting to it left the
-        # body scaled small and floating.
-        "pose_bounds": "spider_stance",
+        # No pose_bounds. The old body needed it because its bind pose was not a stance; this one
+        # was modelled crouched on its legs, so the imported bounds already describe it. Fitting
+        # to the authored stance would be wrong here in the other direction: that stance measures
+        # BONES, which span 17.7 units on a body whose mesh spans 88, and the scale would come out
+        # five times too large. What the stance IS good for is where the feet are, which is not
+        # the bottom of this mesh - the tail hangs below them.
+        "foot_plane_from": "spider_stance",
         "locomotion": {
             "idle": "Spider/AS_Spider_Idle",
             "walk": "Spider/AS_Spider_Walk",
@@ -231,7 +243,7 @@ def _read_anim_report():
         return json.load(handle)
 
 
-def _body_fit(entry, target_height_cm, capsule_radius, pose=None):
+def _body_fit(entry, target_height_cm, capsule_radius, pose=None, foot_plane=None):
     """Mesh scale, capsule and body offset for one imported model.
 
     The imported bounds are the only source of truth for how big a model actually is, and the Z
@@ -253,6 +265,14 @@ def _body_fit(entry, target_height_cm, capsule_radius, pose=None):
     else:
         lowest = float(entry["origin"][2]) - float(entry["extent"][2])
         source_height = max(1.0, float(entry["height_cm"]))
+        if foot_plane is not None:
+            # Height from the mesh, floor from the feet. A body whose tail hangs below its legs
+            # gets planted by the tail otherwise: the crawler's mesh reaches 30 units under its
+            # lowest bone, which put its feet 54 units above the bottom of its own capsule and
+            # floated the whole creature. Taking the whole stance instead would swing the error
+            # the other way, because that stance measures bones - 17.7 units on a body whose mesh
+            # spans 88 - and the scale would come out five times too large.
+            lowest = float(foot_plane)
     scale = target_height_cm / source_height
     half_height = target_height_cm * 0.5
     # Rotated, because the component's relative location is expressed in capsule space while the
@@ -302,9 +322,11 @@ def _author_enemy(name, spec, manifest):
     # Rotator(0, -90, 0) sets PITCH and lays every creature face-down on the ground.
     mesh_rotation = unreal.Rotator(pitch=0.0, yaw=mesh_yaw, roll=0.0)
     pose_key = spec.get("pose_bounds")
+    floor_key = spec.get("foot_plane_from")
+    floor = _read_anim_report().get(floor_key, {}).get("foot_plane") if floor_key else None
     scale, half_height, radius, offset = _body_fit(
         entry, spec["target_height_cm"], spec["capsule_radius"],
-        _read_anim_report().get(pose_key) if pose_key else None)
+        _read_anim_report().get(pose_key) if pose_key else None, floor)
     melee = spec.get("melee")
     ranged = spec.get("ranged")
     voice = spec["voice"]

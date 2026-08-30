@@ -142,10 +142,11 @@ class Rig(object):
     hand-written table would be unreviewable and would rot the moment a re-import renumbers.
     """
 
-    def __init__(self, skeleton_path):
+    def __init__(self, skeleton_path, mesh_path=None):
         self.skeleton = unreal.load_asset(skeleton_path)
         if not self.skeleton:
             raise RuntimeError("no skeleton at " + skeleton_path)
+        self.mesh_path = mesh_path
         pose = APE.get_reference_pose(self.skeleton)
         self.order = [str(n) for n in APE.get_bone_names(pose)]
         self.local = {}
@@ -158,8 +159,28 @@ class Rig(object):
             self.comp[name] = (vec_from_ue(c.translation), quat_from_ue(c.rotation),
                                vec_from_ue(c.scale3d))
         self._chains = {}
-        self.parent = self._derive_parents()
+        self.parent = self._parents_from_mesh() if mesh_path else self._derive_parents()
         self._verify_hierarchy()
+
+    def _parents_from_mesh(self):
+        """Read the real hierarchy off the skeletal mesh instead of inferring it.
+
+        _derive_parents recovers the parent map numerically, and on a rig whose bones stack on the
+        same head it can pick a sibling: it puts the crawler's tail_4 72 units from where it
+        belongs, and the armoured figure's spine_006 258 units off. A transient component exposes
+        the reference skeleton's actual parent for every bone, so where a mesh is available the
+        map is read rather than guessed. _verify_hierarchy still checks the answer either way.
+        """
+        mesh = unreal.load_asset(self.mesh_path)
+        if not mesh:
+            raise RuntimeError("no skeletal mesh at " + self.mesh_path)
+        component = unreal.SkeletalMeshComponent()
+        component.set_skeletal_mesh_asset(mesh)
+        parents = {}
+        for name in self.order:
+            parent = str(component.get_parent_bone(name))
+            parents[name] = None if parent in ("None", "") else parent
+        return parents
 
     def _derive_parents(self):
         """Recover each bone's parent from the reference pose.
@@ -502,53 +523,114 @@ def author_stalker():
     return out
 
 
-# --- spider ----------------------------------------------------------------------------
+# --- crawler ----------------------------------------------------------------------------
+# The old bio-mech spider is gone. This is the facehugger-shaped crawler out of the alien-eggs
+# diorama, rigged by Scripts/RigFacehugger.py: eight legs of three joints in mirrored pairs, plus
+# a four-joint tail. It keeps the archetype id "Spider" because the encounters, the tests and the
+# streaming manifests all name it, and none of them care what the body looks like.
+#
+# Measured off the imported skeleton: the legs reach toward -Y and the tail lies along +Y, so the
+# body faces -Y exactly as the old one did and the gait maths below carries over unchanged. The
+# whole creature is 120cm long and 88cm tall, roughly a twentieth of the old spider's reach, which
+# is why every distance here is in single or double digits where the old ones were hundreds.
 SPIDER_SKELETON = ENEMY_ROOT + "/Spider/SKM_Spider_Skeleton"
+SPIDER_BODY = "body"
+SPIDER_TAIL = ("tail_1", "tail_2", "tail_3", "tail_4")
 
-# Chain to solve, the bone whose head is the foot, and where that foot belongs in a stance.
-# Only the four long legs reach the ground: the four short ones are body-length appendages
-# whose whole chain measures about 170 units against a 300-unit drop, so asking them to plant
-# is asking for a straight line pointing at the floor. They keep station near the body instead.
-SPIDER_LEGS = [
-    {"name": "big_fr", "chain": ["Bone_027", "Bone_028", "Bone_029", "Bone_030"],
-     "tip": "Bone_030_end", "stance": (330.0, -430.0), "phase": 0.0, "ground": True},
-    {"name": "big_fl", "chain": ["Bone_032", "Bone_033", "Bone_034", "Bone_035"],
-     "tip": "Bone_035_end", "stance": (-330.0, -430.0), "phase": 0.5, "ground": True},
-    {"name": "big_rr", "chain": ["Bone_037", "Bone_038", "Bone_039", "Bone_040"],
-     "tip": "Bone_040_end", "stance": (360.0, 300.0), "phase": 0.5, "ground": True},
-    {"name": "big_rl", "chain": ["Bone_042", "Bone_043", "Bone_044", "Bone_045"],
-     "tip": "Bone_045_end", "stance": (-360.0, 300.0), "phase": 0.0, "ground": True},
-    {"name": "small_fr", "chain": ["Bone_017", "Bone_018", "Bone_019"],
-     "tip": "Bone_019_end", "stance": None, "phase": 0.5, "ground": False},
-    {"name": "small_fl", "chain": ["Bone_021", "Bone_022", "Bone_023"],
-     "tip": "Bone_023_end", "stance": None, "phase": 0.0, "ground": False},
-    {"name": "small_rr", "chain": ["Bone_009", "Bone_010", "Bone_011"],
-     "tip": "Bone_011_end", "stance": None, "phase": 0.0, "ground": False},
-    {"name": "small_rl", "chain": ["Bone_013", "Bone_014", "Bone_015"],
-     "tip": "Bone_015_end", "stance": None, "phase": 0.5, "ground": False},
-]
-SPIDER_BODY = "Bone_001"
-SPIDER_HEAD = "Bone_024"
-SPIDER_FOOT_PLANE = -300.0     # component Z the walking legs stand on; the body rides above it
-SPIDER_STEP_HEIGHT = 95.0
-SPIDER_STEP_LENGTH = 150.0
-SPIDER_SMALL_REACH = 45.0      # how far the short appendages travel, in their own rest frame
+
+def _crawler_legs():
+    """The leg table, derived from the naming contract instead of transcribed.
+
+    Every one of the eight legs reaches the ground on this body - unlike the old spider, which had
+    four walking legs and four short appendages that could not reach the floor. Gait phase is the
+    alternating tetrapod: L1 R2 L3 R4 push while R1 L2 R3 L4 swing.
+
+    The chain solves on the first two joints and plants the third: the last joint sits at the
+    limb tip, and rotating a bone cannot move its own head, so including it would spend a solver
+    iteration achieving nothing.
+    """
+    legs = []
+    for index in (1, 2, 3, 4):
+        for side in ("L", "R"):
+            name = "leg_%s_%d" % (side, index)
+            legs.append({
+                "name": name,
+                "chain": [name + "_a", name + "_b"],
+                "tip": name + "_c",
+                "phase": 0.0 if (side == "L") == (index % 2 == 1) else 0.5,
+                # Legs 1 and 2 reach furthest forward (tips near y=-41); 3 and 4 brace at the
+                # sides (y=-29). The attack rears on the side legs and strikes with the front.
+                "front": index <= 2,
+                "ground": True,
+            })
+    return legs
+
+
+SPIDER_LEGS = _crawler_legs()
+# Stride is bounded by the shortest chain, not the longest. The side legs measure about 17 units
+# from their root to their tip and rest close to extended, so a 13-unit stride asked them for
+# reach they do not have and left a foot 6 units off its target for the whole clip. 9 is what all
+# eight can actually deliver.
+SPIDER_STEP_HEIGHT = 4.0
+SPIDER_STEP_LENGTH = 9.0
 
 
 def spider_stance_targets(rig):
     """Where every tip belongs when the creature is simply standing.
 
-    The long legs get an authored stance, because the bind pose is not one - one leg is folded
-    under the belly and another is stretched flat out behind, which is the "bad shape" the
-    creature reads as. The short appendages stay where they were modelled.
+    Read off the rest pose rather than authored as eight literals: this rig was generated from the
+    mesh, so its rest pose IS a stance - the diorama had the creature crouched on its legs - and
+    hardcoded targets would rot the moment RigFacehugger.py places a joint differently.
+
+    No ground plane is imposed on top of it. Flattening all eight tips onto one Z left the short
+    side legs 11 units short of a target they physically cannot reach, because their tips rest 10
+    units higher than the front pair's; the solver then spent the whole clip straining. The rest
+    tips are reachable by construction - they are where the limb already is - so the gait only has
+    to add travel and lift on top.
     """
     targets = {}
     for leg in SPIDER_LEGS:
-        if leg["ground"]:
-            targets[leg["name"]] = (leg["stance"][0], leg["stance"][1], SPIDER_FOOT_PLANE)
-        else:
-            targets[leg["name"]] = rig.component_of(leg["tip"], rig.local)[0]
+        targets[leg["name"]] = rig.component_of(leg["tip"], rig.local)[0]
     return targets
+
+
+def spider_tail(rig, pose, sway, curl=0.0):
+    """Sway the tail as one whip, each joint lagging the one before it."""
+    for depth, bone in enumerate(SPIDER_TAIL):
+        rotate_bone(rig, pose, bone, UP_AXIS, sway * math.sin(2 * math.pi * (0.0 - depth * 0.12)))
+        if curl:
+            rotate_bone(rig, pose, bone, SIDE_AXIS, curl * (0.6 + 0.4 * depth))
+
+
+def _measure_reach(rig):
+    """How far each chain can actually stretch, measured once off the rest pose.
+
+    Cached on the leg entries because it is a property of the rig, not of a frame.
+    """
+    for leg in SPIDER_LEGS:
+        joints = [rig.component_of(bone, rig.local)[0] for bone in leg["chain"]]
+        joints.append(rig.component_of(leg["tip"], rig.local)[0])
+        span = sum(v_len(v_sub(joints[i + 1], joints[i])) for i in range(len(joints) - 1))
+        # 0.98: a chain solved dead straight is both unreachable in practice and ugly - it locks
+        # the joint and the leg reads as a stick.
+        leg["reach"] = span * 0.98
+
+
+def _clamp_to_reach(rig, leg, target, pose):
+    """Pull an out-of-range target back onto the chain's reachable sphere.
+
+    Without this the solver simply fails on the shortest legs and reports the shortfall: these
+    side legs rest close to extended, so a stride that suits the front pair asks them for distance
+    that does not exist, and every frame of the clip carries the error. Clamping turns "a foot 4
+    units off its target" into "a foot planted slightly short", which is what a real short leg
+    does anyway.
+    """
+    root = rig.component_of(leg["chain"][0], pose)[0]
+    delta = v_sub(target, root)
+    distance = v_len(delta)
+    if distance <= leg["reach"] or distance < 1e-6:
+        return target
+    return v_add(root, v_scale(delta, leg["reach"] / distance))
 
 
 def spider_pose(rig, foot_targets, body_offset=(0.0, 0.0, 0.0), body_rotation=None):
@@ -559,13 +641,14 @@ def spider_pose(rig, foot_targets, body_offset=(0.0, 0.0, 0.0), body_rotation=No
         offset_bone(rig, pose, SPIDER_BODY, body_offset)
     worst = 0.0
     for leg in SPIDER_LEGS:
-        error = solve_chain(rig, pose, leg["chain"], leg["tip"], foot_targets[leg["name"]])
+        target = _clamp_to_reach(rig, leg, foot_targets[leg["name"]], pose)
+        error = solve_chain(rig, pose, leg["chain"], leg["tip"], target)
         worst = max(worst, error)
     return pose, worst
 
 
 def spider_gait(rig, frame_count, step_length, step_height, bob, name):
-    """Alternating-tetrapod scuttle: two diagonal groups, half a cycle apart."""
+    """Alternating-tetrapod scuttle: two groups of four, half a cycle apart."""
     stance = spider_stance_targets(rig)
     frames = []
     worst = 0.0
@@ -575,45 +658,44 @@ def spider_gait(rig, frame_count, step_length, step_height, bob, name):
         for leg in SPIDER_LEGS:
             phase = (t + leg["phase"]) % 1.0
             base = stance[leg["name"]]
-            reach = step_length if leg["ground"] else SPIDER_SMALL_REACH
-            lift_max = step_height if leg["ground"] else SPIDER_SMALL_REACH * 0.5
-            # This body faces -Y in its own space (head and front legs sit at negative Y), so
-            # a planted foot travels towards +Y while the creature moves forward.
+            # This body faces -Y in its own space (the legs reach toward negative Y), so a planted
+            # foot travels towards +Y while the creature moves forward.
             if phase < 0.5:
-                # Planted: slide backwards under the body at constant speed.
-                travel = reach * (-0.5 + phase * 2.0)
+                travel = step_length * (-0.5 + phase * 2.0)
                 lift = 0.0
             else:
-                # Swinging: arc forward to the next plant.
                 k = (phase - 0.5) * 2.0
-                travel = reach * (0.5 - k)
-                lift = lift_max * math.sin(math.pi * k)
+                travel = step_length * (0.5 - k)
+                lift = step_height * math.sin(math.pi * k)
             targets[leg["name"]] = (base[0], base[1] + travel, base[2] + lift)
         pose, error = spider_pose(
             rig, targets,
             body_offset=(0.0, 0.0, bob * math.sin(4 * math.pi * t)))
+        # The tail counterweights the scuttle at the stride frequency, not twice it.
+        spider_tail(rig, pose, 0.20 * math.sin(2 * math.pi * t))
         worst = max(worst, error)
         frames.append(pose)
-    _log("spider %s solved to within %.1f units" % (name, worst))
-    if worst > 45.0:
-        raise RuntimeError("spider %s left a foot %.1f units off target" % (name, worst))
+    _log("crawler %s solved to within %.2f units" % (name, worst))
+    if worst > 3.0:
+        raise RuntimeError("crawler %s left a foot %.2f units off target" % (name, worst))
     return frames
 
 
 def spider_idle(rig, frame_count):
+    """Breathing on the legs: the body rises and falls and the tail keeps time."""
     stance = spider_stance_targets(rig)
     frames = []
     for index in range(frame_count):
         t = index / float(frame_count - 1)
-        sway = 14.0 * math.sin(2 * math.pi * t)
-        pose, _error = spider_pose(rig, stance, body_offset=(0.0, 0.0, sway))
-        rotate_bone(rig, pose, SPIDER_HEAD, SIDE_AXIS, 0.05 * math.sin(2 * math.pi * t))
+        breath = math.sin(2 * math.pi * t)
+        pose, _error = spider_pose(rig, stance, body_offset=(0.0, 0.0, 1.6 * breath))
+        spider_tail(rig, pose, 0.16 * breath)
         frames.append(pose)
     return frames
 
 
 def spider_attack(rig, frame_count):
-    """Rear back on the hind legs, then stab the body forward."""
+    """Rear back on the side legs, then stab the body forward over the front ones."""
     stance = spider_stance_targets(rig)
     frames = []
     for index in range(frame_count):
@@ -630,18 +712,18 @@ def spider_attack(rig, frame_count):
         targets = {}
         for leg in SPIDER_LEGS:
             base = stance[leg["name"]]
-            front = base[1] < 0.0
-            if front and leg["ground"]:
-                targets[leg["name"]] = (base[0], base[1] - 60.0 * lunge,
-                                        base[2] + 210.0 * rear + 40.0 * lunge)
-            elif front:
-                targets[leg["name"]] = (base[0], base[1] - 55.0 * lunge, base[2] + 35.0 * rear)
+            if leg["front"]:
+                targets[leg["name"]] = (base[0], base[1] - 5.5 * lunge,
+                                        base[2] + 17.0 * rear + 3.0 * lunge)
             else:
                 targets[leg["name"]] = base
         pose, _error = spider_pose(
             rig, targets,
-            body_offset=(0.0, -70.0 * lunge, 110.0 * rear),
+            body_offset=(0.0, -6.0 * lunge, 9.0 * rear),
             body_rotation=(SIDE_AXIS, -0.4 * rear + 0.22 * lunge))
+        # The tail whips over the top on the strike - it is the only part of this silhouette
+        # that reads at range, and a still tail makes the whole lunge look like a slide.
+        spider_tail(rig, pose, 0.10, curl=-0.35 * rear + 0.5 * lunge)
         frames.append(pose)
     return frames
 
@@ -656,25 +738,29 @@ def spider_death(rig, frame_count):
         targets = {}
         for leg in SPIDER_LEGS:
             base = stance[leg["name"]]
-            pull = 0.62 * ease if leg["ground"] else 0.3 * ease
+            pull = 0.55 * ease
             targets[leg["name"]] = (base[0] * (1.0 - pull), base[1] * (1.0 - pull),
-                                    base[2] + (150.0 if leg["ground"] else 40.0) * ease)
-        pose, _error = spider_pose(rig, targets, body_offset=(0.0, 0.0, -170.0 * ease))
+                                    base[2] + 11.0 * ease)
+        pose, _error = spider_pose(rig, targets, body_offset=(0.0, 0.0, -7.0 * ease))
+        spider_tail(rig, pose, 0.05 * (1.0 - ease), curl=0.55 * ease)
         frames.append(pose)
     return frames
 
 
 def author_spider():
-    rig = Rig(SPIDER_SKELETON)
-    keyed = {SPIDER_BODY, SPIDER_HEAD}
+    rig = Rig(SPIDER_SKELETON, ENEMY_ROOT + "/Spider/SKM_Spider")
+    _measure_reach(rig)
+    keyed = {SPIDER_BODY}
+    keyed.update(SPIDER_TAIL)
     for leg in SPIDER_LEGS:
         keyed.update(leg["chain"])
+        keyed.add(leg["tip"])
     out = {}
     clips = {
         "AS_Spider_Idle": spider_idle(rig, 61),
-        "AS_Spider_Walk": spider_gait(rig, 41, SPIDER_STEP_LENGTH, SPIDER_STEP_HEIGHT, 12.0, "walk"),
+        "AS_Spider_Walk": spider_gait(rig, 41, SPIDER_STEP_LENGTH, SPIDER_STEP_HEIGHT, 1.2, "walk"),
         "AS_Spider_Run": spider_gait(rig, 21, SPIDER_STEP_LENGTH * 1.5,
-                                     SPIDER_STEP_HEIGHT * 1.4, 26.0, "run"),
+                                     SPIDER_STEP_HEIGHT * 1.4, 2.6, "run"),
         "AS_Spider_Attack": spider_attack(rig, 25),
         "AS_Spider_Death": spider_death(rig, 37),
     }
@@ -682,12 +768,11 @@ def author_spider():
         out[name] = write_clip(SPIDER_SKELETON, "%s/Spider/%s" % (ENEMY_ROOT, name),
                                frames, keyed, rig)
 
-    # The stance is also the pose the body should be measured in - the bind pose has one leg
-    # folded under the belly and another stretched flat, so its bounds describe nothing. The
-    # import script reads these back to place the capsule and the mesh offset.
+    # The stance is also the pose the body should be measured in: the rest pose is the crouch the
+    # model was posed in for a diorama, not a stance it holds on its feet. The definition script
+    # reads these back to place the capsule and the mesh offset.
     stance_pose, error = spider_pose(rig, spider_stance_targets(rig))
-    lowest = min(rig.component_of(leg["tip"], stance_pose)[0][2]
-                 for leg in SPIDER_LEGS if leg["ground"])
+    lowest = min(rig.component_of(leg["tip"], stance_pose)[0][2] for leg in SPIDER_LEGS)
     highest = max(rig.component_of(bone, stance_pose)[0][2] for bone in rig.order)
     widest = max(abs(rig.component_of(bone, stance_pose)[0][0]) for bone in rig.order)
     report["spider_stance"] = {"foot_plane": round(lowest, 1), "top": round(highest, 1),
@@ -728,10 +813,21 @@ def author_rate_scaled(source_path, target_path, rate, note):
     return target_path
 
 
+TASKS = {
+    "stalker": lambda: author_stalker(),
+    "spider": lambda: author_spider(),
+    "hound": lambda: author_hound_walk(),
+}
+
+
 def main():
-    author_stalker()
-    author_spider()
-    author_hound_walk()
+    selected = [name.strip() for name in os.environ.get("AH_ANIM_TASKS", "").split(",")
+                if name.strip()]
+    unknown = [name for name in selected if name not in TASKS]
+    if unknown:
+        raise RuntimeError("AH_ANIM_TASKS names no such creature: " + ", ".join(unknown))
+    for name in (selected or list(TASKS)):
+        TASKS[name]()
     with open(REPORT_PATH, "w") as handle:
         json.dump(report, handle, indent=1, default=str)
     _log("report " + REPORT_PATH)

@@ -65,6 +65,11 @@ graphify-out/
 /Content/WFC/
 /Plugins/Traffic/
 
+# Teuthisan alien character, copied path-preserving from the ASCTeuthisan project
+# (~871 MB: a 195 MB skeletal mesh and 690 MB of per-zone 4K textures). Same policy as the
+# CitySample kit - restore with Scripts/MigrateTeuthisan.py.
+/Content/Characters/Teuthisan/
+
 # Imported external asset drop (rebuild with Scripts/ImportAssetDrop.py and
 # Scripts/ImportAnimationDrop.py from the sources in ~/Downloads/new).
 /Content/Ashes/Environment/Rocks/
