@@ -55,8 +55,11 @@ public:
 	bool IsAimingDownSights() const { return bADS; }
 
 private:
+	void ResolveMeleeImpact();
+
 	TWeakObjectPtr<AAHCombatantCharacter> CombatantOwner;
 	FTimerHandle MeleeTimer;
+	FTimerHandle MeleeImpactTimer;
 	bool bADS = false;
 	bool bCombatDisabled = false;
 };

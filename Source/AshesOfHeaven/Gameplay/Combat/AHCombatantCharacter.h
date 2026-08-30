@@ -221,7 +221,8 @@ public:
 
 	/** Plays the archetype's attack take over the locomotion loop. Called from the combat
 	 *  component so every melee path telegraphs, not only the one an AI controller drives. */
-	void PlayCreatureAttack();
+	/** Starts the attack take and returns the seconds until its authored impact pose. */
+	float PlayCreatureAttack();
 
 	const FAHCreatureAnimationSet& GetCreatureAnimations() const { return CreatureAnimations; }
 	EAHCreatureAnimState GetCreatureAnimState() const { return CreatureAnimState; }
@@ -269,7 +270,7 @@ protected:
 	/** Swaps the single-node clip when the body changes gait, and holds one-shot takes to the
 	 *  end. Called every tick; cheap when nothing changes because the swap is state-guarded. */
 	void UpdateCreatureAnimation(float DeltaSeconds);
-	void PlayCreatureClip(EAHCreatureAnimState State, bool bLooping);
+	void PlayCreatureClip(EAHCreatureAnimState State, bool bLooping, float PlayRate = 1.0f);
 	/** Every body material goes through here: both the faction skins and the definition-driven
 	 * visuals, so the paint cannot be right on one path and stock grey on the other. */
 	void ApplyBodyPaint(USkeletalMeshComponent* Body, int32 SlotIndex, UMaterialInterface* Source);

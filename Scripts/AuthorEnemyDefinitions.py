@@ -496,15 +496,15 @@ def _author_enemy(name, spec, manifest):
         definition,
         "desktop_vfx",
         spawn_effect=_load("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"),
-        death_effect=_load("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"),
     )
+    # Death stays physical: authored collapse, ragdoll, and corpse. A generic vehicle-fire
+    # system on an organic creature reads as an accidental VFX assignment, on every tier.
     # Mobile keeps the same bodies and materials - they are the archetype's identity - and only
-    # trades the effects down.
+    # trades the spawn effect down.
     _set_struct(
         definition,
         "mobile_vfx",
         spawn_effect=_load("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"),
-        death_effect=_load("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"),
     )
     _set_struct(
         definition,
