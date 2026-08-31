@@ -65,6 +65,15 @@ graphify-out/
 /Content/WFC/
 /Plugins/Traffic/
 
+# Marketplace packs dropped in via the editor, not yet wired to anything in the game.
+# Untracked files poison the evidence hash (ah_inputs_hash covers --others, and a clean CI
+# checkout has none), so anything living in Content/ must be either committed or ignored.
+/Content/AdvancedRealisticGlass/
+/Content/Vefects/
+/Content/__ExternalActors__/AdvancedGlass/
+/Content/__ExternalActors__/AdvancedRealisticGlass/
+/Content/__ExternalObjects__/AdvancedRealisticGlass/
+
 # Teuthisan alien character, copied path-preserving from the ASCTeuthisan project
 # (~871 MB: a 195 MB skeletal mesh and 690 MB of per-zone 4K textures). Same policy as the
 # CitySample kit - restore with Scripts/MigrateTeuthisan.py.
