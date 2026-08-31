@@ -353,7 +353,8 @@ def import_sounds():
         return
     count = 0
     for filename in sorted(os.listdir(source_dir)):
-        if not filename.lower().endswith(".wav"):
+        # .mp3 as well: the sprint footstep loop ships as one, and UE5 imports it natively.
+        if not filename.lower().endswith((".wav", ".mp3")):
             continue
         stem = os.path.splitext(filename)[0]
         name = "SW_" + "".join(part.capitalize() for part in stem.replace("-", " ").split())
@@ -375,8 +376,11 @@ def main():
     if not EAL.does_asset_exist(MASTER):
         unreal.log_error("[AssetDrop] %s is missing; run AuthorErebusPBRMasters.py first" % MASTER)
         return
-    for pack in PACKS:
-        import_pack(pack())
+    # Sound-only reruns are the common case once the meshes are in: re-importing every mesh
+    # pack to pick up one new clip costs minutes and re-touches assets git then reports dirty.
+    if not os.environ.get("AH_ASSET_DROP_SOUNDS_ONLY"):
+        for pack in PACKS:
+            import_pack(pack())
     import_sounds()
     # unreal.log is not reliably visible in commandlet stdout; the report goes to a file.
     report_path = os.path.join(

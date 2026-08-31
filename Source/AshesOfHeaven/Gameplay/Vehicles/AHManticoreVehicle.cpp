@@ -279,7 +279,7 @@ void AAHManticoreVehicle::HandleLookInput(const FInputActionValue& Value)
 {
 	const FVector2D Look = Value.Get<FVector2D>();
 	AddControllerYawInput(Look.X);
-	AddControllerPitchInput(Look.Y);
+	AddControllerPitchInput(Look.Y * UAHPlatformManagerSubsystem::GetLookPitchSign());
 }
 
 void AAHManticoreVehicle::HandleFireStarted()

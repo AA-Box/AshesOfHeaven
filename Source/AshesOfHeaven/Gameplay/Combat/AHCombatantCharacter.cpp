@@ -12,8 +12,10 @@
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Gameplay/Weapons/AHWeaponBase.h"
 #include "Gameplay/AI/AHCombatAIController.h"
+#include "Gameplay/Animation/AHCreatureAnimInstance.h"
 #include "Platform/AHPlatformManagerSubsystem.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Animation/AnimationAsset.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Camera/CameraComponent.h"
@@ -251,15 +253,17 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 		else if (!Visuals.Locomotion.IsEmpty())
 		{
 			// Creature meshes arrive with their own skeleton, so the mannequin AnimBP cannot
-			// drive them and there is no retarget to borrow. The archetype's own takes are
-			// played through the single-node instance and swapped on speed instead - see
-			// UpdateCreatureAnimation. No blending between clips: a single-node instance has
-			// nowhere to blend, and the gait change lands on a footfall often enough to pass.
+			// drive them. A shared native graph blends whichever five clips the archetype names;
+			// unlike the old single-node swap, gait and attack transitions preserve pose continuity.
 			CreatureAnimations = Visuals.Locomotion;
 			CreatureAnimState = EAHCreatureAnimState::Idle;
 			CreatureAnimHoldSeconds = 0.0f;
-			Body->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-			PlayCreatureClip(EAHCreatureAnimState::Idle, true);
+			Body->SetAnimInstanceClass(UAHCreatureAnimInstance::StaticClass());
+			if (UAHCreatureAnimInstance* CreatureInstance = Cast<UAHCreatureAnimInstance>(Body->GetAnimInstance()))
+			{
+				CreatureInstance->Configure(CreatureAnimations);
+			}
+			PlayCreatureClip(EAHCreatureAnimState::Idle, true, 1.0f);
 		}
 		else if (UAnimationAsset* Clip = Visuals.AnimationSet.IsEmpty() ? nullptr : Visuals.AnimationSet[0].Get())
 		{
@@ -268,6 +272,7 @@ void AAHCombatantCharacter::ApplyEnemyDefinition(UAHEnemyDefinition* Definition)
 			Body->PlayAnimation(Clip, true);
 		}
 		if (UPhysicsAsset* PhysicsAsset = Visuals.PhysicsAsset.Get()) Body->SetPhysicsAsset(PhysicsAsset, true);
+		BodyFillScale = Visuals.FillLightScale;
 		Body->SetRelativeScale3D(Visuals.MeshScale);
 		if (Visuals.bOverrideMeshTransform)
 		{
@@ -578,7 +583,7 @@ void AAHCombatantCharacter::ApplyFactionAppearance()
 		// faction read comes from the archetype's own body now, which is an alien, an
 		// armoured brute, a hound or a spider; it does not need a coloured lamp to carry it.
 		BodyFillLight->SetLightColor(BodyFillColor);
-		BodyFillLight->SetIntensity(BodyFillIntensity);
+		BodyFillLight->SetIntensity(BodyFillIntensity * BodyFillScale);
 	}
 	if (EnemyDefinition)
 	{
@@ -619,10 +624,10 @@ void AAHCombatantCharacter::ApplyBodyFillLightToCapsule()
 	BodyFillLight->SetAttenuationRadius(FMath::Clamp(HalfHeight * 6.0f, 260.0f, 900.0f));
 }
 
-void AAHCombatantCharacter::PlayCreatureClip(EAHCreatureAnimState State, bool bLooping)
+void AAHCombatantCharacter::PlayCreatureClip(EAHCreatureAnimState State, bool bLooping, float PlayRate)
 {
 	USkeletalMeshComponent* Body = GetMesh();
-	if (!Body || Body->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
+	if (!Body)
 	{
 		return;
 	}
@@ -640,18 +645,34 @@ void AAHCombatantCharacter::PlayCreatureClip(EAHCreatureAnimState State, bool bL
 		return;
 	}
 	CreatureAnimState = State;
-	Body->PlayAnimation(Clip, bLooping);
+	if (UAHCreatureAnimInstance* CreatureInstance = Cast<UAHCreatureAnimInstance>(Body->GetAnimInstance()))
+	{
+		CreatureInstance->SetCreatureState(State, PlayRate);
+	}
+	else if (Body->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+	{
+		Body->PlayAnimation(Clip, bLooping);
+		if (UAnimSingleNodeInstance* SingleNode = Body->GetSingleNodeInstance())
+		{
+			SingleNode->SetPlayRate(PlayRate);
+		}
+	}
 }
 
-void AAHCombatantCharacter::PlayCreatureAttack()
+float AAHCombatantCharacter::PlayCreatureAttack()
 {
 	UAnimSequenceBase* Clip = CreatureAnimations.Attack.Get();
 	if (!Clip || IsCombatantDead() || CreatureAnimState == EAHCreatureAnimState::Death)
 	{
-		return;
+		return 0.0f;
 	}
-	PlayCreatureClip(EAHCreatureAnimState::Attack, false);
-	CreatureAnimHoldSeconds = FMath::Clamp(Clip->GetPlayLength(), 0.1f, 2.5f);
+	const float Cooldown = CombatComponent ? CombatComponent->MeleeCooldown : 1.1f;
+	const float PlayRate = FMath::Clamp(
+		Clip->GetPlayLength() / FMath::Max(0.45f, Cooldown * 0.9f), 0.85f, 1.65f);
+	const float Duration = FMath::Clamp(Clip->GetPlayLength() / PlayRate, 0.1f, 2.5f);
+	PlayCreatureClip(EAHCreatureAnimState::Attack, false, PlayRate);
+	CreatureAnimHoldSeconds = Duration;
+	return Duration * FMath::Clamp(CreatureAnimations.AttackImpactTime, 0.1f, 0.8f);
 }
 
 void AAHCombatantCharacter::UpdateCreatureAnimation(float DeltaSeconds)
@@ -672,7 +693,22 @@ void AAHCombatantCharacter::UpdateCreatureAnimation(float DeltaSeconds)
 		CreatureAnimations, GetVelocity().Size2D(), CreatureAnimState);
 	if (Wanted != CreatureAnimState)
 	{
-		PlayCreatureClip(Wanted, true);
+		const UCharacterMovementComponent* Movement = GetCharacterMovement();
+		const float MaximumSpeed = Movement ? Movement->MaxWalkSpeed : CreatureAnimations.RunSpeed;
+		const float PlayRate = AHCreatureLocomotion::CalculateLocomotionPlayRate(
+			CreatureAnimations, GetVelocity().Size2D(), MaximumSpeed, Wanted);
+		PlayCreatureClip(Wanted, true, PlayRate);
+	}
+	else if (Wanted == EAHCreatureAnimState::Walk || Wanted == EAHCreatureAnimState::Run)
+	{
+		const UCharacterMovementComponent* Movement = GetCharacterMovement();
+		const float MaximumSpeed = Movement ? Movement->MaxWalkSpeed : CreatureAnimations.RunSpeed;
+		const float PlayRate = AHCreatureLocomotion::CalculateLocomotionPlayRate(
+			CreatureAnimations, GetVelocity().Size2D(), MaximumSpeed, Wanted);
+		if (UAHCreatureAnimInstance* CreatureInstance = Cast<UAHCreatureAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			CreatureInstance->SetCreatureState(Wanted, PlayRate);
+		}
 	}
 }
 

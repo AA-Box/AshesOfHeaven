@@ -14,6 +14,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "InputActionValue.h"
 #include "Materials/MaterialInterface.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 AAHCombatPlayerCharacter::AAHCombatPlayerCharacter()
 {
@@ -104,6 +106,7 @@ void AAHCombatPlayerCharacter::Tick(float DeltaSeconds)
 	// distance accumulator and plays the step. There is one footstep implementation, and every
 	// combatant - player and AI alike - runs it.
 	RefreshMovementSpeed();
+	UpdateSprintLoop();
 	if (GetFirstPersonCameraComponent())
 	{
 		const float TargetFOV = IsAimingDownSights() ? ADSFOV : HipFOV;
@@ -346,6 +349,49 @@ void AAHCombatPlayerCharacter::RefreshMovementSpeed()
 	}
 	FootstepStride = bCrouched ? CrouchStride : (bSprinting ? SprintStride : WalkStride);
 	// Crouching used to be as loud as walking; the whole point of it is not being heard.
-	FootstepVolume = bCrouched ? 0.45f : (bSprinting ? 0.85f : 0.62f);
+	// The sprint one-shots go silent only while the authored sprint LOOP carries the feet;
+	// with no loop bound in the palette, sprint keeps its per-step path.
+	UAHAudioSubsystem* Audio = GetWorld() ? GetWorld()->GetSubsystem<UAHAudioSubsystem>() : nullptr;
+	const bool bLoopCarriesSprint = bSprinting && Audio && Audio->HasAuthoredCue(EAHAudioCue::FootstepRun);
+	FootstepVolume = bCrouched ? 0.45f : (bSprinting ? (bLoopCarriesSprint ? 0.0f : 0.85f) : 0.62f);
 	FootstepPitch = bCrouched ? 0.82f : (bSprinting ? 1.08f : 1.0f);
+}
+
+void AAHCombatPlayerCharacter::UpdateSprintLoop()
+{
+	// The loop plays only while feet are actually drumming: sprinting, on the ground, and
+	// moving near sprint speed - not while sprint is held against a wall or mid-jump.
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const bool bFeetDrumming = bSprinting && !bCrouched && !IsCombatantDead()
+		&& Movement && Movement->IsMovingOnGround()
+		&& GetVelocity().SizeSquared2D() > FMath::Square(WalkSpeed * 0.9f);
+
+	if (bFeetDrumming)
+	{
+		if (!SprintLoop)
+		{
+			UAHAudioSubsystem* Audio = GetWorld() ? GetWorld()->GetSubsystem<UAHAudioSubsystem>() : nullptr;
+			USoundBase* LoopSound = Audio ? Audio->GetAuthoredCueSound(EAHAudioCue::FootstepRun) : nullptr;
+			if (!LoopSound)
+			{
+				return;
+			}
+			// bStopWhenAttachedToDestroyed: a loop that outlives its runner keeps drumming
+			// from nowhere. Auto-destroy after the fade-out is the default and wanted - the
+			// transient UPROPERTY nulls itself and the next sprint spawns a fresh one.
+			SprintLoop = UGameplayStatics::SpawnSoundAttached(
+				LoopSound, GetRootComponent(), NAME_None, FVector::ZeroVector,
+				EAttachLocation::KeepRelativeOffset, true, 0.0f);
+		}
+		if (SprintLoop && !SprintLoop->IsPlaying())
+		{
+			// A short ramp instead of a hard start: the loop begins mid-recording, and a cut
+			// into running feet at full level reads as a glitch rather than acceleration.
+			SprintLoop->FadeIn(0.15f, FootstepVolume > 0.0f ? FootstepVolume : 0.85f);
+		}
+	}
+	else if (SprintLoop && SprintLoop->IsPlaying())
+	{
+		SprintLoop->FadeOut(0.20f, 0.0f);
+	}
 }
