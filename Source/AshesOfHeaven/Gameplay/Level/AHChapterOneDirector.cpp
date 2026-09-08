@@ -49,6 +49,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkyLight.h"
 #include "Animation/SkeletalMeshActor.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextRenderActor.h"
 #include "Engine/Level.h"
@@ -333,11 +335,11 @@ void AAHChapterOneDirector::BuildMissionGraph()
 		{EAHChapterStage::ErebusOpening, OpeningObjective, FText::FromString(TEXT("REACH THE DEFENSIVE LINE")), true},
 		{EAHChapterStage::OpeningBattle, OpeningBattleObjective, FText::FromString(TEXT("HOLD THE EREBUS LINE")), true},
 		{EAHChapterStage::TransitStation, TransitObjective, FText::FromString(TEXT("ENTER THE TRANSIT STATION")), true},
-		{EAHChapterStage::VeilRevelation, RevelationObjective, FText::FromString(TEXT("SURVIVE THE REVELATION")), true},
+		{EAHChapterStage::VeilRevelation, RevelationObjective, FText::FromString(TEXT("CHECK ON THE TRANSIT SURVIVOR")), true},
 		{EAHChapterStage::OpenBattlefield, BattlefieldObjective, FText::FromString(TEXT("CROSS THE OPEN BATTLEFIELD")), true},
 		{EAHChapterStage::ManticoreSection, ManticoreObjective, FText::FromString(TEXT("ENTER THE MANTICORE")), true},
 		{EAHChapterStage::CathedralApproach, ApproachObjective, FText::FromString(TEXT("REACH THE CATHEDRAL APPROACH")), true},
-		{EAHChapterStage::FailsafeOrder, FailsafeObjective, FText::FromString(TEXT("ACTIVATE PLANETARY FAILSAFE")), true},
+		{EAHChapterStage::FailsafeOrder, FailsafeObjective, FText::FromString(TEXT("ENTER THE CATHEDRAL")), true},
 		{EAHChapterStage::CathedralInterior, TerminalObjective, FText::FromString(TEXT("REACH THE FAILSAFE TERMINAL")), true},
 		{EAHChapterStage::SaelTransmission, TerminalObjective, FText::FromString(TEXT("HEAR THE SAEL TRANSMISSION")), false},
 		{EAHChapterStage::FailsafeTerminal, ConfirmObjective, FText::FromString(TEXT("CONFIRM PLANETARY FAILSAFE")), true},
@@ -364,11 +366,11 @@ void AAHChapterOneDirector::ConfigureObjectives()
 		{OpeningObjective, FText::FromString(TEXT("REACH THE DEFENSIVE LINE")), FText::FromString(TEXT("Join the last human line at Erebus."))},
 		{OpeningBattleObjective, FText::FromString(TEXT("HOLD THE EREBUS LINE")), FText::FromString(TEXT("Repel the first Veil assault."))},
 		{TransitObjective, FText::FromString(TEXT("ENTER THE TRANSIT STATION")), FText::FromString(TEXT("Find a route beneath the battlefield."))},
-		{RevelationObjective, FText::FromString(TEXT("SURVIVE THE REVELATION")), FText::FromString(TEXT("The enemy knows Lucian."))},
+		{RevelationObjective, FText::FromString(TEXT("CHECK ON THE TRANSIT SURVIVOR")), FText::FromString(TEXT("Stay with Maya and listen to the survivor."))},
 		{BattlefieldObjective, FText::FromString(TEXT("CROSS THE OPEN BATTLEFIELD")), FText::FromString(TEXT("Reach the Manticore route."))},
 		{ManticoreObjective, FText::FromString(TEXT("ENTER THE MANTICORE")), FText::FromString(TEXT("Take the assault vehicle."))},
 		{ApproachObjective, FText::FromString(TEXT("REACH THE CATHEDRAL APPROACH")), FText::FromString(TEXT("Break through to the Cathedral."))},
-		{FailsafeObjective, FText::FromString(TEXT("ACTIVATE PLANETARY FAILSAFE")), FText::FromString(TEXT("The order has been given."))},
+		{FailsafeObjective, FText::FromString(TEXT("ENTER THE CATHEDRAL")), FText::FromString(TEXT("Reach the control chamber before the carrier opens."))},
 		{TerminalObjective, FText::FromString(TEXT("REACH THE FAILSAFE TERMINAL")), FText::FromString(TEXT("Enter the impossible structure."))},
 		{ConfirmObjective, FText::FromString(TEXT("CONFIRM PLANETARY FAILSAFE")), FText::FromString(TEXT("Authorize the destruction of Erebus."))},
 		{EscapeObjective, FText::FromString(TEXT("ESCAPE THE CATHEDRAL")), FText::FromString(TEXT("Run before the world ends."))},
@@ -700,6 +702,7 @@ void AAHChapterOneDirector::StartStage(EAHChapterStage Stage)
 	default:
 		break;
 	}
+	UpdateStoryCharacter(Stage);
 	RunDelayedStageSpatialValidation(Stage);
 }
 
@@ -2094,7 +2097,11 @@ ASkeletalMeshActor* AAHChapterOneDirector::SpawnVisualCharacter(const TCHAR* Mes
 	{
 		return nullptr;
 	}
-	ASkeletalMeshActor* Character = GetWorld()->SpawnActor<ASkeletalMeshActor>(ASkeletalMeshActor::StaticClass(), Location, Rotation);
+	// The mesh is this actor's root, so apply its mannequin-forward correction to the
+	// world rotation. Setting a relative rotation would overwrite the scene blocking.
+	FRotator MeshRotation = Rotation;
+	MeshRotation.Yaw -= 90.0f;
+	ASkeletalMeshActor* Character = GetWorld()->SpawnActor<ASkeletalMeshActor>(ASkeletalMeshActor::StaticClass(), Location, MeshRotation);
 	if (!Character || !Character->GetSkeletalMeshComponent())
 	{
 		return Character;
@@ -2104,6 +2111,17 @@ ASkeletalMeshActor* AAHChapterOneDirector::SpawnVisualCharacter(const TCHAR* Mes
 	Mesh->SetRelativeScale3D(FVector(Scale));
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetCanEverAffectNavigation(false);
+	// Story figures are not Characters and have no movement-driven AnimBP. An explicit
+	// compatible idle gives them breathing and weight shifts instead of the reference pose.
+	if (UAnimSequence* Idle = LoadObject<UAnimSequence>(nullptr,
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle.MM_Idle")))
+	{
+		Mesh->PlayAnimation(Idle, true);
+		if (UAnimSingleNodeInstance* Instance = Mesh->GetSingleNodeInstance())
+		{
+			Instance->SetPosition(FMath::FRandRange(0.0f, Idle->GetPlayLength()), false);
+		}
+	}
 	if (Material)
 	{
 		Mesh->SetMaterial(0, Material);
@@ -2113,6 +2131,49 @@ ASkeletalMeshActor* AAHChapterOneDirector::SpawnVisualCharacter(const TCHAR* Mes
 		Character->Tags.Add(DisplayId);
 	}
 	return Character;
+}
+
+void AAHChapterOneDirector::UpdateStoryCharacter(EAHChapterStage Stage)
+{
+	// Authored dialogue blocking; Maya is visible at story meeting points and is not
+	// registered as a combat target, escort objective, or collision obstacle.
+	FVector Location;
+	FRotator Rotation(0.0f, 180.0f, 0.0f);
+	switch (Stage)
+	{
+	case EAHChapterStage::OpeningBlack:
+	case EAHChapterStage::ErebusOpening:
+	case EAHChapterStage::OpeningBattle:
+		Location = FVector(-1030.0f, 185.0f, -38.0f);
+		break;
+	case EAHChapterStage::TransitStation:
+	case EAHChapterStage::VeilRevelation:
+		Location = FVector(5230.0f, 185.0f, -38.0f);
+		break;
+	case EAHChapterStage::FailsafeTerminal:
+		Location = FVector(18400.0f, 210.0f, 802.0f);
+		Rotation.Yaw = -150.0f;
+		break;
+	case EAHChapterStage::ErebusDestruction:
+		Location = FVector(24230.0f, -180.0f, 802.0f);
+		break;
+	default:
+		if (MayaStoryCharacter) MayaStoryCharacter->SetActorHiddenInGame(true);
+		return;
+	}
+	if (!MayaStoryCharacter)
+	{
+		MayaStoryCharacter = SpawnVisualCharacter(
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"),
+			TEXT("/Game/Characters/Mannequins/Materials/Quinn/MI_Quinn_02.MI_Quinn_02"),
+			Location, Rotation, 1.0f, FName(TEXT("MayaSerrin")));
+	}
+	if (MayaStoryCharacter)
+	{
+		Rotation.Yaw -= 90.0f;
+		MayaStoryCharacter->SetActorLocationAndRotation(Location, Rotation);
+		MayaStoryCharacter->SetActorHiddenInGame(false);
+	}
 }
 
 void AAHChapterOneDirector::BuildMissionActors()
@@ -2135,7 +2196,7 @@ void AAHChapterOneDirector::BuildMissionActors()
 	// REACH THE CATHEDRAL APPROACH when the player or the Manticore passes X=13700, several
 	// hundred units before this box, so a trigger authored for CathedralApproach can only ever
 	// be overlapped while the chapter is already on FailsafeOrder - where AAHChapterTrigger
-	// rejects it and ACTIVATE PLANETARY FAILSAFE has no other completer at all.
+	// rejects it and ENTER THE CATHEDRAL has no other completer at all.
 	const FAHStageSpatialDefinition& FailsafeOrder = AHChapterSpatial::GetStageDefinition(EAHChapterStage::FailsafeOrder);
 	Trigger = SpawnTrigger(FailsafeOrder.ObjectiveTargetLocation, FVector(400.0f, 650.0f, 220.0f), FName(TEXT("EnterCathedral")), EAHChapterStage::FailsafeOrder);
 	if (Trigger) Trigger->OnTriggered.AddDynamic(this, &AAHChapterOneDirector::HandleTrigger);
@@ -2833,16 +2894,9 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		SunLight->SetActorRotation(FRotator(-15.0f, -150.0f, 0.0f));
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent()))
 		{
-			// Low raking sun diffused by the cloud deck: cold, desaturated. Phase 4.7: the
-			// key crosses the STREET (yaw -95) instead of running down it — vertical
-			// south-side facades catch direct light while the north side silhouettes, so
-			// auto-exposure stops trading the walls away against the skylit ground.
-			// Phase 4.8 tonal recipe: the sun drives the SKY (atmosphere + clouds), not
-			// the ground. A bright backlit key from ahead-right anchors auto-exposure on
-			// the sky so structures fall into dark silhouette like the reference; grazing
-			// incidence keeps the ground dim while rooflines and right-face edges catch rim.
-			SunComponent->SetIntensity(32.0f);
-			SunComponent->SetLightColor(FLinearColor(0.55f, 0.58f, 0.66f));
+			// A low, cloud-diffused key; exposure and local practicals are calibrated together.
+			SunComponent->SetIntensity(320.0f);
+			SunComponent->SetLightColor(FLinearColor(0.82f, 0.86f, 0.95f));
 			SunComponent->SetAtmosphereSunLight(true);
 			SunComponent->SetCastShadows(true);
 			SunComponent->DynamicShadowCascades = 4;
@@ -2926,15 +2980,15 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 			FogComponent->SetMobility(EComponentMobility::Movable);
 			// Deeper, brighter haze: distance dissolves into gray smoke instead of black,
 			// which is what layers the reference's midground/background depth.
-			FogComponent->SetFogDensity(0.022f);
+			FogComponent->SetFogDensity(0.012f);
 			// Ground-hugging haze (scale height ~23m): bases dissolve, tower tops and the
 			// Cathedral rise out of the fog as dark silhouettes against the bright sky.
 			FogComponent->SetFogHeightFalloff(0.30f);
 			FogComponent->SetFogInscatteringColor(FLinearColor(0.42f, 0.44f, 0.49f));
-			FogComponent->SetStartDistance(0.0f);
+			FogComponent->SetStartDistance(600.0f);
 			// Distant landmarks must ghost through the smoke instead of vanishing: the
 			// Cathedral silhouette is the route's destination read.
-			FogComponent->SetFogMaxOpacity(1.0f);
+			FogComponent->SetFogMaxOpacity(0.90f);
 			// Volumetric fog carries the fire glow and sun shafts through the smoke.
 			FogComponent->SetVolumetricFog(true);
 			// Second fog layer: a shallow ground-mist band. Near camera it sits below eye
@@ -2956,39 +3010,21 @@ void AAHChapterOneDirector::SpawnGreyboxLighting()
 		Post->Settings.bOverride_ColorSaturation = true;
 		Post->Settings.ColorSaturation = FVector4(0.88f, 0.90f, 0.96f, 1.0f);
 		Post->Settings.bOverride_ColorContrast = true;
-		Post->Settings.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.0f);
+		Post->Settings.ColorContrast = FVector4(1.02f, 1.02f, 1.02f, 1.0f);
 		Post->Settings.bOverride_BloomIntensity = true;
 		Post->Settings.BloomIntensity = 0.42f;
 		Post->Settings.bOverride_VignetteIntensity = true;
-		Post->Settings.VignetteIntensity = 0.38f;
-		// AutoExposureMin/MaxBrightness are EV100 here, NOT luminance: DefaultEngine.ini sets
-		// r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange=True. 0.03 EV100 is ten stops
-		// above the engine default of -10, so the min clamp binds every frame and exposure is
-		// effectively fixed at 2^(Bias - Min) = 0.669. That is deliberate: with a pinned exposure
-		// the image is identical across the four review poses and brightening a surface actually
-		// brightens the frame instead of being metered away. Do not open the floor - the fog
-		// aperture behind the gate already sits at sRGB ~232 and would blow out.
+		Post->Settings.VignetteIntensity = 0.20f;
+		// EV100 range for the 320-lux key. Preserve practical-light color and readable
+		// foreground shadows while the sky retains a darker storm ceiling.
 		Post->Settings.bOverride_AutoExposureMinBrightness = true;
-		Post->Settings.AutoExposureMinBrightness = 0.03f;
+		Post->Settings.AutoExposureMinBrightness = 3.2f;
 		Post->Settings.bOverride_AutoExposureMaxBrightness = true;
-		Post->Settings.AutoExposureMaxBrightness = 3.0f;
-		// Film toe, the most highlight-safe knob in the pipeline. The engine default of 0.55 puts
-		// 0.18 middle grey on the toe segment and crushes everything under it, which is where
-		// every unlit vehicle, barricade and rubble face in this scene lives. 0.48 lifts the road
-		// roughly three sRGB stops while the aperture moves by under 10 of 255. Below 0.40 the
-		// image reads washed out - that is the flat-grey failure the gate rejects.
+		Post->Settings.AutoExposureMaxBrightness = 6.0f;
 		Post->Settings.bOverride_FilmToe = true;
-		// Step 2 of the lighting calibration, and the experiment that separates the two failure
-		// modes: SkyLight 1.30 -> 1.65 moved the frame median by less than one 8-bit code value,
-		// which is what auto-exposure compensating for extra light looks like. The toe is applied
-		// after exposure, so if this moves the shadows and the SkyLight did not, the lever for
-		// this scene is the tone curve and the exposure target, not more light.
-		Post->Settings.FilmToe = 0.44f;
+		Post->Settings.FilmToe = 0.40f;
 		Post->Settings.bOverride_AutoExposureBias = true;
-		// The one global tonal lever that auto-exposure cannot cancel: bias is applied to the
-		// metered result, so unlike SkyLight it moves the image one-for-one. One moderate step
-		// this pass, +0.5 EV, with FilmToe held at 0.44 so the measurement attributes cleanly.
-		Post->Settings.AutoExposureBias = -0.05f;
+		Post->Settings.AutoExposureBias = 0.35f;
 	}
 
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.5][Presentation] lighting profile=ErebusWar clouds=volumetric fog=volumetric post=graded"));

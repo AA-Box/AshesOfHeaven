@@ -26,6 +26,7 @@ class ASHESOFHEAVEN_API UAHHUDRootWidget : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	void SetPossessedPawn(APawn* NewPawn);
 	/** Switches the authored root between the opening cinematic and normal gameplay presentation. */
@@ -171,4 +172,6 @@ protected:
 	FTimerHandle ObjectiveSettleTimer;
 	bool bGameplayPresentationVisible = true;
 	bool bPresentationReady = false;
+	float OpeningRevealElapsed = -1.0f;
+	double OpeningRevealStartTime = 0.0;
 };

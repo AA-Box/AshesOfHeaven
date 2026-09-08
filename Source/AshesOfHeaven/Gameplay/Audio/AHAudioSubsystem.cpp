@@ -5,6 +5,7 @@
 #include "Gameplay/Audio/AHAudioSettings.h"
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
+#include "Gameplay/Chapter/AHDialogueSubsystem.h"
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -21,22 +22,17 @@ void UAHAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.2][Audio] palette=%s authored=%s"),
 		*PalettePath.ToString(), bAudioPaletteReady ? TEXT("ready") : TEXT("missing"));
 
-	if (GetWorld())
-	{
-		if (GetWorld()->GetGameInstance())
-		{
-			if (UAHChapterSubsystem* Chapter = GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>())
-			{
-				Chapter->OnStageChanged.AddDynamic(this, &UAHAudioSubsystem::HandleChapterStageChanged);
-			}
-		}
-	}
 }
 
 void UAHAudioSubsystem::Deinitialize()
 {
 	if (GetWorld())
 	{
+		if (UAHDialogueSubsystem* Dialogue = GetWorld()->GetSubsystem<UAHDialogueSubsystem>())
+		{
+			Dialogue->OnLineChanged.RemoveDynamic(this, &UAHAudioSubsystem::HandleDialogueLine);
+			Dialogue->OnSequenceComplete.RemoveDynamic(this, &UAHAudioSubsystem::HandleDialogueComplete);
+		}
 		if (GetWorld()->GetGameInstance())
 		{
 			if (UAHChapterSubsystem* Chapter = GetWorld()->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>())
@@ -45,7 +41,11 @@ void UAHAudioSubsystem::Deinitialize()
 			}
 		}
 	}
+	if (ActiveEnvironmentComponent) ActiveEnvironmentComponent->Stop();
+	if (FadingEnvironmentComponent) FadingEnvironmentComponent->Stop();
 	ActiveEnvironmentComponent = nullptr;
+	FadingEnvironmentComponent = nullptr;
+	ActiveEnvironmentId = NAME_None;
 	AudioPalette = nullptr;
 	bAudioPaletteReady = false;
 	Super::Deinitialize();
@@ -60,11 +60,18 @@ void UAHAudioSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	if (UAHChapterSubsystem* Chapter = InWorld.GetGameInstance() ? InWorld.GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
 	{
+		// The game instance is attached by BeginPlay, but may not exist at Initialize.
+		Chapter->OnStageChanged.AddUniqueDynamic(this, &UAHAudioSubsystem::HandleChapterStageChanged);
 		HandleChapterStageChanged(Chapter->GetStage());
 	}
 	else
 	{
 		HandleChapterStageChanged(EAHChapterStage::ErebusOpening);
+	}
+	if (UAHDialogueSubsystem* Dialogue = InWorld.GetSubsystem<UAHDialogueSubsystem>())
+	{
+		Dialogue->OnLineChanged.AddUniqueDynamic(this, &UAHAudioSubsystem::HandleDialogueLine);
+		Dialogue->OnSequenceComplete.AddUniqueDynamic(this, &UAHAudioSubsystem::HandleDialogueComplete);
 	}
 }
 
@@ -122,18 +129,23 @@ bool UAHAudioSubsystem::HasAuthoredCue(EAHAudioCue Cue) const
 	return AudioPalette && AudioPalette->Events.Contains(GetSemanticEventName(Cue));
 }
 
-FName UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage Stage) const
+FName UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage Stage)
 {
 	switch (Stage)
 	{
-	case EAHChapterStage::TransitStation: return FName(TEXT("Environment.Transit"));
+	case EAHChapterStage::OpeningBlack:
+	case EAHChapterStage::ChapterComplete: return NAME_None;
+	case EAHChapterStage::TransitStation:
+	case EAHChapterStage::VeilRevelation: return FName(TEXT("Environment.Transit"));
 	case EAHChapterStage::ManticoreSection: return FName(TEXT("Environment.Manticore"));
 	case EAHChapterStage::CathedralApproach:
 	case EAHChapterStage::FailsafeOrder:
 	case EAHChapterStage::CathedralInterior:
 	case EAHChapterStage::SaelTransmission:
 	case EAHChapterStage::FailsafeTerminal:
-	case EAHChapterStage::Escape: return FName(TEXT("Environment.Cathedral"));
+	case EAHChapterStage::Escape:
+	case EAHChapterStage::OtherLucian:
+	case EAHChapterStage::ErebusDestruction: return FName(TEXT("Environment.Cathedral"));
 	case EAHChapterStage::TenYearsLater:
 	case EAHChapterStage::MayaScene:
 	case EAHChapterStage::NysaTransmission:
@@ -150,22 +162,56 @@ void UAHAudioSubsystem::HandleChapterStageChanged(EAHChapterStage Stage)
 		return;
 	}
 	const FName EnvironmentId = GetEnvironmentForStage(Stage);
+	if (EnvironmentId == ActiveEnvironmentId && IsValid(ActiveEnvironmentComponent) && ActiveEnvironmentComponent->IsPlaying())
+	{
+		return;
+	}
+	if (EnvironmentId.IsNone())
+	{
+		if (FadingEnvironmentComponent) FadingEnvironmentComponent->Stop();
+		FadingEnvironmentComponent = ActiveEnvironmentComponent;
+		if (FadingEnvironmentComponent) FadingEnvironmentComponent->FadeOut(1.5f, 0.0f);
+		ActiveEnvironmentComponent = nullptr;
+		ActiveEnvironmentId = NAME_None;
+		return;
+	}
 	if (USoundBase* Environment = ResolveAuthoredEnvironment(EnvironmentId))
 	{
+		if (FadingEnvironmentComponent) FadingEnvironmentComponent->Stop();
+		FadingEnvironmentComponent = ActiveEnvironmentComponent;
 		if (ActiveEnvironmentComponent)
 		{
-			ActiveEnvironmentComponent->FadeOut(0.6f, 0.0f);
+			ActiveEnvironmentComponent->FadeOut(1.5f, 0.0f);
 		}
-		ActiveEnvironmentComponent = UGameplayStatics::SpawnSound2D(this, Environment, 0.35f, 1.0f, 0.0f, nullptr, true, true);
+		ActiveEnvironmentComponent = UGameplayStatics::SpawnSound2D(this, Environment, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+		ActiveEnvironmentId = EnvironmentId;
 		if (ActiveEnvironmentComponent)
 		{
-			ActiveEnvironmentComponent->FadeIn(0.8f, 0.35f);
+			ActiveEnvironmentComponent->FadeIn(1.5f, bDialogueActive ? 0.16f : 0.35f);
 		}
 		UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase4.4][Audio] Stage=%s Environment=%s Asset=%s"), *UEnum::GetValueAsString(Stage), *EnvironmentId.ToString(), *GetNameSafe(Environment));
 	}
 	else
 	{
 		UE_LOG(LogAshesOfHeaven, Error, TEXT("[Phase4.4][Audio] authored environment missing id=%s; no fallback is permitted"), *EnvironmentId.ToString());
+	}
+}
+
+void UAHAudioSubsystem::HandleDialogueLine(FName Speaker, FText Subtitle, float Duration)
+{
+	bDialogueActive = true;
+	if (ActiveEnvironmentComponent) ActiveEnvironmentComponent->AdjustVolume(0.18f, 0.16f);
+}
+
+void UAHAudioSubsystem::HandleDialogueComplete(FName SequenceId)
+{
+	// A completed one-shot may notify listeners while a different sequence is still
+	// speaking. Reentrant listeners may also have started a replacement sequence.
+	const UAHDialogueSubsystem* Dialogue = GetWorld() ? GetWorld()->GetSubsystem<UAHDialogueSubsystem>() : nullptr;
+	bDialogueActive = Dialogue && Dialogue->HasActiveDialogue();
+	if (ActiveEnvironmentComponent)
+	{
+		ActiveEnvironmentComponent->AdjustVolume(bDialogueActive ? 0.18f : 0.75f, bDialogueActive ? 0.16f : 0.35f);
 	}
 }
 

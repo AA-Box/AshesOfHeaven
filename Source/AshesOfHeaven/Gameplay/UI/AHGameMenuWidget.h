@@ -22,7 +22,8 @@ enum class EAHMenuPage : uint8
 {
 	Root,
 	Controls,
-	Options
+	Options,
+	Briefing
 };
 
 /**
@@ -56,6 +57,7 @@ protected:
 	UWidget* BuildRootPage();
 	UWidget* BuildControlsPage();
 	UWidget* BuildOptionsPage();
+	UWidget* BuildBriefingPage();
 	UButton* MakeMenuButton(const FText& Label, FName Action, UVerticalBox* Container);
 	UTextBlock* MakeText(const FText& Value, float Size, const FLinearColor& Color, float LetterSpacing = 300.0f);
 	void RefreshOptionRows();
@@ -65,6 +67,7 @@ protected:
 	UFUNCTION() void HandleRestartCheckpoint();
 	UFUNCTION() void HandleControls();
 	UFUNCTION() void HandleOptions();
+	UFUNCTION() void HandleBriefing();
 	UFUNCTION() void HandleExit();
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleCycleWindowMode();

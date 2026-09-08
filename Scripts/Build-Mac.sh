@@ -83,8 +83,8 @@ elif command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:8000 -sTCP:LISTEN -t >/de
     fi
   done
 fi
-"${UBT_BUILD[@]}" AshesOfHeavenEditor Mac Development "-project=$PROJECT_FILE" -WaitMutex
-"${UBT_BUILD[@]}" AshesOfHeaven Mac "$CLIENT_CONFIG" "-project=$PROJECT_FILE" -WaitMutex
+"${UBT_BUILD[@]}" AshesOfHeavenEditor Mac Development "-project=$PROJECT_FILE" -WaitMutex -NoHotReload
+"${UBT_BUILD[@]}" AshesOfHeaven Mac "$CLIENT_CONFIG" "-project=$PROJECT_FILE" -WaitMutex -NoHotReload
 "$UAT" "${UAT_ARGS[@]}"
 
 # Stale-client guard. BuildCookRun -build on its own built only the editor, so the cook happily

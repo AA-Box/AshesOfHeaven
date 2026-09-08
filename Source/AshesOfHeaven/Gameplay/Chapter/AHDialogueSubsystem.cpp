@@ -5,6 +5,9 @@
 #include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 void UAHDialogueSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -29,6 +32,8 @@ void UAHDialogueSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 void UAHDialogueSubsystem::Deinitialize()
 {
+	if (VoiceComponent) VoiceComponent->Stop();
+	VoiceComponent = nullptr;
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(LineTimer);
@@ -238,12 +243,20 @@ void UAHDialogueSubsystem::ShowNextLine()
 		return;
 	}
 
+	if (VoiceComponent) VoiceComponent->Stop();
+	VoiceComponent = nullptr;
 	CurrentLine = QueuedLines[CurrentLineIndex];
-	if (!CurrentLine.Voice && GetWorld())
+	if (CurrentLine.Voice && GetWorld())
+	{
+		VoiceComponent = UGameplayStatics::SpawnSound2D(this, CurrentLine.Voice, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+		CurrentLine.Duration = FMath::Max(CurrentLine.Duration, CurrentLine.Voice->GetDuration() + 0.15f);
+	}
+	else if (CurrentLineIndex == 0 && GetWorld()
+		&& (CurrentLine.Speaker == TEXT("SAEL") || CurrentLine.Speaker == TEXT("IVO") || CurrentLine.Speaker == TEXT("NYSA")))
 	{
 		if (UAHAudioSubsystem* Audio = GetWorld()->GetSubsystem<UAHAudioSubsystem>())
 		{
-			Audio->PlayUICue(EAHAudioCue::Dialogue, 0.35f);
+			Audio->PlayUICue(EAHAudioCue::Dialogue, 0.16f);
 		}
 	}
 	#if !UE_BUILD_SHIPPING
@@ -262,6 +275,8 @@ void UAHDialogueSubsystem::FinishSequence()
 	{
 		return;
 	}
+	if (VoiceComponent) VoiceComponent->Stop();
+	VoiceComponent = nullptr;
 
 	if (GetWorld())
 	{
