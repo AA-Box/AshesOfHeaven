@@ -9,6 +9,10 @@
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Platform/AHPlatformSaveSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryOption.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_ProjectedPoints.h"
+#include "Navigation/NavFilter_AIControllerDefault.h"
 
 namespace
 {
@@ -220,6 +224,21 @@ bool FAHEncounterAssetManifestTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Defensive Line owns its authored tactical budget"), DefensiveLine->EnemyBudget, 19.5f);
 		TestEqual(TEXT("Defensive Line has two authored phases"), DefensiveLine->Phases.Num(), 2);
 		TestNotNull(TEXT("Defensive Line has an EQS spawn query"), DefensiveLine->SpawnQuery.Get());
+		if (const UEnvQuery* Query = DefensiveLine->SpawnQuery.Get())
+		{
+			// Encounter queries run around a player pawn. The template's AI-controller
+			// meta filter ensures and stalls generation when that pawn owns the query.
+			for (const UEnvQueryOption* Option : Query->GetOptions())
+			{
+				const UEnvQueryGenerator_ProjectedPoints* Generator = Option
+					? Cast<UEnvQueryGenerator_ProjectedPoints>(Option->Generator) : nullptr;
+				if (Generator && Generator->ProjectionData.NavigationFilter)
+				{
+					TestFalse(TEXT("Player-owned spawn projection accepts a non-AI querier"),
+						Generator->ProjectionData.NavigationFilter->IsChildOf(UNavFilter_AIControllerDefault::StaticClass()));
+				}
+			}
+		}
 		TestFalse(TEXT("Defensive Line spawn regions are explicitly bounded"), DefensiveLine->AllowedSpawnRegions.IsEmpty());
 
 		// The opening purse has to cover the whole authored opening or a fixed slot is silently

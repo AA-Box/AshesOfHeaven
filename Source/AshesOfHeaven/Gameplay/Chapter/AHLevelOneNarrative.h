@@ -5,6 +5,17 @@
 
 namespace AHLevelOneNarrative
 {
+	/** Spoiler-bounded field briefing for the current point in the mission. */
+	struct FMissionBriefing
+	{
+		FText Location;
+		FText Situation;
+		FText Orders;
+	};
+
+	ASHESOFHEAVEN_API FMissionBriefing GetMissionBriefing(EAHChapterStage Stage);
+	ASHESOFHEAVEN_API FText GetSpeakerIdentity(FName Speaker);
+
 	/** Returns canonical Level One dialogue for a sequence owned by the legacy chapter director. */
 	ASHESOFHEAVEN_API bool ResolveDirectorSequence(FName SequenceId, TArray<FAHDialogueLine>& OutLines);
 
