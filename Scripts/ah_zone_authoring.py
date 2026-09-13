@@ -133,7 +133,7 @@ class Zone(object):
             return None
         component = actor.get_component_by_class(unreal.PointLightComponent)
         if component:
-            component.set_mobility(unreal.ComponentMobility.STATIC)
+            component.set_mobility(unreal.ComponentMobility.MOVABLE)
             component.set_intensity(intensity)
             component.set_light_color(unreal.LinearColor(color[0], color[1], color[2], 1.0))
             component.set_attenuation_radius(radius)

@@ -50,7 +50,10 @@ rm -rf "$REPORT_DIR"
 mkdir -p "$REPORT_DIR" "$(dirname "$LOG_FILE")"
 
 echo "Building AshesOfHeavenEditor (Mac Development)..."
-"$BUILD_SH" AshesOfHeavenEditor Mac Development -project="$PROJECT_FILE"
+# A second editor may be open. Hot-reload builds produce a suffixed dylib while the
+# commandlet's module manifest can still select the previous one, silently testing
+# stale code. Headless verification must build the ordinary editor module.
+"$BUILD_SH" AshesOfHeavenEditor Mac Development -project="$PROJECT_FILE" -NoHotReload
 
 echo "Running automation tests matching '$TEST_FILTER'..."
 set +e

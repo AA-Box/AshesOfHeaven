@@ -76,6 +76,87 @@ namespace
 
 namespace AHLevelOneNarrative
 {
+	FMissionBriefing GetMissionBriefing(EAHChapterStage Stage)
+	{
+		const TCHAR* Location = TEXT("EREBUS / DISTRICT NINE");
+		const TCHAR* Situation = TEXT("Erebus was a human colony. Now its defense network is falling silent, district by district. You are Lucian Vale, callsign Mourner Actual. Seventeen minutes after an attack knocked you unconscious, your squadmate Maya Serrin finds you in the ruins.");
+		const TCHAR* Orders = TEXT("Reach the defensive line. Keep the route to Transit North open for the survivors.");
+		switch (Stage)
+		{
+		case EAHChapterStage::OpeningBattle:
+			Situation = TEXT("District Nine is the last line between the Veil and the evacuation route. Maya is counting on you to buy the survivors time.");
+			Orders = TEXT("Repel the Veil assault. Use the barricades for cover; move to Transit North when the line is secure.");
+			break;
+		case EAHChapterStage::TransitStation:
+			Location = TEXT("TRANSIT NORTH / EVACUATION ROUTE");
+			Situation = TEXT("The line is holding. The station beneath it should be carrying civilians out of District Nine, but only the evacuation announcement is answering.");
+			Orders = TEXT("Follow the North Line through the station. Find a route back to the surface.");
+			break;
+		case EAHChapterStage::VeilRevelation:
+			Location = TEXT("TRANSIT NORTH / PLATFORM 02");
+			Situation = TEXT("A survivor recognizes something inside the Veil. Maya suspects the colony is being converted. Admiral Sael orders you to the Cathedral without explaining why.");
+			Orders = TEXT("Stay with Maya. Listen to the survivor, then continue toward the battlefield exit.");
+			break;
+		case EAHChapterStage::OpenBattlefield:
+			Location = TEXT("EREBUS / SURFACE CORRIDOR");
+			Situation = TEXT("The Cathedral rises beyond the fighting. Ivo Ren is bringing Manticore Four-Seven through the wreckage to give your squad a way across.");
+			Orders = TEXT("Cross between cover positions. Reach Ivo's armored vehicle at the end of the route.");
+			break;
+		case EAHChapterStage::ManticoreSection:
+			Location = TEXT("MANTICORE FOUR-SEVEN / RENDEZVOUS");
+			Situation = TEXT("Ivo made it. The Manticore is damaged, but its armor is your best chance of reaching the Cathedral.");
+			Orders = TEXT("Approach the Manticore and interact to board. Drive toward the Cathedral.");
+			break;
+		case EAHChapterStage::CathedralApproach:
+			Location = TEXT("THE CATHEDRAL / OUTER PERIMETER");
+			Situation = TEXT("The Cathedral is responding to the vehicle. Ivo is losing control of its systems. The final approach must be made on foot.");
+			Orders = TEXT("Reach the entrance. Stay on the expedition route and await Sael's transmission.");
+			break;
+		case EAHChapterStage::FailsafeOrder:
+		case EAHChapterStage::CathedralInterior:
+		case EAHChapterStage::SaelTransmission:
+			Location = TEXT("THE CATHEDRAL / CONTAINMENT FAILURE");
+			Situation = TEXT("The signal is creating the Veil. In eight minutes and forty-two seconds, Erebus can transmit it beyond the planet. Sael has ordered Planetary Failsafe. Maya wants another way.");
+			Orders = Stage == EAHChapterStage::FailsafeOrder
+				? TEXT("Enter the Cathedral before the carrier opens. Find the failsafe control chamber.")
+				: TEXT("Follow the expedition walkway to the terminal. The transmission deadline is still running.");
+			break;
+		case EAHChapterStage::FailsafeTerminal:
+			Location = TEXT("FAILSAFE CONTROL / AUTHORIZATION REQUIRED");
+			Situation = TEXT("11,407,231 lives. The terminal offers containment at the cost of everyone left on Erebus. Evacuation ships are still launching; Sael believes they could carry the signal with them.");
+			Orders = TEXT("Inspect the terminal. Read the casualty assessment. Interact again to authorize Planetary Failsafe, then escape.");
+			break;
+		case EAHChapterStage::Escape:
+		case EAHChapterStage::OtherLucian:
+			Location = TEXT("THE CATHEDRAL / EVACUATION");
+			Situation = TEXT("The failsafe is armed. The Cathedral is coming apart. Maya is still with you; reaching shelter is all that remains within your control.");
+			Orders = TEXT("Follow the illuminated escape route to shelter. Keep moving through the Veil attack.");
+			break;
+		case EAHChapterStage::ErebusDestruction:
+			Location = TEXT("EREBUS / LAST LIGHT");
+			Situation = TEXT("You reached shelter. The failsafe is beyond recall. Wait for the fleet to confirm containment.");
+			Orders = TEXT("Stay with Maya. Listen to the final transmission.");
+			break;
+		case EAHChapterStage::ChapterComplete:
+			Location = TEXT("FOR A WHILE / CHAPTER COMPLETE");
+			Situation = TEXT("Erebus is gone. Sael reports the signal contained. Then a voice from Nysa speaks your name. You saved the other worlds. You do not yet know what followed you out.");
+			Orders = TEXT("Chapter One complete. Your campaign completion is saved.");
+			break;
+		default:
+			break;
+		}
+		return {FText::FromString(Location), FText::FromString(Situation), FText::FromString(Orders)};
+	}
+
+	FText GetSpeakerIdentity(FName Speaker)
+	{
+		if (Speaker == TEXT("LUCIAN")) return FText::FromString(TEXT("LUCIAN VALE / MOURNER ACTUAL"));
+		if (Speaker == TEXT("MAYA")) return FText::FromString(TEXT("MAYA SERRIN / SQUADMATE"));
+		if (Speaker == TEXT("SAEL")) return FText::FromString(TEXT("ADMIRAL SAEL VAREK / FLEET COMMS"));
+		if (Speaker == TEXT("IVO")) return FText::FromString(TEXT("IVO REN / MANTICORE FOUR-SEVEN"));
+		return FText::FromName(Speaker);
+	}
+
 	bool ResolveDirectorSequence(FName SequenceId, TArray<FAHDialogueLine>& OutLines)
 	{
 		if (SequenceId == FName(TEXT("Ch01_Opening")))

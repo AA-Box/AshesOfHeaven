@@ -14,6 +14,11 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/WidgetSwitcher.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScaleBox.h"
+#include "Components/SafeZone.h"
+#include "Gameplay/Chapter/AHChapterSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Engine/Engine.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Gameplay/Audio/AHAudioSubsystem.h"
@@ -91,6 +96,7 @@ UButton* UAHGameMenuWidget::MakeMenuButton(const FText& Label, FName Action, UVe
 	else if (Action == TEXT("Restart")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleRestartCheckpoint); }
 	else if (Action == TEXT("Controls")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleControls); }
 	else if (Action == TEXT("Options")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleOptions); }
+	else if (Action == TEXT("Briefing")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleBriefing); }
 	else if (Action == TEXT("Exit")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleExit); }
 	else if (Action == TEXT("Back")) { Button->OnClicked.AddDynamic(this, &UAHGameMenuWidget::HandleBack); }
 	return Button;
@@ -110,17 +116,31 @@ void UAHGameMenuWidget::BuildTree()
 	BackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
 	BackgroundSlot->SetVerticalAlignment(VAlign_Fill);
 
-	// Left column: identity, rule, pages.
+	// Keep the authored composition within the safe viewport on smaller displays.
+	USafeZone* SafeZone = WidgetTree->ConstructWidget<USafeZone>(USafeZone::StaticClass());
+	UOverlaySlot* SafeSlot = RootOverlay->AddChildToOverlay(SafeZone);
+	SafeSlot->SetHorizontalAlignment(HAlign_Fill);
+	SafeSlot->SetVerticalAlignment(VAlign_Fill);
+	UScaleBox* ScaleBox = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass());
+	ScaleBox->SetStretch(EStretch::ScaleToFit);
+	SafeZone->AddChild(ScaleBox);
+	USizeBox* Frame = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	Frame->SetWidthOverride(1100.0f);
+	Frame->SetHeightOverride(760.0f);
+	ScaleBox->AddChild(Frame);
+	UOverlay* Composition = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass());
+	Frame->AddChild(Composition);
+
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MenuColumn"));
-	UOverlaySlot* ColumnSlot = RootOverlay->AddChildToOverlay(Column);
+	UOverlaySlot* ColumnSlot = Composition->AddChildToOverlay(Column);
 	ColumnSlot->SetHorizontalAlignment(HAlign_Left);
 	ColumnSlot->SetVerticalAlignment(VAlign_Center);
-	ColumnSlot->SetPadding(FMargin(140.0f, 0.0f, 0.0f, 0.0f));
+	ColumnSlot->SetPadding(FMargin(72.0f, 0.0f, 0.0f, 0.0f));
 
-	UTextBlock* Title = MakeText(FText::FromString(TEXT("ASHES OF HEAVEN")), 44.0f, AHMenuStyle::Bone, 900.0f);
+	UTextBlock* Title = MakeText(FText::FromString(TEXT("ASHES OF HEAVEN")), 44.0f, AHMenuStyle::Bone, 120.0f);
 	Column->AddChildToVerticalBox(Title);
 	UTextBlock* Subtitle = MakeText(
-		FText::FromString(Mode == EAHMenuMode::FrontEnd ? TEXT("CHAPTER ONE  /  EREBUS") : TEXT("PAUSED  /  EREBUS")),
+		FText::FromString(Mode == EAHMenuMode::FrontEnd ? TEXT("CHAPTER ONE  /  FOR A WHILE") : TEXT("PAUSED  /  FIELD OPERATIONS")),
 		13.0f, AHMenuStyle::Amber, 700.0f);
 	UVerticalBoxSlot* SubtitleSlot = Column->AddChildToVerticalBox(Subtitle);
 	SubtitleSlot->SetPadding(FMargin(2.0f, 6.0f, 0.0f, 0.0f));
@@ -144,10 +164,11 @@ void UAHGameMenuWidget::BuildTree()
 	PageSwitcher->AddChild(BuildRootPage());
 	PageSwitcher->AddChild(BuildControlsPage());
 	PageSwitcher->AddChild(BuildOptionsPage());
+	PageSwitcher->AddChild(BuildBriefingPage());
 
 	UTextBlock* Footer = MakeText(
 		FText::FromString(Mode == EAHMenuMode::FrontEnd
-			? TEXT("EXPEDITION 9  /  DEVELOPMENT BUILD")
+			? TEXT("EREBUS DEFENSE FORCE  /  MOURNER ACTUAL")
 			: TEXT("ESC  /  RETURN TO THE FIELD")),
 		11.0f, AHMenuStyle::Cool, 500.0f);
 	UVerticalBoxSlot* FooterSlot = Column->AddChildToVerticalBox(Footer);
@@ -157,6 +178,15 @@ void UAHGameMenuWidget::BuildTree()
 UWidget* UAHGameMenuWidget::BuildRootPage()
 {
 	UVerticalBox* Page = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PageRoot"));
+	const UAHChapterSubsystem* Chapter = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr;
+	const auto Briefing = AHLevelOneNarrative::GetMissionBriefing(
+		Mode == EAHMenuMode::Pause && Chapter ? Chapter->GetStage() : EAHChapterStage::OpeningBlack);
+	UTextBlock* Premise = MakeText(Mode == EAHMenuMode::FrontEnd
+		? FText::FromString(TEXT("A colony falling silent. A squad still holding on.\nYou are Lucian Vale. Bring your people through the fall of Erebus."))
+		: Briefing.Orders, 17.0f, AHMenuStyle::Cool, 0.0f);
+	Premise->SetAutoWrapText(true);
+	Premise->SetWrapTextAt(660.0f);
+	Page->AddChildToVerticalBox(Premise)->SetPadding(FMargin(18.0f, 0.0f, 0.0f, 18.0f));
 	const bool bHasSave = GetGameInstance() && GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>()
 		&& GetGameInstance()->GetSubsystem<UAHPlatformSaveSubsystem>()->HasSave();
 
@@ -177,9 +207,42 @@ UWidget* UAHGameMenuWidget::BuildRootPage()
 		MakeMenuButton(FText::FromString(TEXT("RESUME")), TEXT("Continue"), Page);
 		MakeMenuButton(FText::FromString(TEXT("RESTART CHECKPOINT")), TEXT("Restart"), Page);
 	}
+	MakeMenuButton(FText::FromString(TEXT("MISSION BRIEFING")), TEXT("Briefing"), Page);
 	MakeMenuButton(FText::FromString(TEXT("CONTROLS")), TEXT("Controls"), Page);
 	MakeMenuButton(FText::FromString(TEXT("OPTIONS")), TEXT("Options"), Page);
 	MakeMenuButton(FText::FromString(Mode == EAHMenuMode::FrontEnd ? TEXT("EXIT") : TEXT("EXIT TO DESKTOP")), TEXT("Exit"), Page);
+	return Page;
+}
+
+UWidget* UAHGameMenuWidget::BuildBriefingPage()
+{
+	UVerticalBox* Page = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PageBriefing"));
+	const UAHChapterSubsystem* Chapter = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr;
+	const auto Briefing = AHLevelOneNarrative::GetMissionBriefing(
+		Mode == EAHMenuMode::Pause && Chapter ? Chapter->GetStage() : EAHChapterStage::OpeningBlack);
+	Page->AddChildToVerticalBox(MakeText(Briefing.Location, 14.0f, AHMenuStyle::Amber, 150.0f));
+	USizeBox* ReadingArea = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	ReadingArea->SetHeightOverride(340.0f);
+	UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
+	ReadingArea->AddChild(Scroll);
+	Page->AddChildToVerticalBox(ReadingArea)->SetPadding(FMargin(0.0f, 16.0f, 0.0f, 12.0f));
+	UVerticalBox* Body = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Scroll->AddChild(Body);
+	auto Paragraph = [this, Body](const FText& Value, const FLinearColor& Color, float Size)
+	{
+		UTextBlock* Text = MakeText(Value, Size, Color, 0.0f);
+		Text->SetAutoWrapText(true);
+		Text->SetWrapTextAt(650.0f);
+		Body->AddChildToVerticalBox(Text)->SetPadding(FMargin(0.0f, 0.0f, 16.0f, 18.0f));
+	};
+	Paragraph(Briefing.Situation, AHMenuStyle::Bone, 18.0f);
+	Paragraph(Briefing.Orders, AHMenuStyle::Amber, 18.0f);
+	Paragraph(FText::FromString(TEXT("YOUR SQUAD / COMMAND CHANNEL")), AHMenuStyle::Cool, 13.0f);
+	Paragraph(FText::FromString(TEXT("LUCIAN VALE  /  MOURNER ACTUAL\nYou lead the survivors. Your orders can save lives; their cost stays with you.")), AHMenuStyle::Bone, 16.0f);
+	Paragraph(FText::FromString(TEXT("MAYA SERRIN  /  COMBAT ENGINEER\nYour squadmate and the voice that challenges an order when people disappear behind the numbers.")), AHMenuStyle::Bone, 16.0f);
+	Paragraph(FText::FromString(TEXT("ADMIRAL SAEL VAREK  /  DEFENSE FLEET\nYour link to orbit. He sees a war larger than District Nine, and tells you only what he thinks you need.")), AHMenuStyle::Bone, 16.0f);
+	Paragraph(FText::FromString(TEXT("IVO REN  /  MANTICORE PILOT\nYour ride through the collapse. He uses humor to keep the channel human while the world comes apart.")), AHMenuStyle::Bone, 16.0f);
+	MakeMenuButton(FText::FromString(TEXT("BACK")), TEXT("Back"), Page);
 	return Page;
 }
 
@@ -339,6 +402,7 @@ bool UAHGameMenuWidget::ActivateAction(const FString& ActionName)
 	if (ActionName.Equals(TEXT("Restart"), ESearchCase::IgnoreCase)) { HandleRestartCheckpoint(); return true; }
 	if (ActionName.Equals(TEXT("Controls"), ESearchCase::IgnoreCase)) { HandleControls(); return true; }
 	if (ActionName.Equals(TEXT("Options"), ESearchCase::IgnoreCase)) { HandleOptions(); return true; }
+	if (ActionName.Equals(TEXT("Briefing"), ESearchCase::IgnoreCase)) { HandleBriefing(); return true; }
 	if (ActionName.Equals(TEXT("Back"), ESearchCase::IgnoreCase)) { HandleBack(); return true; }
 	if (ActionName.Equals(TEXT("Exit"), ESearchCase::IgnoreCase)) { HandleExit(); return true; }
 	return false;
@@ -420,6 +484,12 @@ void UAHGameMenuWidget::HandleBack()
 {
 	PlayMenuClick(this);
 	ShowPage(EAHMenuPage::Root);
+}
+
+void UAHGameMenuWidget::HandleBriefing()
+{
+	PlayMenuClick(this);
+	ShowPage(EAHMenuPage::Briefing);
 }
 
 void UAHGameMenuWidget::HandleExit()
