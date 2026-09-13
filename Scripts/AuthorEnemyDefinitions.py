@@ -122,7 +122,9 @@ ARCHETYPES = {
         "capsule_radius": 44.0,
         "health": 165.0,
         "armor": 55.0,
-        "speed": 430.0,
+        # The replacement crawler has short limbs: its run stride covers ~44 cm/s at
+        # native cadence. A 110 cm/s scuttle stays within 2.5x; 430 required almost 10x.
+        "speed": 110.0,
         "headshot": 1.4,
         "threat": 2.5,
         "currency": 18,
@@ -362,6 +364,21 @@ def _locomotion_payload(name, spec, definition):
     # archetype's own top speed, so a creature at full tilt is always in its run.
     payload.set_editor_property("walk_speed", 40.0)
     payload.set_editor_property("run_speed", max(80.0, spec["speed"] * 0.62))
+    motion = {
+        "Pilgrim": (75.50, 271.51, 0.58),
+        "Hound": (50.0, 0.0, 0.62),
+        "Spider": (14.58, 43.75, 0.60),
+        "Teuthisan": (74.8312, 300.0, 0.70),
+    }[name]
+    payload.set_editor_property("walk_reference_speed", motion[0])
+    payload.set_editor_property("run_reference_speed", motion[1])
+    payload.set_editor_property("attack_impact_time", motion[2])
+    if name == "Spider":
+        payload.set_editor_property("walk_speed", 4.0)
+        payload.set_editor_property("run_speed", 30.0)
+    elif name == "Hound":
+        payload.set_editor_property("walk_speed", 5.0)
+        payload.set_editor_property("run_speed", 140.0)
     return payload
 
 

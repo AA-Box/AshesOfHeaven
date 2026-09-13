@@ -116,8 +116,8 @@ def build_escape_route():
     for index, (x, y, yaw) in enumerate([(5900, -320, 20), (6500, 300, 140), (7100, -280, 260)]):
         ZONE.mesh("SM_Erebus_RubbleLarge_A", (x, y, 0), (0, 0, yaw), (0.9, 0.9, 0.9),
                   "EscapeRubble_%02d" % index)
-    ZONE.prop("BP_Cathedral_Fin", (5800, -700, 90), (0, 0, -3), (2.8, 2.8, 2.8), label="EscapeFin_S")
-    ZONE.prop("BP_Cathedral_Fin", (6600, 700, 210), (0, 180, 4), (2.4, 2.4, 2.4), label="EscapeFin_N")
+    ZONE.mesh("SM_Erebus_Facade_Heavy_A", (5800, -700, 90), (0, 0, -3), (1.2, 1.2, 4.0), label="EscapeFin_S_Kit")
+    ZONE.mesh("SM_Erebus_Facade_Heavy_B", (6600, 700, 210), (0, 0, 4), (1.2, 1.2, 4.0), label="EscapeFin_N_Kit")
 
 
 def build_lighting_and_wear():

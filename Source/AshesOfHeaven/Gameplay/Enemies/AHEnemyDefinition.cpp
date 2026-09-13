@@ -72,12 +72,12 @@ float AHCreatureLocomotion::CalculateLocomotionPlayRate(
 	{
 		return 1.0f;
 	}
-	// The walk take is authored for the middle of the walk band. The run take reaches its native
-	// cadence at the archetype's maximum speed; scaling below that removes the old skating feet.
-	const float ReferenceSpeed = State == EAHCreatureAnimState::Walk
+	const float LegacySpeed = State == EAHCreatureAnimState::Walk
 		? FMath::Max(Set.WalkSpeed, Set.RunSpeed * 0.75f)
 		: FMath::Max(Set.RunSpeed, MaximumGroundSpeed);
-	return FMath::Clamp(GroundSpeed / FMath::Max(1.0f, ReferenceSpeed), 0.72f, 1.35f);
+	const float AuthoredSpeed = State == EAHCreatureAnimState::Walk ? Set.WalkReferenceSpeed : Set.RunReferenceSpeed;
+	const float ReferenceSpeed = AuthoredSpeed > 0.0f ? AuthoredSpeed : LegacySpeed;
+	return FMath::Clamp(GroundSpeed / FMath::Max(1.0f, ReferenceSpeed), 0.1f, 3.0f);
 }
 
 bool FAHEnemyVisualPayload::HasAnyAssetOverride() const
