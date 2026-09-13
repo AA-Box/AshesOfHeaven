@@ -118,6 +118,33 @@ void UAHHUDRootWidget::NativeDestruct()
 void UAHHUDRootWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	NavigationElapsed += InDeltaTime;
+	if (NavigationElapsed >= 0.2f && bGameplayPresentationVisible && ObjectiveIndexText && GetOwningPlayer() && GetOwningPlayer()->GetPawn())
+	{
+		NavigationElapsed = 0.0f;
+		UAHChapterSubsystem* Chapter = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr;
+		if (Chapter && !Chapter->IsChapterComplete())
+		{
+			const EAHChapterStage Stage = Chapter->GetStage();
+			const FAHStageSpatialDefinition& Definition = AHChapterSpatial::GetStageDefinition(Stage);
+			APawn* Pawn = GetOwningPlayer()->GetPawn();
+			FVector Target = Definition.ObjectiveTargetLocation;
+			if (Stage == EAHChapterStage::OtherLucian)
+				Target = AHChapterSpatial::GetStageDefinition(EAHChapterStage::Escape).ObjectiveTargetLocation;
+			if (Stage == EAHChapterStage::CathedralApproach)
+				Target = Cast<AAHManticoreVehicle>(Pawn) ? FVector(11000, 0, -12)
+					: (Pawn->GetActorLocation().X < 11400 ? FVector(11400, 0, 50) : FVector(14000, 0, 890));
+			if (Definition.ObjectiveTargetId != NAME_None)
+			{
+				const FVector Offset = Target - Pawn->GetActorLocation();
+				const float Angle = FMath::FindDeltaAngleDegrees(GetOwningPlayer()->GetControlRotation().Yaw, Offset.Rotation().Yaw);
+				const TCHAR* Direction = FMath::Abs(Angle) > 135 ? TEXT("TURN BACK")
+					: (Angle > 35 ? TEXT("RIGHT") : (Angle < -35 ? TEXT("LEFT") : TEXT("AHEAD")));
+				SetText(ObjectiveIndexText, FText::FromString(FString::Printf(TEXT("%s | %d m"), Direction, FMath::CeilToInt(Offset.Size2D() / 100.0f))));
+			}
+			else SetText(ObjectiveIndexText, NSLOCTEXT("AshesHUD", "HoldPosition", "HOLD POSITION"));
+		}
+	}
 	if (OpeningRevealElapsed < 0.0f) return;
 	// Slate can clamp its delta when the window loses focus. Follow the same world
 	// clock as dialogue so the title cannot linger over later lines; pause still freezes it.

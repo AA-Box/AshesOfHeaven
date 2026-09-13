@@ -36,6 +36,9 @@ REPORT_PATH = unreal.Paths.convert_relative_path_to_full(
     os.path.join(unreal.Paths.project_saved_dir(), "CreatureAnimations.json"))
 
 report = {}
+if os.path.isfile(REPORT_PATH):
+    with open(REPORT_PATH) as handle:
+        report = json.load(handle)
 
 
 def _log(message):
@@ -353,11 +356,11 @@ def solve_chain(rig, pose, chain, tip_bone, target, iterations=40):
 def write_clip(skeleton_path, package_path, frames, keyed_bones, rig):
     """Create or overwrite one UAnimSequence from a list of per-frame local-transform poses."""
     package_dir, name = package_path.rsplit("/", 1)
-    if unreal.EditorAssetLibrary.does_asset_exist(package_path):
-        unreal.EditorAssetLibrary.delete_asset(package_path)
-    factory = unreal.AnimSequenceFactory()
-    factory.set_editor_property("target_skeleton", unreal.load_asset(skeleton_path))
-    sequence = TOOLS.create_asset(name, package_dir, unreal.AnimSequence, factory)
+    sequence = unreal.load_asset(package_path)
+    if not sequence:
+        factory = unreal.AnimSequenceFactory()
+        factory.set_editor_property("target_skeleton", unreal.load_asset(skeleton_path))
+        sequence = TOOLS.create_asset(name, package_dir, unreal.AnimSequence, factory)
     if not sequence:
         raise RuntimeError("could not create " + package_path)
 
@@ -365,8 +368,10 @@ def write_clip(skeleton_path, package_path, frames, keyed_bones, rig):
     controller.open_bracket("author creature clip")
     controller.set_frame_rate(unreal.FrameRate(FRAME_RATE, 1))
     controller.set_number_of_frames(unreal.FrameNumber(len(frames) - 1))
+    model = sequence.get_editor_property("data_model_interface")
     for bone in sorted(keyed_bones):
-        controller.add_bone_track(bone)
+        if not model.is_valid_bone_track_name(bone):
+            controller.add_bone_track(bone)
         positions, rotations, scales = [], [], []
         for pose in frames:
             lt, lq, ls = pose.get(bone, rig.local[bone])
@@ -425,30 +430,91 @@ STALKER = {
     "foot": ("Bip01-L-Foot", "Bip01-R-Foot"),
     "upperarm": ("Bip01-L-UpperArm", "Bip01-R-UpperArm"),
     "forearm": ("Bip01-L-Forearm", "Bip01-R-Forearm"),
+    "hand": ("Bip01-L-Hand", "Bip01-R-Hand"),
     "tail": ("Bone01", "Bone02", "Bone03", "Bone04"),
 }
 
 
+def solve_two_bone(rig, pose, thigh, calf, foot, target, pole_axis=FWD_AXIS, tip_rotation=None):
+    """Two-bone IK with a fixed pole and component-space tip orientation."""
+    hip = rig.component_of(thigh, pose)[0]
+    joint = rig.component_of(calf, pose)[0]
+    ankle = rig.component_of(foot, pose)[0]
+    a, b = v_len(v_sub(joint, hip)), v_len(v_sub(ankle, joint))
+    delta = v_sub(target, hip)
+    direction = v_norm(delta)
+    distance = max(abs(a - b) + 0.01, min(v_len(delta), (a + b) * 0.995))
+    pole = v_norm(v_sub(pole_axis, v_scale(direction, v_dot(pole_axis, direction))))
+    along = (a * a - b * b + distance * distance) / (2.0 * distance)
+    knee = v_add(v_add(hip, v_scale(direction, along)),
+                 v_scale(pole, math.sqrt(max(0.0, a * a - along * along))))
+    reachable = v_add(hip, v_scale(direction, distance))
+    for bone, tip, goal in ((thigh, calf, knee), (calf, foot, reachable)):
+        pivot = rig.component_of(bone, pose)[0]
+        start = v_norm(v_sub(rig.component_of(tip, pose)[0], pivot))
+        end = v_norm(v_sub(goal, pivot))
+        axis = v_cross(start, end)
+        if v_len(axis) > 1e-6:
+            rotate_bone(rig, pose, bone, axis, math.acos(max(-1.0, min(1.0, v_dot(start, end)))))
+    # The sole stays level while the knee bends above it.
+    lt, _, ls = pose[foot]
+    pose[foot] = (lt, q_mul(q_conj(rig.parent_component_rotation(foot, pose)),
+                          tip_rotation if tip_rotation is not None else rig.comp[foot][1]), ls)
+    return v_len(v_sub(rig.component_of(foot, pose)[0], target))
+
+
+def stalker_rifle_pose(rig, pose, running):
+    """Keep both hands on the rifle's measured GripPoint/GripPoint_002 while the chest moves."""
+    chest = rig.component_of(STALKER["chest"], pose)[0]
+    weapon_rotation = q_axis_angle(SIDE_AXIS, -0.12 if running else 0.0)
+    right = v_add(chest, (-12.0, 24.0, 0.0))
+    left = v_add(right, q_rotate(weapon_rotation, (0.0, 28.522245, 3.002997)))
+    worst = 0.0
+    for side, target, pole in ((1, right, (-1.0, -0.2, -1.0)), (0, left, (1.0, 0.0, -1.0))):
+        hand = STALKER["hand"][side]
+        rotation = q_mul(weapon_rotation, rig.comp[hand][1])
+        worst = max(worst, solve_two_bone(rig, pose, STALKER["upperarm"][side],
+                    STALKER["forearm"][side], hand, target, pole, rotation))
+    if worst > 0.5:
+        raise RuntimeError("Stalker rifle grip exceeds arm reach by %.2f cm" % worst)
+
+
 def stalker_gait(rig, frame_count, stride, knee, arm_swing, lean, bob, tail_sway):
-    """One full two-step cycle. Phase 0 plants the left foot, 0.5 the right."""
+    """Grounded two-step cycle with distinct walk support and run flight intervals."""
     frames = []
+    running, idle = stride > 0.6, stride < 0.1
+    step = 0.0 if idle else (95.0 if running else 65.0)
+    support = 0.42 if running else 0.62
+    feet = [rig.comp[b][0] for b in STALKER["foot"]]
+    plane = min(p[2] for p in feet)
+    worst = 0.0
     for index in range(frame_count):
         t = index / float(frame_count - 1)
         pose = rest_pose(rig)
         rotate_bone(rig, pose, STALKER["spine"], SIDE_AXIS, lean)
         rotate_bone(rig, pose, STALKER["chest"], SIDE_AXIS, lean * 0.4)
         # Two footfalls per cycle, so the body rises and falls twice.
-        offset_bone(rig, pose, STALKER["pelvis"], (0.0, 0.0, -bob * abs(math.sin(2 * math.pi * t))))
+        drop = (18.0 if running else 12.0) if not idle else 2.0
+        offset_bone(rig, pose, STALKER["pelvis"],
+                    (0.0, 0.0, -drop - bob * 0.25 * (1.0 - math.cos(4 * math.pi * t))))
         rotate_bone(rig, pose, STALKER["pelvis"], UP_AXIS, 0.09 * math.sin(2 * math.pi * t))
 
         for side, phase in ((0, 0.0), (1, 0.5)):
             angle = 2 * math.pi * (t + phase)
-            swing = stride * math.sin(angle)
-            # The knee only bends on the way through, never on the planted half.
-            flex = knee * max(0.0, -math.sin(angle - math.pi * 0.35))
-            rotate_bone(rig, pose, STALKER["thigh"][side], SIDE_AXIS, swing)
-            rotate_bone(rig, pose, STALKER["calf"][side], SIDE_AXIS, -flex)
-            rotate_bone(rig, pose, STALKER["foot"][side], SIDE_AXIS, flex * 0.45 - swing * 0.3)
+            cycle = (t + phase) % 1.0
+            if cycle < support:
+                travel, lift = step * (0.5 - cycle / support), 0.0
+            else:
+                k = (cycle - support) / (1.0 - support)
+                ease = k * k * (3.0 - 2.0 * k)
+                tangent = -step * (1.0 - support) / support
+                travel = step * (ease - 0.5) + tangent * (2 * k**3 - 3 * k*k + k)
+                lift = (24.0 if running else 12.0) * math.sin(math.pi * k)**2 if not idle else 0.0
+            base = feet[side]
+            center_y = rig.comp[STALKER["thigh"][side]][0][1]
+            target = (base[0], (base[1] if idle else center_y) + travel, plane + lift)
+            worst = max(worst, solve_two_bone(rig, pose, STALKER["thigh"][side],
+                        STALKER["calf"][side], STALKER["foot"][side], target))
             # Arms counter the legs: same side, opposite phase.
             rotate_bone(rig, pose, STALKER["upperarm"][side], SIDE_AXIS, -arm_swing * math.sin(angle))
             rotate_bone(rig, pose, STALKER["forearm"][side], SIDE_AXIS,
@@ -457,7 +523,11 @@ def stalker_gait(rig, frame_count, stride, knee, arm_swing, lean, bob, tail_sway
         for depth, bone in enumerate(STALKER["tail"]):
             rotate_bone(rig, pose, bone, UP_AXIS,
                         tail_sway * math.sin(2 * math.pi * t - depth * 0.6))
+        stalker_rifle_pose(rig, pose, running)
         frames.append(pose)
+    _log("Stalker planted-foot error %.3f cm (step %.1f, support %.2f)" % (worst, step, support))
+    if worst > 2.0:
+        raise RuntimeError("Stalker stride exceeds leg reach by %.2f cm" % worst)
     return frames
 
 
@@ -503,7 +573,7 @@ def stalker_death(rig, frame_count):
     return frames
 
 
-def author_stalker():
+def author_stalker(locomotion_only=False):
     rig = Rig(STALKER_SKELETON)
     keyed = set()
     for key, value in STALKER.items():
@@ -517,6 +587,8 @@ def author_stalker():
         "AS_Stalker_Death": stalker_death(rig, 37),
     }
     for name, frames in clips.items():
+        if locomotion_only and name.endswith(("Attack", "Death")):
+            continue
         out[name] = write_clip(STALKER_SKELETON, "%s/Stalker/%s" % (ENEMY_ROOT, name),
                                frames, keyed, rig)
     report["stalker"] = out
@@ -783,21 +855,80 @@ def author_spider():
 
 # --- hound -----------------------------------------------------------------------------
 def author_hound_walk():
-    """The quadruped ships a run and no walk. A run played slower is a walk for a four-legged
-    body - the gait does not change between them the way a biped's does."""
-    target_path = author_rate_scaled(
-        ENEMY_ROOT + "/Hound/SKM_HoundAlien-Animal_1_5_01_Run-Cycle",
-        ENEMY_ROOT + "/Hound/AS_Hound_Walk", 0.45, "run cycle")
-    report["hound"] = {"AS_Hound_Walk": target_path}
+    """Four-beat walk from the native idle; three paws support while one swings."""
+    mesh_path = ENEMY_ROOT + "/Hound/SKM_Hound"
+    skeleton_path = unreal.load_asset(mesh_path).get_editor_property("skeleton").get_path_name()
+    rig = Rig(skeleton_path, mesh_path)
+    source = unreal.load_asset(ENEMY_ROOT + "/Hound/SKM_HoundAlien-Animal_1_5_01_Idle_Aggressive")
+    idle = APE.get_anim_pose_at_frame(source, 0, unreal.AnimPoseEvaluationOptions())
+    base = {}
+    for bone in rig.order:
+        transform = APE.get_bone_pose(idle, bone, LOCAL)
+        base[bone] = (vec_from_ue(transform.translation), quat_from_ue(transform.rotation),
+                      vec_from_ue(transform.scale3d))
+    scale = 115.0 / 2013.4168396
+    step, lift, support, duration = 45.0 / scale, 7.0 / scale, 0.75, 1.2
+    legs = []
+    for side, shift in (("L", 0.0), ("R", 0.5)):
+        for front, phase in ((False, shift), (True, shift + 0.25)):
+            prefix = "Bone_%s_%s" % ("005" if front else "009", side)
+            chain = [prefix + suffix for suffix in (("_002", "_003") if front else ("_001", "_002"))]
+            tip = prefix + ("_004" if front else "_003")
+            foot = prefix + "_004"
+            legs.append((chain, tip, foot, phase, front))
+    frames, targets, worst = [], [], 0.0
+    for index in range(round(duration * FRAME_RATE) + 1):
+        t = index / (duration * FRAME_RATE)
+        pose, frame_targets = dict(base), {}
+        offset_bone(rig, pose, rig.order[0],
+                    (0.7 * math.sin(2 * math.pi * t) / scale, 0.0,
+                     (-1.0 + 0.5 * math.sin(4 * math.pi * t)) / scale))
+        for chain, tip, foot, phase, front in legs:
+            cycle = (t + phase) % 1.0
+            if cycle < support:
+                travel, height = step * (0.5 - cycle / support), 0.0
+            else:
+                k = (cycle - support) / (1.0 - support)
+                tangent = -step * (1.0 - support) / support
+                travel = step * (k*k*(3 - 2*k) - 0.5) + tangent * (2*k**3 - 3*k*k + k)
+                height = lift * math.sin(math.pi * k)**2
+            foot_position, _ = rig.component_of(foot, base)
+            tip_position, tip_rotation = rig.component_of(tip, base)
+            delta = (0.0, travel, height)
+            # Rear hock keeps its native angle; solve above it without flattening the paw.
+            target = v_add(tip_position, delta)
+            error = solve_two_bone(rig, pose, *chain, tip, target,
+                                   pole_axis=(0.0, -1.0 if front else 1.0, 0.0),
+                                   tip_rotation=tip_rotation)
+            worst = max(worst, error * scale)
+            frame_targets[foot] = v_add(foot_position, delta)
+        frames.append(pose)
+        targets.append(frame_targets)
+    if worst > 0.5:
+        raise RuntimeError("Hound walk exceeds leg reach by %.3f cm" % worst)
+    target_path = ENEMY_ROOT + "/Hound/AS_Hound_Walk"
+    write_clip(skeleton_path, target_path, frames, set(rig.order), rig)
+    clip = unreal.load_asset(target_path)
+    clip.set_editor_property("rate_scale", 1.0)
+    saved_error = 0.0
+    for index, frame_targets in enumerate(targets):
+        saved_pose = APE.get_anim_pose_at_frame(clip, index, unreal.AnimPoseEvaluationOptions())
+        for foot, target in frame_targets.items():
+            got = vec_from_ue(APE.get_bone_pose(saved_pose, foot, COMPONENT).translation)
+            saved_error = max(saved_error, v_len(v_sub(got, target)) * scale)
+    if saved_error > 0.5:
+        raise RuntimeError("Saved Hound paw error %.3f cm" % saved_error)
+    unreal.EditorAssetLibrary.save_asset(target_path, only_if_is_dirty=False)
+    report["hound"] = {"AS_Hound_Walk": target_path, "walk_reference_speed": 50.0,
+                       "saved_paw_error_cm": saved_error, "footfall_phases": [0, 0.25, 0.5, 0.75]}
+    _log("Hound four-beat walk: " + json.dumps(report["hound"]))
     return target_path
 
 
 def author_rate_scaled(source_path, target_path, rate, note):
     """A second take built from an existing one by play rate alone.
 
-    Honest for a gait that does not change shape with speed - a quadruped's run slowed down is
-    its walk. Not honest for a biped, which is why the alien has three separately authored
-    cycles.
+    Rate changes preserve footfall order; they do not convert one gait into another.
     """
     source = unreal.load_asset(source_path)
     if not source:
@@ -815,6 +946,7 @@ def author_rate_scaled(source_path, target_path, rate, note):
 
 TASKS = {
     "stalker": lambda: author_stalker(),
+    "stalker_gait": lambda: author_stalker(locomotion_only=True),
     "spider": lambda: author_spider(),
     "hound": lambda: author_hound_walk(),
 }
@@ -833,4 +965,5 @@ def main():
     _log("report " + REPORT_PATH)
 
 
-main()
+if __name__ == "__main__":
+    main()

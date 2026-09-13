@@ -22,9 +22,11 @@
 #include "Platform/AHPlatformSettings.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/WorldSettings.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -873,6 +875,69 @@ bool FAHLevelOneOpeningFadeTest::RunTest(const FString& Parameters)
 			TestFalse(TEXT("Curtain clears with the title"), Curtain->IsVisible());
 		}
 	}
+	Session.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneVehicleArrivalTest, "AshesOfHeaven.LevelOne.CampaignE2E.VehicleArrival", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneVehicleArrivalTest::RunTest(const FString& Parameters)
+{
+	using namespace AHLevelOneE2ESupport;
+	FScopedCampaignSaveSlot SaveSlot(TEXT("AshesOfHeaven_E2E_VehicleArrival"));
+	FLevelOneSession Session;
+	if (!TestTrue(TEXT("Session boots"), Session.Boot(false))) { Session.Teardown(); return false; }
+	Session.Director->DebugSpawnManticore();
+	AAHManticoreVehicle* Vehicle = Session.FindManticore();
+	if (TestNotNull(TEXT("Manticore exists"), Vehicle))
+	{
+		TestTrue(TEXT("Player can board"), Vehicle->EnterVehicle(Session.Player));
+		const FVector Start = Vehicle->GetActorLocation();
+		Vehicle->Tick(0.016f);
+		TestTrue(TEXT("Suspension does not relocate the vehicle root"), Vehicle->GetActorLocation().Equals(Start, 0.1f));
+		TestTrue(TEXT("Vehicle receives controller"), Session.Controller->GetPawn() == Vehicle);
+		Vehicle->ExitVehicle();
+		TestTrue(TEXT("Exit returns possession to player"), Session.Controller->GetPawn() == Session.Player);
+		TestFalse(TEXT("Player visible after exit"), Session.Player->IsHidden());
+		TestTrue(TEXT("Player collision restored"), Session.Player->GetActorEnableCollision());
+		TestTrue(TEXT("Can reboard before arrival"), Vehicle->EnterVehicle(Session.Player));
+		Vehicle->ParkForArrival();
+		TestTrue(TEXT("Arrival returns on-foot control"), Session.Controller->GetPawn() == Session.Player);
+		TestFalse(TEXT("Disabled arrival vehicle cannot be reboarded"), Vehicle->EnterVehicle(Session.Player));
+	}
+	Session.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneCathedralWalkTest, "AshesOfHeaven.LevelOne.CampaignE2E.CathedralWalkableRoute", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneCathedralWalkTest::RunTest(const FString& Parameters)
+{
+	using namespace AHLevelOneE2ESupport;
+	FScopedCampaignSaveSlot SaveSlot(TEXT("AshesOfHeaven_E2E_CathedralWalk"));
+	FLevelOneSession Session;
+	if (!TestTrue(TEXT("Session boots"), Session.Boot(false))) { Session.Teardown(); return false; }
+	// Keep to the side of the terminal pedestal rather than walking into its center.
+	Session.Director->DebugSkipToStage(EAHChapterStage::CathedralApproach);
+	Session.Director->SetActorTickEnabled(false);
+	// A controller spawned in a fixture has no local player, so movement input is
+	// never consumed. Give this traversal fixture the same local ownership as PIE.
+	Session.Controller->SetPlayer(NewObject<ULocalPlayer>(GEngine));
+	Session.Player->SetActorLocation(FVector(11100, 100, 50), false, nullptr, ETeleportType::TeleportPhysics);
+	Session.Controller->ResetIgnoreMoveInput();
+	UCharacterMovementComponent* Movement = Session.Player->GetCharacterMovement();
+	AddInfo(FString::Printf(TEXT("Movement fixture: local=%d ignored=%d speed=%f"), Session.Player->IsLocallyControlled(), Session.Controller->IsMoveInputIgnored(), Movement->MaxWalkSpeed));
+	Movement->SetMovementMode(MOVE_Walking);
+	// Exercise normal character movement and collision, not objective completion or teleporting
+	// between samples. Keep narrative timers out of this focused geometry regression.
+	for (int32 Frame = 0; Frame < 3600 && Session.Player->GetActorLocation().X < 24400; ++Frame)
+	{
+		Session.Player->AddMovementInput(FVector::ForwardVector, 1.0f);
+		if (Frame == 0) AddInfo(FString::Printf(TEXT("Initial movement input: %s"), *Session.Player->GetPendingMovementInputVector().ToString()));
+		Movement->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
+	}
+	TestTrue(TEXT("Player can walk from vehicle drop-off through Cathedral to shelter"), Session.Player->GetActorLocation().X >= 24400);
+	TestTrue(TEXT("Player stays on raised route"), Session.Player->GetActorLocation().Z > 790);
+	AddInfo(FString::Printf(TEXT("Route endpoint: %s"), *Session.Player->GetActorLocation().ToString()));
+	AddInfo(FString::Printf(TEXT("Movement final: velocity=%s mode=%d input=%s"), *Movement->Velocity.ToString(), int32(Movement->MovementMode), *Session.Player->GetPendingMovementInputVector().ToString()));
 	Session.Teardown();
 	return true;
 }

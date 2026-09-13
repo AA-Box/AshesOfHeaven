@@ -96,7 +96,8 @@ void AAHManticoreVehicle::Tick(float DeltaSeconds)
 	const FVector DesiredLocation = GetActorLocation() + GetActorForwardVector() * CurrentSpeed * DeltaSeconds;
 	SetActorLocation(DesiredLocation, true);
 	SuspensionCompression = FMath::Sin(GetWorld()->GetTimeSeconds() * 9.0f) * SpeedRatio * 4.0f;
-	VehicleMesh->SetRelativeLocation(FVector(0.0f, 0.0f, SuspensionCompression));
+	// VehicleMesh is the root: moving it relatively teleports the entire pawn to origin.
+	HullArmor->SetRelativeLocation(FVector(35.0f, 0.0f, 82.0f + SuspensionCompression));
 	PresentationEventTime -= DeltaSeconds;
 	if (PresentationEventTime <= 0.0f)
 	{
@@ -156,7 +157,7 @@ void AAHManticoreVehicle::Interact_Implementation(AActor* Interactor)
 
 FText AAHManticoreVehicle::GetInteractionPrompt_Implementation() const
 {
-	if (bDestroyed)
+	if (bDestroyed || bParked)
 	{
 		return FText::GetEmpty();
 	}
@@ -172,7 +173,7 @@ float AAHManticoreVehicle::GetInteractionPriority_Implementation() const
 
 bool AAHManticoreVehicle::EnterVehicle(AAHCombatPlayerCharacter* Player)
 {
-	if (!Player || Driver.IsValid() || bDestroyed)
+	if (!Player || Driver.IsValid() || bDestroyed || bParked)
 	{
 		return false;
 	}
@@ -197,7 +198,8 @@ bool AAHManticoreVehicle::EnterVehicle(AAHCombatPlayerCharacter* Player)
 void AAHManticoreVehicle::ExitVehicle()
 {
 	AAHCombatPlayerCharacter* Player = Driver.Get();
-	AController* PlayerController = Player ? Player->GetController() : GetController();
+	// Possession moved the controller to this vehicle; the hidden character has none.
+	AController* PlayerController = GetController();
 	if (!Player || !PlayerController)
 	{
 		Driver.Reset();
@@ -208,11 +210,19 @@ void AAHManticoreVehicle::ExitVehicle()
 	Player->SetActorHiddenInGame(false);
 	Player->SetActorEnableCollision(true);
 	Driver.Reset();
+	CurrentSpeed = Throttle = Steering = 0.0f;
 	PlayerController->Possess(Player);
 	#if !UE_BUILD_SHIPPING
 	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Manticore] exit driver=%s location=%s"), *GetNameSafe(Player), *GetActorLocation().ToCompactString());
 	#endif
 	OnDriverExited.Broadcast(Player);
+}
+
+void AAHManticoreVehicle::ParkForArrival()
+{
+	ExitVehicle();
+	bParked = true;
+	CurrentSpeed = Throttle = Steering = 0.0f;
 }
 
 void AAHManticoreVehicle::FireMountedWeapon()
@@ -230,7 +240,9 @@ void AAHManticoreVehicle::FireMountedWeapon()
 		UGameplayStatics::ApplyDamage(Hit.GetActor(), 55.0f, GetController(), this, nullptr);
 		if (AStaticMeshActor* Barricade = Cast<AStaticMeshActor>(Hit.GetActor()))
 		{
-			Barricade->Destroy();
+			// Floors and the Cathedral ramp are static meshes too. Only authored
+			// breakable barricades may be removed by the mounted weapon.
+			if (Barricade->ActorHasTag(TEXT("ManticoreBreakable"))) Barricade->Destroy();
 		}
 	}
 }

@@ -227,6 +227,7 @@ public:
 	 *  component so every melee path telegraphs, not only the one an AI controller drives. */
 	/** Starts the attack take and returns the seconds until its authored impact pose. */
 	float PlayCreatureAttack();
+	bool IsCreatureAttackActive() const { return CreatureAnimState == EAHCreatureAnimState::Attack && CreatureAnimHoldSeconds > 0.0f; }
 
 	const FAHCreatureAnimationSet& GetCreatureAnimations() const { return CreatureAnimations; }
 	EAHCreatureAnimState GetCreatureAnimState() const { return CreatureAnimState; }

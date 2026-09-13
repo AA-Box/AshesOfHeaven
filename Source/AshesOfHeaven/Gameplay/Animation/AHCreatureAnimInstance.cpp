@@ -40,7 +40,15 @@ void FAHCreatureAnimInstanceProxy::Configure(const FAHCreatureAnimationSet& Set)
 	BlendSeconds = FMath::Clamp(Set.TransitionBlendSeconds, 0.04f, 0.5f);
 	RequestedState = EAHCreatureAnimState::Idle;
 	RequestedPlayRate = 1.0f;
+	RestartPhase = 0.0f;
 	bRestartRequested = true;
+}
+
+float FAHCreatureAnimInstanceProxy::GetPlaybackPhase(EAHCreatureAnimState State) const
+{
+	const int32 Index = ToIndex(State);
+	if (Index < 0 || Index >= StateCount || !Players[Index].GetSequence()) return 0.0f;
+	return Players[Index].GetAccumulatedTime() / FMath::Max(KINDA_SMALL_NUMBER, Players[Index].GetSequence()->GetPlayLength());
 }
 
 void FAHCreatureAnimInstanceProxy::SetState(EAHCreatureAnimState State, float PlayRate)
@@ -49,6 +57,14 @@ void FAHCreatureAnimInstanceProxy::SetState(EAHCreatureAnimState State, float Pl
 	if (StateIndex < 0 || StateIndex >= StateCount || !Players[StateIndex].GetSequence())
 	{
 		return;
+	}
+	if (State != RequestedState)
+	{
+		const bool bWasMoving = RequestedState == EAHCreatureAnimState::Walk || RequestedState == EAHCreatureAnimState::Run;
+		const bool bIsMoving = State == EAHCreatureAnimState::Walk || State == EAHCreatureAnimState::Run;
+		RestartPhase = bWasMoving && bIsMoving
+			? FMath::Fmod(GetPlaybackPhase(RequestedState), 1.0f)
+			: 0.0f;
 	}
 	bRestartRequested |= State != RequestedState || State == EAHCreatureAnimState::Attack
 		|| State == EAHCreatureAnimState::Death;
@@ -63,11 +79,30 @@ void FAHCreatureAnimInstanceProxy::UpdateAnimationNode(const FAnimationUpdateCon
 	if (bRestartRequested)
 	{
 		Players[RequestedIndex].Initialize_AnyThread(FAnimationInitializeContext(this));
+		if (const UAnimSequenceBase* Clip = Players[RequestedIndex].GetSequence())
+		{
+			Players[RequestedIndex].SetAccumulatedTime(RestartPhase * Clip->GetPlayLength());
+		}
 		Players[RequestedIndex].CacheBones_AnyThread(FAnimationCacheBonesContext(this));
 		bRestartRequested = false;
+		RestartPhase = 0.0f;
 	}
 
 	Players[RequestedIndex].SetPlayRate(RequestedPlayRate);
+	if (RequestedState == EAHCreatureAnimState::Walk || RequestedState == EAHCreatureAnimState::Run)
+	{
+		const int32 OtherIndex = RequestedState == EAHCreatureAnimState::Walk
+			? ToIndex(EAHCreatureAnimState::Run) : ToIndex(EAHCreatureAnimState::Walk);
+		const UAnimSequenceBase* Current = Players[RequestedIndex].GetSequence();
+		const UAnimSequenceBase* Other = Players[OtherIndex].GetSequence();
+		if (Current && Other && Weights[OtherIndex] > 0.0f)
+		{
+			// Both legs stay in phase during the crossfade, including rate-scaled source clips.
+			Players[OtherIndex].SetAccumulatedTime(GetPlaybackPhase(RequestedState) * Other->GetPlayLength());
+			Players[OtherIndex].SetPlayRate(RequestedPlayRate * Current->RateScale * Other->GetPlayLength()
+				/ FMath::Max(KINDA_SMALL_NUMBER, Current->GetPlayLength() * Other->RateScale));
+		}
+	}
 	const float TransitionSeconds = RequestedState == EAHCreatureAnimState::Attack
 		? FMath::Min(BlendSeconds, 0.09f) : BlendSeconds;
 	const float WeightSpeed = 1.0f / FMath::Max(0.01f, TransitionSeconds);
@@ -119,4 +154,9 @@ void UAHCreatureAnimInstance::SetCreatureState(EAHCreatureAnimState State, float
 FAnimInstanceProxy* UAHCreatureAnimInstance::CreateAnimInstanceProxy()
 {
 	return new FAHCreatureAnimInstanceProxy(this);
+}
+
+float UAHCreatureAnimInstance::GetPlaybackPhase(EAHCreatureAnimState State) const
+{
+	return GetProxyOnGameThread<FAHCreatureAnimInstanceProxy>().GetPlaybackPhase(State);
 }

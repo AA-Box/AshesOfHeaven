@@ -473,6 +473,13 @@ void AAHCombatAIController::UpdateMeleeEngagement(AActor* Target, float DeltaSec
 	{
 		return;
 	}
+	// Full-body strikes commit to their starting position and heading through recovery.
+	if (Combatant->IsCreatureAttackActive())
+	{
+		StopMovement();
+		CurrentMoveGoal = FVector::ZeroVector;
+		return;
+	}
 
 	// Nothing tactical to decide: the beast has one plan and it is the target's throat. Leaving
 	// the intent on Hold also keeps ExecuteTacticalMovement and its EQS queries out of the loop.
@@ -510,6 +517,7 @@ void AAHCombatAIController::UpdateMeleeEngagement(AActor* Target, float DeltaSec
 			// Melee() is a no-op while its own cooldown timer is running, so the cadence is the
 			// archetype's MeleeCooldown and not the AI decision rate.
 			Combat->Melee();
+			if (Combatant->IsCreatureAttackActive()) StopMovement();
 		}
 	}
 }
