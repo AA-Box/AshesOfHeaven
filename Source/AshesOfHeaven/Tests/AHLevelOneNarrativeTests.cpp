@@ -12,6 +12,10 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
+#include "Gameplay/Audio/AHAudioSubsystem.h"
+#include "Sound/SoundWave.h"
+#include "UObject/GCObjectScopeGuard.h"
+#include "UObject/GarbageCollection.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneNarrativeContractTest, "AshesOfHeaven.LevelOne.NarrativeContract", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
 bool FAHLevelOneNarrativeContractTest::RunTest(const FString& Parameters)
@@ -248,6 +252,76 @@ bool FAHLevelOneUnrealMaterialContractTest::RunTest(const FString& Parameters)
 	{
 		TestNotNull(*FString::Printf(TEXT("Unreal material resolves: %s"), *MaterialPath), LoadObject<UMaterialInterface>(nullptr, *MaterialPath));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneBriefingTest, "AshesOfHeaven.LevelOne.PlayerBriefing", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneBriefingTest::RunTest(const FString& Parameters)
+{
+	for (int32 Index = 0; Index <= AHChapterStateConstants::ObjectiveCount; ++Index)
+	{
+		const auto Briefing = AHLevelOneNarrative::GetMissionBriefing(UAHChapterSubsystem::StageForObjectiveIndex(Index));
+		TestFalse(TEXT("Every playable objective has a location"), Briefing.Location.IsEmpty());
+		TestFalse(TEXT("Every playable objective explains its stakes"), Briefing.Situation.IsEmpty());
+		TestFalse(TEXT("Every playable objective has actionable orders"), Briefing.Orders.IsEmpty());
+	}
+	const auto Opening = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::OpeningBlack);
+	TestTrue(TEXT("Opening introduces the playable character"), Opening.Situation.ToString().Contains(TEXT("Lucian Vale")));
+	TestFalse(TEXT("Opening does not spoil the failsafe"), Opening.Situation.ToString().Contains(TEXT("Failsafe")));
+	TestFalse(TEXT("Opening does not reveal Nysa"), Opening.Situation.ToString().Contains(TEXT("Nysa")));
+	const auto Terminal = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::FailsafeTerminal);
+	TestTrue(TEXT("Decision retains exact human stakes"), Terminal.Situation.ToString().Contains(TEXT("11,407,231")));
+	TestTrue(TEXT("Orders explain second interaction"), Terminal.Orders.ToString().Contains(TEXT("again")));
+	TestTrue(TEXT("Dialogue identifies Maya"), AHLevelOneNarrative::GetSpeakerIdentity(TEXT("MAYA")).ToString().Contains(TEXT("MAYA SERRIN")));
+	TestTrue(TEXT("Anonymous cold-open speaker remains anonymous"), AHLevelOneNarrative::GetSpeakerIdentity(TEXT("CHILD")).ToString() == TEXT("CHILD"));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneEnvironmentContinuityTest, "AshesOfHeaven.LevelOne.AudioEnvironmentContinuity", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneEnvironmentContinuityTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("Cold open leaves dialogue in silence"), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::OpeningBlack).IsNone());
+	TestEqual(TEXT("Transit revelation retains station ambience"), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::TransitStation), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::VeilRevelation));
+	TestEqual(TEXT("Silent duplicate sighting retains escape ambience"), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::Escape), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::OtherLucian));
+	TestEqual(TEXT("Finale retains shelter ambience"), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::Escape), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::ErebusDestruction));
+	TestTrue(TEXT("Completion fades the environment to silence"), UAHAudioSubsystem::GetEnvironmentForStage(EAHChapterStage::ChapterComplete).IsNone());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneQueuedVoiceLifetimeTest, "AshesOfHeaven.LevelOne.QueuedVoiceSurvivesGarbageCollection", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneQueuedVoiceLifetimeTest::RunTest(const FString& Parameters)
+{
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GEngine);
+	FGCObjectScopeGuard InstanceGuard(GameInstance);
+	GameInstance->InitializeStandalone();
+	UWorld* World = GameInstance->GetWorld();
+	if (!World)
+	{
+		GameInstance->Shutdown();
+		return false;
+	}
+	FGCObjectScopeGuard WorldGuard(World);
+	UAHDialogueSubsystem* Dialogue = World->GetSubsystem<UAHDialogueSubsystem>();
+	TestNotNull(TEXT("Dialogue subsystem exists"), Dialogue);
+	if (Dialogue)
+	{
+		TWeakObjectPtr<USoundWave> QueuedVoice = NewObject<USoundWave>();
+		TArray<FAHDialogueLine> Lines;
+		Lines.SetNum(2);
+		Lines[0].Subtitle = FText::FromString(TEXT("First line"));
+		Lines[0].Duration = 30.0f;
+		Lines[1].Voice = QueuedVoice.Get();
+		Dialogue->StartSequence(TEXT("Test_QueuedVoiceLifetime"), Lines, false);
+		Lines.Reset();
+		CollectGarbage(RF_NoFlags);
+		TestTrue(TEXT("A later voice remains alive after the caller releases its lines"), QueuedVoice.IsValid());
+		Dialogue->SkipCurrentSequence();
+		CollectGarbage(RF_NoFlags);
+		TestFalse(TEXT("Skipping releases the unplayed voice"), QueuedVoice.IsValid());
+	}
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(false);
+	GameInstance->Shutdown();
 	return true;
 }
 

@@ -139,6 +139,7 @@ protected:
 	void SpawnGreyboxLighting();
 	void BuildMissionGraph();
 	void BuildMissionActors();
+	void UpdateStoryCharacter(EAHChapterStage Stage);
 	void BuildVisualArtTargets();
 	void BuildErebusArtTarget();
 	void BuildTransitStationArtTarget();
@@ -184,6 +185,8 @@ protected:
 	void SpawnVisualEffect(const TCHAR* SystemPath, const FVector& Location, const FVector& Scale = FVector::OneVector);
 	void SpawnCathedralGlyph(const FVector& Location, float Radius, float Scale = 1.0f);
 	ASkeletalMeshActor* SpawnVisualCharacter(const TCHAR* MeshPath, const TCHAR* MaterialPath, const FVector& Location, const FRotator& Rotation, float Scale, FName DisplayId);
+	UPROPERTY(Transient)
+	TObjectPtr<ASkeletalMeshActor> MayaStoryCharacter;
 	void SpawnCheckpoint(const FVector& Location, FName Id);
 	AAHChapterTrigger* SpawnTrigger(const FVector& Location, const FVector& Extent, FName Id, EAHChapterStage Stage = EAHChapterStage::OpeningBlack);
 	AAHCombatEncounter* SpawnEncounter(FName Id, const FVector& Location, int32 Count, FName ObjectiveOnComplete, const TArray<FVector>& Spawns, bool bAutoActivate = false);

@@ -8,6 +8,7 @@
 #include "Gameplay/Chapter/AHChapterSubsystem.h"
 #include "Gameplay/Chapter/AHChapterTypes.h"
 #include "Gameplay/Chapter/AHDialogueSubsystem.h"
+#include "Gameplay/Chapter/AHLevelOneNarrative.h"
 #include "Gameplay/Combat/AHArmorComponent.h"
 #include "Gameplay/Combat/AHHealthComponent.h"
 #include "Gameplay/Combat/AHInteractionComponent.h"
@@ -83,6 +84,10 @@ void UAHHUDRootWidget::NativeConstruct()
 			Dialogue->OnSequenceComplete.AddDynamic(this, &UAHHUDRootWidget::HandleDialogueSequenceComplete);
 			const bool bOpeningDialogue = Dialogue->HasActiveDialogue() && Dialogue->GetCurrentSequence() == FName(TEXT("Ch01_Opening"));
 			SetGameplayPresentationVisible(!bOpeningDialogue);
+			if (Dialogue->HasActiveDialogue())
+			{
+				HandleDialogueLine(Dialogue->GetCurrentSpeaker(), Dialogue->GetCurrentSubtitle(), 0.0f);
+			}
 		}
 	}
 	if (APlayerController* PC = GetOwningPlayer())
@@ -110,10 +115,33 @@ void UAHHUDRootWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UAHHUDRootWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (OpeningRevealElapsed < 0.0f) return;
+	// Slate can clamp its delta when the window loses focus. Follow the same world
+	// clock as dialogue so the title cannot linger over later lines; pause still freezes it.
+	OpeningRevealElapsed = GetWorld()
+		? static_cast<float>(GetWorld()->GetTimeSeconds() - OpeningRevealStartTime)
+		: OpeningRevealElapsed + InDeltaTime;
+	const float CurtainAlpha = 1.0f - FMath::SmoothStep(0.0f, 1.8f, OpeningRevealElapsed);
+	if (OpeningCurtain) OpeningCurtain->SetRenderOpacity(CurtainAlpha);
+	const float TitleAlpha = FMath::SmoothStep(0.0f, 0.8f, OpeningRevealElapsed)
+		* (1.0f - FMath::SmoothStep(3.0f, 4.5f, OpeningRevealElapsed));
+	if (ChapterTitleWidget) ChapterTitleWidget->SetRenderOpacity(TitleAlpha);
+	if (OpeningRevealElapsed >= 4.5f)
+	{
+		OpeningRevealElapsed = -1.0f;
+		ApplyVisibility(OpeningCurtain, false);
+		HideMissionComplete();
+	}
+}
+
 void UAHHUDRootWidget::SetGameplayPresentationVisible(bool bVisible)
 {
 	bGameplayPresentationVisible = bVisible;
-	ApplyVisibility(OpeningCurtain, !bVisible);
+	ApplyVisibility(OpeningCurtain, !bVisible || OpeningRevealElapsed >= 0.0f);
+	if (!bVisible && OpeningCurtain) OpeningCurtain->SetRenderOpacity(1.0f);
 
 	if (!bVisible)
 	{
@@ -134,9 +162,14 @@ void UAHHUDRootWidget::SetGameplayPresentationVisible(bool bVisible)
 	ApplyVisibility(WeaponStatusWidget, true);
 	ApplyVisibility(ObjectiveWidget, true);
 	ApplyVisibility(InteractionWidget, InteractionText == nullptr || !InteractionText->GetText().IsEmpty());
-	ApplyVisibility(DialogueWidget, false);
 	if (UWorld* World = GetWorld())
 	{
+		// Controller presentation binding can follow NativeConstruct or a dialogue
+		// event. Preserve the active subtitle when gameplay becomes visible.
+		if (UAHDialogueSubsystem* Dialogue = World->GetSubsystem<UAHDialogueSubsystem>())
+		{
+			ApplyVisibility(DialogueWidget, Dialogue->HasActiveDialogue());
+		}
 		if (UAHChapterSubsystem* Chapter = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UAHChapterSubsystem>() : nullptr)
 		{
 			if (Chapter->IsChapterComplete())
@@ -373,7 +406,7 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 	CurrentObjectiveIndex = Index;
 	CurrentObjectiveCount = Count;
 	ApplyVisibility(ObjectiveWidget, bGameplayPresentationVisible);
-	ApplyVisibility(ChapterTitleWidget, false);
+	if (OpeningRevealElapsed < 0.0f) ApplyVisibility(ChapterTitleWidget, false);
 	SetText(ObjectiveIndexText, bChanged ? NSLOCTEXT("AshesHUD", "ObjectiveUpdated", "OBJECTIVE UPDATED") : FText::GetEmpty());
 	SetText(ObjectiveText, Objective.IsEmpty() ? NSLOCTEXT("AshesHUD", "AwaitingOrders2", "AWAITING ORDERS") : Objective);
 	if (bChanged)
@@ -402,7 +435,7 @@ void UAHHUDRootWidget::SetObjective(const FText& Objective, int32 Index, int32 C
 				{
 					if (Widget->ObjectiveWidget)
 					{
-						Widget->ObjectiveWidget->SetRenderOpacity(0.35f);
+						Widget->ObjectiveWidget->SetRenderOpacity(0.72f);
 					}
 				}
 			}, 6.0f, false);
@@ -491,6 +524,9 @@ void UAHHUDRootWidget::ShowMissionComplete()
 			}
 		}
 	}
+	OpeningRevealElapsed = -1.0f;
+	SetText(MissionCompleteText, FText::FromString(TEXT("FOR A WHILE\nCHAPTER ONE COMPLETE")));
+	if (ChapterTitleWidget) ChapterTitleWidget->SetRenderOpacity(1.0f);
 	ApplyVisibility(ChapterTitleWidget, true);
 	ApplyVisibility(MissionCompleteText, true);
 	ApplyVisibility(ObjectiveWidget, false);
@@ -501,6 +537,8 @@ void UAHHUDRootWidget::ShowMissionComplete()
 
 void UAHHUDRootWidget::ShowMissionFailed(const FText& Headline)
 {
+	OpeningRevealElapsed = -1.0f;
+	if (ChapterTitleWidget) ChapterTitleWidget->SetRenderOpacity(1.0f);
 	// No IsChapterComplete() guard here: this is the opposite outcome, and it is raised while
 	// the chapter is mid-stage.
 	SetText(MissionCompleteText, Headline);
@@ -582,7 +620,7 @@ void UAHHUDRootWidget::HandleInteractionTargetChanged(AActor* Target)
 
 void UAHHUDRootWidget::HandleDialogueLine(FName Speaker, FText Subtitle, float Duration)
 {
-	SetText(DialogueSpeakerText, FText::FromName(Speaker));
+	SetText(DialogueSpeakerText, AHLevelOneNarrative::GetSpeakerIdentity(Speaker));
 	SetText(DialogueSubtitleText, Subtitle);
 	ApplyVisibility(DialogueSpeakerText, !Speaker.IsNone());
 	ApplyVisibility(DialogueSubtitleText, !Subtitle.IsEmpty());
@@ -599,6 +637,12 @@ void UAHHUDRootWidget::HandleDialogueSequenceComplete(FName SequenceId)
 	if (SequenceId == FName(TEXT("Ch01_Opening")))
 	{
 		SetGameplayPresentationVisible(true);
+		OpeningRevealElapsed = 0.0f;
+		OpeningRevealStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		SetText(MissionCompleteText, FText::FromString(TEXT("FOR A WHILE\nEREBUS / DISTRICT NINE")));
+		ApplyVisibility(MissionCompleteText, true);
+		ApplyVisibility(ChapterTitleWidget, true);
+		ApplyVisibility(OpeningCurtain, true);
 	}
 }
 
@@ -636,7 +680,14 @@ void UAHHUDRootWidget::HandleChapterStageChanged(EAHChapterStage Stage)
 	}
 	else
 	{
-		HideMissionComplete();
+		// Opening completion both starts the reveal and advances the director to
+		// ErebusOpening. Delegate order must not let that transition cancel the reveal.
+		if (Stage != EAHChapterStage::ErebusOpening || OpeningRevealElapsed < 0.0f)
+		{
+			if (OpeningRevealElapsed >= 0.0f) ApplyVisibility(OpeningCurtain, false);
+			OpeningRevealElapsed = -1.0f;
+			HideMissionComplete();
+		}
 		ApplyVisibility(ObjectiveWidget, bGameplayPresentationVisible);
 	}
 }
