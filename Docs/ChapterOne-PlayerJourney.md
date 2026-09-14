@@ -60,7 +60,7 @@ The mounted weapon removes only explicitly tagged breakable barricades, not floo
 
 Build reproduction uses `-NoHotReload -NoUBA`: the accelerator stalled in `libUbaDetours` before linker initialization. Test launch uses `-DPCvars=TEDS.AddParentColumnToActors=0,TEDS.Feature.ActorCompatibility.ActorComponents.Enable=0` to avoid the UE 5.8 editor hierarchy crash. These disable editor bookkeeping for the isolated test process, not gameplay systems or assertions; no project configuration was changed. Use `-ExecCmds="Automation RunTests AshesOfHeaven;Quit"`, `-TestExit="Automation Test Queue Empty"`, and a unique report/log path and MCP port.
 
-Fresh Shipping packaging, full manual start-to-finish combat, visual navigation acceptance, and a staged destruction cinematic remain unverified or unfinished. Do not treat old package evidence as validation of this tree.
+Fresh Mac Shipping packaging now passes build, cook, stage, archive, and PSO validation. Full manual start-to-finish combat, visual navigation acceptance, and a staged destruction cinematic remain unverified or unfinished.
 
 Mac Development editor build passed. `AshesOfHeaven.LevelOne.PlayerBriefing` passed with the new destination and completion-condition assertions. Report: `Saved/AutomationReport-StoryBriefing-20260912/index.json`.
 
