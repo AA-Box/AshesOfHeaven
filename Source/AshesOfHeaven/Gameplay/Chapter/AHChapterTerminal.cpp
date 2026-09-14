@@ -136,6 +136,9 @@ bool AAHChapterTerminal::RestoreWorldState_Implementation(const TArray<uint8>& P
 
 void AAHChapterTerminal::OnWorldStateRestored_Implementation()
 {
+	SetScreenText(FName(TEXT("TerminalIntel")), CasualtyText);
+	SetScreenText(FName(TEXT("TerminalStatus")), bConfirmed ? ConfirmationText
+		: NSLOCTEXT("AshesOfHeaven", "TerminalAwaitingAuthorization", "AWAITING AUTHORIZATION"));
 }
 
 void AAHChapterTerminal::MarkWorldStateDirty()

@@ -169,6 +169,7 @@ protected:
 	int32 CurrentObjectiveIndex = 0;
 	int32 CurrentObjectiveCount = 0;
 	FTimerHandle ObjectiveMetadataTimer;
+	float NavigationElapsed = 0.0f;
 	FTimerHandle ObjectiveSettleTimer;
 	bool bGameplayPresentationVisible = true;
 	bool bPresentationReady = false;

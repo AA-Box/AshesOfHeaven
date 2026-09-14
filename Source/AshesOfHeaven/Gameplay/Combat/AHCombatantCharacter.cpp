@@ -667,10 +667,12 @@ float AAHCombatantCharacter::PlayCreatureAttack()
 		return 0.0f;
 	}
 	const float Cooldown = CombatComponent ? CombatComponent->MeleeCooldown : 1.1f;
+	const float AssetRate = FMath::Max(0.01f, FMath::Abs(Clip->RateScale));
 	const float PlayRate = FMath::Clamp(
-		Clip->GetPlayLength() / FMath::Max(0.45f, Cooldown * 0.9f), 0.85f, 1.65f);
-	const float Duration = FMath::Clamp(Clip->GetPlayLength() / PlayRate, 0.1f, 2.5f);
+		Clip->GetPlayLength() / (AssetRate * FMath::Max(0.45f, Cooldown * 0.9f)), 0.85f, 1.65f);
+	const float Duration = Clip->GetPlayLength() / (PlayRate * AssetRate);
 	PlayCreatureClip(EAHCreatureAnimState::Attack, false, PlayRate);
+	GetCharacterMovement()->StopMovementImmediately();
 	CreatureAnimHoldSeconds = Duration;
 	return Duration * FMath::Clamp(CreatureAnimations.AttackImpactTime, 0.1f, 0.8f);
 }

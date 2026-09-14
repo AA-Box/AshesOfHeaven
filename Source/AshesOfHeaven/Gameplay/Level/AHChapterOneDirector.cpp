@@ -277,7 +277,13 @@ void AAHChapterOneDirector::Tick(float DeltaSeconds)
 			EnsureStageSpatialValidity(GetCurrentStage(), TEXT("FallRecovery"));
 		}
 	}
-	if (GetCurrentStage() == EAHChapterStage::CathedralApproach && (PlayerLocation.X > 13700.0f || (Manticore && Manticore->GetActorLocation().X > 13700.0f)))
+	if (GetCurrentStage() == EAHChapterStage::CathedralApproach && Manticore
+		&& Manticore->GetDriver() && Manticore->GetActorLocation().X >= 11000.0f)
+	{
+		Manticore->ParkForArrival();
+	}
+	if (GetCurrentStage() == EAHChapterStage::CathedralApproach && Player
+		&& PlayerLocation.X >= 14000.0f && PlayerLocation.Z >= 790.0f)
 	{
 		CompleteCurrentObjective();
 	}
@@ -334,7 +340,7 @@ void AAHChapterOneDirector::BuildMissionGraph()
 		{EAHChapterStage::OpeningBlack, NAME_None, FText::FromString(TEXT("OPENING")), true},
 		{EAHChapterStage::ErebusOpening, OpeningObjective, FText::FromString(TEXT("REACH THE DEFENSIVE LINE")), true},
 		{EAHChapterStage::OpeningBattle, OpeningBattleObjective, FText::FromString(TEXT("HOLD THE EREBUS LINE")), true},
-		{EAHChapterStage::TransitStation, TransitObjective, FText::FromString(TEXT("ENTER THE TRANSIT STATION")), true},
+		{EAHChapterStage::TransitStation, TransitObjective, FText::FromString(TEXT("REACH PLATFORM 02")), true},
 		{EAHChapterStage::VeilRevelation, RevelationObjective, FText::FromString(TEXT("CHECK ON THE TRANSIT SURVIVOR")), true},
 		{EAHChapterStage::OpenBattlefield, BattlefieldObjective, FText::FromString(TEXT("CROSS THE OPEN BATTLEFIELD")), true},
 		{EAHChapterStage::ManticoreSection, ManticoreObjective, FText::FromString(TEXT("ENTER THE MANTICORE")), true},
@@ -345,7 +351,7 @@ void AAHChapterOneDirector::BuildMissionGraph()
 		{EAHChapterStage::FailsafeTerminal, ConfirmObjective, FText::FromString(TEXT("CONFIRM PLANETARY FAILSAFE")), true},
 		{EAHChapterStage::Escape, EscapeObjective, FText::FromString(TEXT("ESCAPE THE CATHEDRAL")), true},
 		{EAHChapterStage::OtherLucian, EscapeObjective, FText::FromString(TEXT("THE OTHER LUCIAN")), false},
-		{EAHChapterStage::ErebusDestruction, DestructionObjective, FText::FromString(TEXT("SURVIVE THE DESTRUCTION")), true},
+		{EAHChapterStage::ErebusDestruction, DestructionObjective, FText::FromString(TEXT("STAY IN SHELTER")), true},
 		{EAHChapterStage::TenYearsLater, MayaObjective, FText::FromString(TEXT("MEET CAPTAIN MAYA SOL")), true},
 		{EAHChapterStage::MayaScene, NysaObjective, FText::FromString(TEXT("RECEIVE THE NYSA TRANSMISSION")), true},
 		{EAHChapterStage::NysaTransmission, FleetObjective, FText::FromString(TEXT("PREPARE FOR FLEET DEPARTURE")), true},
@@ -363,18 +369,18 @@ void AAHChapterOneDirector::ConfigureObjectives()
 	}
 
 	const TArray<FAHObjectiveDefinition> Definitions = {
-		{OpeningObjective, FText::FromString(TEXT("REACH THE DEFENSIVE LINE")), FText::FromString(TEXT("Join the last human line at Erebus."))},
-		{OpeningBattleObjective, FText::FromString(TEXT("HOLD THE EREBUS LINE")), FText::FromString(TEXT("Repel the first Veil assault."))},
-		{TransitObjective, FText::FromString(TEXT("ENTER THE TRANSIT STATION")), FText::FromString(TEXT("Find a route beneath the battlefield."))},
-		{RevelationObjective, FText::FromString(TEXT("CHECK ON THE TRANSIT SURVIVOR")), FText::FromString(TEXT("Stay with Maya and listen to the survivor."))},
-		{BattlefieldObjective, FText::FromString(TEXT("CROSS THE OPEN BATTLEFIELD")), FText::FromString(TEXT("Reach the Manticore route."))},
-		{ManticoreObjective, FText::FromString(TEXT("ENTER THE MANTICORE")), FText::FromString(TEXT("Take the assault vehicle."))},
-		{ApproachObjective, FText::FromString(TEXT("REACH THE CATHEDRAL APPROACH")), FText::FromString(TEXT("Break through to the Cathedral."))},
+		{OpeningObjective, FText::FromString(TEXT("REACH THE DEFENSIVE LINE")), FText::FromString(TEXT("Advance to the District Nine barricades. Maya and the survivors need the evacuation route held open."))},
+		{OpeningBattleObjective, FText::FromString(TEXT("HOLD THE EREBUS LINE")), FText::FromString(TEXT("Use the barricades for cover and defeat the attacking Veil. Advance when the objective changes."))},
+		{TransitObjective, FText::FromString(TEXT("REACH PLATFORM 02")), FText::FromString(TEXT("Follow the North Line through Transit North. Reach Maya and the survivor on Platform 02."))},
+		{RevelationObjective, FText::FromString(TEXT("CHECK ON THE TRANSIT SURVIVOR")), FText::FromString(TEXT("Listen beside Maya. No interaction is required; the next objective begins when the conversation ends."))},
+		{BattlefieldObjective, FText::FromString(TEXT("CROSS THE OPEN BATTLEFIELD")), FText::FromString(TEXT("Move between cover positions toward Ivo's rendezvous on the Cathedral route. Reaching the rendezvous, not clearing every enemy, advances the mission."))},
+		{ManticoreObjective, FText::FromString(TEXT("ENTER THE MANTICORE")), FText::FromString(TEXT("Approach Ivo's armored vehicle and use the board interaction."))},
+		{ApproachObjective, FText::FromString(TEXT("REACH THE CATHEDRAL APPROACH")), FText::FromString(TEXT("Drive to the ramp drop-off, then climb to the entrance on foot. Follow the direction and distance beneath your objective."))},
 		{FailsafeObjective, FText::FromString(TEXT("ENTER THE CATHEDRAL")), FText::FromString(TEXT("Reach the control chamber before the carrier opens."))},
-		{TerminalObjective, FText::FromString(TEXT("REACH THE FAILSAFE TERMINAL")), FText::FromString(TEXT("Enter the impossible structure."))},
-		{ConfirmObjective, FText::FromString(TEXT("CONFIRM PLANETARY FAILSAFE")), FText::FromString(TEXT("Authorize the destruction of Erebus."))},
-		{EscapeObjective, FText::FromString(TEXT("ESCAPE THE CATHEDRAL")), FText::FromString(TEXT("Run before the world ends."))},
-		{DestructionObjective, FText::FromString(TEXT("SURVIVE THE DESTRUCTION")), FText::FromString(TEXT("Reach protected shelter."))},
+		{TerminalObjective, FText::FromString(TEXT("REACH THE FAILSAFE TERMINAL")), FText::FromString(TEXT("Follow the expedition walkway to the control terminal before the transmission countdown expires."))},
+		{ConfirmObjective, FText::FromString(TEXT("CONFIRM PLANETARY FAILSAFE")), FText::FromString(TEXT("Interact once to inspect the casualty assessment. Interact again to authorize the destruction of Erebus. Authorization starts the escape."))},
+		{EscapeObjective, FText::FromString(TEXT("ESCAPE THE CATHEDRAL")), FText::FromString(TEXT("Follow the illuminated route to shelter. Keep moving; you do not need to defeat every attacker."))},
+		{DestructionObjective, FText::FromString(TEXT("STAY IN SHELTER")), FText::FromString(TEXT("You reached shelter. Stay with Maya and listen to the final transmission; the chapter ends automatically."))},
 		{MayaObjective, FText::FromString(TEXT("MEET CAPTAIN MAYA SOL")), FText::FromString(TEXT("Ten years later."))},
 		{NysaObjective, FText::FromString(TEXT("RECEIVE THE NYSA TRANSMISSION")), FText::FromString(TEXT("A message from deep time."))},
 		{FleetObjective, FText::FromString(TEXT("PREPARE FOR FLEET DEPARTURE")), FText::FromString(TEXT("The fleet is moving."))},
@@ -1114,7 +1120,7 @@ void AAHChapterOneDirector::BuildGreybox()
 	SpawnBlock(FVector(15100.0f, -1300.0f, 1000.0f), FVector(0.8f, 4.0f, 10.0f), FRotator::ZeroRotator, CathedralMaterial);
 	SpawnBlock(FVector(15100.0f, 1300.0f, 1000.0f), FVector(0.8f, 4.0f, 10.0f), FRotator::ZeroRotator, CathedralMaterial);
 	SpawnBlock(FVector(18000.0f, 0.0f, 1800.0f), FVector(0.7f, 17.0f, 16.0f), FRotator::ZeroRotator, CathedralMaterial);
-	SpawnBlock(FVector(21500.0f, 0.0f, 600.0f), FVector(0.8f, 13.0f, 6.0f), FRotator::ZeroRotator, CathedralMaterial);
+	SpawnBlock(FVector(21500.0f, 1000.0f, 600.0f), FVector(0.8f, 13.0f, 6.0f), FRotator::ZeroRotator, CathedralMaterial);
 	SpawnBlock(FVector(26000.0f, 0.0f, 300.0f), FVector(0.5f, 14.0f, 3.0f));
 	BuildCathedralSpatialRoute();
 	SpawnLabel(FVector(300.0f, -1180.0f, 300.0f), TEXT("EREBUS\nTEN YEARS EARLIER"), FColor(220, 220, 220));
@@ -1166,19 +1172,23 @@ void AAHChapterOneDirector::BuildCathedralSpatialRoute()
 {
 	// A raised, continuous route connects the Manticore approach to the terminal and
 	// escape. Every surface has one deliberate top at Z=790; the lower approach is a
-	// set of real steps instead of a vertical teleport between unrelated bands.
-	const FVector CathedralOrigin = AHChapterSpatial::GetStageDefinition(EAHChapterStage::CathedralApproach).StageAnchor;
+	// continuous walkable ramp from the ground-level vehicle drop-off.
+	const FVector CathedralOrigin(14500.0f, 0.0f, 790.0f);
 	for (int32 Index = 0; Index < 16; ++Index)
 	{
-		const float X = CathedralOrigin.X - 500.0f + Index * 700.0f;
+		const float X = CathedralOrigin.X - 150.0f + Index * 700.0f;
 		SpawnBlock(FVector(X, CathedralOrigin.Y, CathedralOrigin.Z - 50.0f), FVector(7.0f, 3.0f, 1.0f), FRotator::ZeroRotator, HumanMetalMaterial);
 	}
-	for (int32 Index = 0; Index < 10; ++Index)
-	{
-		const float X = CathedralOrigin.X - 2900.0f + Index * 240.0f;
-		const float TopZ = CathedralOrigin.Z - 756.0f + Index * 84.0f;
-		SpawnBlock(FVector(X, CathedralOrigin.Y, TopZ - 25.0f), FVector(1.2f, 3.0f, 0.50f), FRotator::ZeroRotator, HumanMetalMaterial);
-	}
+	const FVector RampStart(11400.0f, 0.0f, -50.0f);
+	const FVector RampEnd(14000.0f, 0.0f, 790.0f);
+	const FRotator RampRotation = FRotationMatrix::MakeFromX(RampEnd - RampStart).Rotator();
+	SpawnBlock((RampStart + RampEnd) * 0.5f - RampRotation.RotateVector(FVector(0, 0, 25)),
+		FVector(FVector::Distance(RampStart, RampEnd) / 100.0f, 6.0f, 0.5f), RampRotation, HumanMetalMaterial);
+	// SpawnBlock is collision-only; the accessible replacement must also be visible
+	// when the authored Cathedral sublevel suppresses the fallback art builder.
+	SpawnVisualShape(TEXT("/Game/Ashes/Presentation/Meshes/SM_AH_Cube.SM_AH_Cube"),
+		(RampStart + RampEnd) * 0.5f - RampRotation.RotateVector(FVector(0, 0, 25)),
+		FVector(FVector::Distance(RampStart, RampEnd) / 100.0f, 6.0f, 0.5f), RampRotation, HumanMetalMaterial);
 }
 
 void AAHChapterOneDirector::BuildVisualArtTargets()
@@ -1628,16 +1638,10 @@ void AAHChapterOneDirector::BuildCathedralArtTarget()
 	// while the human walkway and triggers floated around Z=790-850.
 	for (int32 Index = 0; Index < 16; ++Index)
 	{
-		const float X = CathedralOrigin.X - 500.0f + Index * 700.0f;
+		const float X = CathedralOrigin.X - 150.0f + Index * 700.0f;
 		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 0.0f, -5.0f)), FVector(7.0f, 3.0f, 0.10f), FRotator::ZeroRotator, HumanMetalMaterial);
 		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, -285.0f, 145.0f)), FVector(7.0f, 0.06f, 1.5f), FRotator::ZeroRotator, HumanMetalMaterial);
 		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 285.0f, 145.0f)), FVector(7.0f, 0.06f, 1.5f), FRotator::ZeroRotator, HumanMetalMaterial);
-	}
-	for (int32 Index = 0; Index < 10; ++Index)
-	{
-		const float X = CathedralOrigin.X - 2900.0f + Index * 240.0f;
-		const float TopZ = CathedralOrigin.Z - 756.0f + Index * 84.0f;
-		SpawnVisualShape(Cube, Local(FVector(X - CathedralOrigin.X, 0.0f, TopZ - 25.0f - CathedralOrigin.Z)), FVector(1.2f, 3.0f, 0.50f), FRotator::ZeroRotator, HumanMetalMaterial);
 	}
 	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), Local(FVector(600.0f, -700.0f, 90.0f)), FRotator(0.0f, 0.0f, -3.0f), FVector(2.8f));
 	SpawnPresentationProp(TEXT("/Game/Ashes/Blueprints/Environment/BP_Cathedral_Fin.BP_Cathedral_Fin_C"), Local(FVector(2300.0f, 700.0f, 210.0f)), FRotator(0.0f, 180.0f, 4.0f), FVector(2.4f));

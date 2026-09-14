@@ -272,6 +272,14 @@ bool FAHLevelOneBriefingTest::RunTest(const FString& Parameters)
 	const auto Terminal = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::FailsafeTerminal);
 	TestTrue(TEXT("Decision retains exact human stakes"), Terminal.Situation.ToString().Contains(TEXT("11,407,231")));
 	TestTrue(TEXT("Orders explain second interaction"), Terminal.Orders.ToString().Contains(TEXT("again")));
+	const auto Transit = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::TransitStation);
+	TestTrue(TEXT("Transit orders name the destination inside the station"), Transit.Orders.ToString().Contains(TEXT("Platform 02")));
+	const auto Revelation = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::VeilRevelation);
+	TestTrue(TEXT("Survivor beat does not imply an interaction gate"), Revelation.Orders.ToString().Contains(TEXT("No interaction")));
+	const auto Escape = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::Escape);
+	TestTrue(TEXT("Escape completion is reaching shelter, not killing every enemy"), Escape.Orders.ToString().Contains(TEXT("not clearing every enemy")));
+	const auto Finale = AHLevelOneNarrative::GetMissionBriefing(EAHChapterStage::ErebusDestruction);
+	TestTrue(TEXT("Finale tells the player to stay, not seek another destination"), Finale.Orders.ToString().Contains(TEXT("Stay")));
 	TestTrue(TEXT("Dialogue identifies Maya"), AHLevelOneNarrative::GetSpeakerIdentity(TEXT("MAYA")).ToString().Contains(TEXT("MAYA SERRIN")));
 	TestTrue(TEXT("Anonymous cold-open speaker remains anonymous"), AHLevelOneNarrative::GetSpeakerIdentity(TEXT("CHILD")).ToString() == TEXT("CHILD"));
 	return true;

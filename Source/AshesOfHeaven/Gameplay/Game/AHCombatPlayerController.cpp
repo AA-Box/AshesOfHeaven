@@ -267,8 +267,9 @@ void AAHCombatPlayerController::OnPossess(APawn* InPawn)
 	}
 	if (AAHCombatPlayerCharacter* Player = Cast<AAHCombatPlayerCharacter>(InPawn))
 	{
-		Player->OnCombatantDeath.AddDynamic(this, &AAHCombatPlayerController::HandlePlayerDeath);
-		Player->OnDamageFeedback.AddDynamic(this, &AAHCombatPlayerController::HandleDamageFeedback);
+		Player->OnCombatantDeath.AddUniqueDynamic(this, &AAHCombatPlayerController::HandlePlayerDeath);
+		Player->OnDamageFeedback.AddUniqueDynamic(this, &AAHCombatPlayerController::HandleDamageFeedback);
+		Player->OnWeaponShot.RemoveAll(this);
 		Player->OnWeaponShot.AddUObject(this, &AAHCombatPlayerController::HandleWeaponShot);
 	}
 }

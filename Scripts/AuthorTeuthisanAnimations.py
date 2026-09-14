@@ -11,7 +11,7 @@ first frame, and the single-node player restarts a loop with a cut, not a crossf
 gap arrived as a visible snap every cycle. The tail of each looping clip is therefore
 blended back into its first frame over the last few frames before it is written.
 
-TANIM_MODE=author (default): delete-and-recreate the five /Game/.../GameAnims clips.
+TANIM_MODE=author (default): update the five /Game/.../GameAnims clips in place.
 TANIM_MODE=verify: read-back only, measures every claim, writes tanim_verify.json.
 
 Run with UnrealEditor-Cmd -run=pythonscript. Reports land in Saved/TeuthisanAnims.
@@ -22,7 +22,6 @@ import unreal
 TAG = "TANIM"
 D = unreal.Paths.convert_relative_path_to_full(
     os.path.join(unreal.Paths.project_saved_dir(), "TeuthisanAnims")) + "/"
-os.makedirs(D, exist_ok=True)
 SRC = "/Game/Characters/Teuthisan/Baked_B/AS_Teuthisan_"
 DEST = "/Game/Characters/Teuthisan/GameAnims"
 SK_PATH = "/Game/Characters/Teuthisan/Rig/SK_Teuthisan_rig_v001"
@@ -37,11 +36,13 @@ WORLD = unreal.AnimPoseSpaces.WORLD   # component space for a pose with no actor
 TOOLS = unreal.AssetToolsHelpers.get_asset_tools()
 EAL = unreal.EditorAssetLibrary
 
-log = open(D + ("verify" if MODE == "verify" else "author") + "_log.txt", "w")
+log = None
 
 
 def w(s):
-    log.write(str(s) + "\n"); log.flush(); unreal.log_warning("%s %s" % (TAG, str(s)[:400]))
+    if log:
+        log.write(str(s) + "\n"); log.flush()
+    unreal.log_warning("%s %s" % (TAG, str(s)[:400]))
 
 
 def frame_count(asset):
@@ -115,12 +116,11 @@ def close_loop(bones, poses, blend_frames):
     n = len(poses)
     span = min(blend_frames, n - 1)
     for i in range(n - span, n):
-        k = (i - (n - span)) / float(span)          # 0 at the blend start, 1 on the last frame
+        k = 1.0 if span == 1 else (i - (n - span)) / float(span - 1)
         weight = k * k * (3.0 - 2.0 * k)
         for b in bones:
             t, r, s = poses[i][b]
             t0, r0, s0 = poses[0][b]
-            poses[i] = poses[i]  # keep dict identity; only the entry changes
             poses[i][b] = (
                 unreal.Vector(t.x + (t0.x - t.x) * weight,
                               t.y + (t0.y - t.y) * weight,
@@ -133,19 +133,21 @@ def close_loop(bones, poses, blend_frames):
 
 def write_clip(name, bones, poses):
     pkg = DEST + "/" + name
-    if EAL.does_asset_exist(pkg):
-        EAL.delete_asset(pkg)
-    factory = unreal.AnimSequenceFactory()
-    factory.set_editor_property("target_skeleton", unreal.load_asset(SK_PATH))
-    asset = TOOLS.create_asset(name, DEST, unreal.AnimSequence, factory)
+    asset = unreal.load_asset(pkg)
+    if not asset:
+        factory = unreal.AnimSequenceFactory()
+        factory.set_editor_property("target_skeleton", unreal.load_asset(SK_PATH))
+        asset = TOOLS.create_asset(name, DEST, unreal.AnimSequence, factory)
     if not asset:
         raise RuntimeError("could not create " + pkg)
     controller = asset.get_editor_property("controller")
     controller.open_bracket("author " + name)
     controller.set_frame_rate(unreal.FrameRate(FPS, 1))
     controller.set_number_of_frames(unreal.FrameNumber(len(poses) - 1))
+    model = asset.get_editor_property("data_model_interface")
     for b in bones:
-        controller.add_bone_track(b)
+        if not model.is_valid_bone_track_name(b):
+            controller.add_bone_track(b)
         controller.set_bone_track_keys(b, [p[b][0] for p in poses],
                                        [p[b][1] for p in poses], [p[b][2] for p in poses])
     controller.close_bracket()
@@ -202,12 +204,7 @@ def author():
     report["Walk"] = {"asset_path": pkg, "frames": len(poses), "natural_speed_cms": natural}
 
     # ---- Run: the Walk clip rate-scaled to an apparent ~300 cm/s gait -------------------
-    run_pkg = DEST + "/A_Teuthisan_Run"
-    if EAL.does_asset_exist(run_pkg):
-        EAL.delete_asset(run_pkg)
-    run = EAL.duplicate_asset(pkg, run_pkg)
-    if not run:
-        raise RuntimeError("could not duplicate Walk into Run")
+    run_pkg, run = write_clip("A_Teuthisan_Run", bones, poses)
     rate = RUN_TARGET_SPEED / natural
     run.set_editor_property("rate_scale", rate)
     EAL.save_asset(run_pkg, only_if_is_dirty=False)
@@ -310,10 +307,13 @@ def verify():
     w("VERIFY DONE")
 
 
-try:
-    verify() if MODE == "verify" else author()
-except Exception:
-    w("FAILED\n" + traceback.format_exc())
-    raise
-finally:
-    log.close()
+if __name__ == "__main__":
+    os.makedirs(D, exist_ok=True)
+    log = open(D + ("verify" if MODE == "verify" else "author") + "_log.txt", "w")
+    try:
+        verify() if MODE == "verify" else author()
+    except Exception:
+        w("FAILED\n" + traceback.format_exc())
+        raise
+    finally:
+        log.close()

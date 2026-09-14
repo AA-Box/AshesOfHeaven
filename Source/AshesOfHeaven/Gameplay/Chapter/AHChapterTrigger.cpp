@@ -7,7 +7,8 @@
 
 AAHChapterTrigger::AAHChapterTrigger()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.1f;
 	Trigger = CreateDefaultSubobject<UBoxComponent>(TEXT("Trigger"));
 	RootComponent = Trigger;
 	Trigger->SetBoxExtent(FVector(300.0f, 900.0f, 180.0f));
@@ -28,6 +29,20 @@ void AAHChapterTrigger::ResetTrigger()
 }
 
 void AAHChapterTrigger::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	TryActivate(OtherActor);
+}
+
+void AAHChapterTrigger::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!bOneShot || bTriggered) return;
+	TArray<AActor*> Players;
+	Trigger->GetOverlappingActors(Players, AAHCombatPlayerCharacter::StaticClass());
+	for (AActor* Player : Players) TryActivate(Player);
+}
+
+void AAHChapterTrigger::TryActivate(AActor* OtherActor)
 {
 	if (bOneShot && bTriggered)
 	{
@@ -53,7 +68,6 @@ void AAHChapterTrigger::HandleOverlap(UPrimitiveComponent* OverlappedComponent, 
 				&& ZoneId == CurrentDefinition.ZoneId);
 		if (!bStageCompatible)
 		{
-			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[Spatial][Trigger] ignored trigger=%s stage=%s currentStage=%s zone=%s currentZone=%s"), *TriggerId.ToString(), *UEnum::GetValueAsString(Stage), *UEnum::GetValueAsString(CurrentStage), *ZoneId.ToString(), *CurrentDefinition.ZoneId.ToString());
 			return;
 		}
 		bTriggered = true;

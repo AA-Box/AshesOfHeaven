@@ -15,9 +15,85 @@
 #include "Gameplay/Enemies/AHEnemyDefinition.h"
 #include "Kismet/GameplayStatics.h"
 #include "Animation/AnimSequenceBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/SkeletalMeshSocket.h"
+#include "Animation/AnimSequence.h"
+#include "Gameplay/Weapons/AHWeaponBase.h"
+#include "Gameplay/Animation/AHCreatureAnimInstance.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AHEnemyAssetValidationCommandlet.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHStalkerRifleAttachmentTest,
+	"AshesOfHeaven.Assets.Enemies.StalkerRifleAttachment",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHStalkerRifleAttachmentTest::RunTest(const FString& Parameters)
+{
+	UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr,
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Pilgrim.DA_Enemy_Pilgrim"));
+	if (!TestNotNull(TEXT("Pilgrim definition resolves"), Definition)) return false;
+	USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr,
+		TEXT("/Game/Ashes/Enemies/Stalker/SKM_Stalker.SKM_Stalker"));
+	if (!TestNotNull(TEXT("Stalker mesh resolves"), Mesh)) return false;
+	USkeletalMeshSocket* Socket = Mesh->FindSocket(TEXT("HandGrip_R"));
+	if (!TestNotNull(TEXT("Rifle socket exists"), Socket)) return false;
+	TestEqual(TEXT("Rifle follows right hand"), Socket->BoneName, FName(TEXT("Bip01-R-Hand")));
+	TestTrue(TEXT("Socket cancels skeleton unit scale"), Socket->RelativeScale.Equals(FVector(1.0 / 2.54), 0.001));
+	UGameInstance* Game = NewObject<UGameInstance>(GEngine);
+	Game->AddToRoot();
+	Game->InitializeStandalone(FName(TEXT("StalkerRifleTest")));
+	UWorld* World = Game->GetWorld();
+	AAHCombatantCharacter* Owner = World->SpawnActor<AAHCombatantCharacter>(Definition->CombatClass.LoadSynchronous());
+	AAHWeaponBase* Weapon = World->SpawnActor<AAHWeaponBase>();
+	if (TestNotNull(TEXT("Combatant spawned"), Owner) && TestNotNull(TEXT("Weapon spawned"), Weapon))
+	{
+		Weapon->SetOwner(Owner);
+		Owner->GetMesh()->SetSkeletalMeshAsset(Mesh);
+		// Reproduce a weapon attached before its streamed body supplied a hand socket.
+		Weapon->WeaponMesh->AttachToComponent(Owner->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform);
+		Weapon->SetWeaponActive(true);
+		TestEqual(TEXT("Existing parent attachment migrates to hand socket"),
+			Weapon->WeaponMesh->GetAttachSocketName(), FName(TEXT("HandGrip_R")));
+		Weapon->SetWeaponActive(true);
+		TestEqual(TEXT("Repeated activation preserves hand attachment"),
+			Weapon->WeaponMesh->GetAttachSocketName(), FName(TEXT("HandGrip_R")));
+	}
+	if (Weapon) Weapon->Destroy();
+	if (Owner) Owner->Destroy();
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(false);
+	Game->Shutdown();
+	Game->RemoveFromRoot();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHHoundAuthoredWalkTest,
+	"AshesOfHeaven.Assets.Enemies.HoundAuthoredWalk",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHHoundAuthoredWalkTest::RunTest(const FString& Parameters)
+{
+	UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr,
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Hound.DA_Enemy_Hound"));
+	if (!TestNotNull(TEXT("Hound definition resolves"), Definition)) return false;
+	for (bool bMobile : {false, true})
+	{
+		const FAHCreatureAnimationSet& Motion = Definition->ResolveVisuals(bMobile).Locomotion;
+		UAnimSequenceBase* Walk = Motion.Walk.LoadSynchronous();
+		if (TestNotNull(TEXT("Authored walk resolves"), Walk))
+		{
+			TestEqual(TEXT("Walk is a full four-beat cycle"), Walk->GetPlayLength(), 1.2f, 0.001f);
+			TestEqual(TEXT("Walk no longer slows the run take"), Walk->RateScale, 1.0f);
+		}
+		TestEqual(TEXT("Walk stride speed measured in cm/s"), Motion.WalkReferenceSpeed, 50.0f);
+		TestTrue(TEXT("Run starts before walk exceeds rate cap"), Motion.RunSpeed < Motion.WalkReferenceSpeed * 3.0f);
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAHEnemyBodyMaterialsAreProjectAssetsTest,
@@ -180,6 +256,75 @@ bool FAHCreatureLocomotionStateTest::RunTest(const FString& Parameters)
 		CalculateLocomotionPlayRate(Set, 640.0f, 640.0f, EAHCreatureAnimState::Run), 1.0f);
 	TestEqual(TEXT("idle never inherits a locomotion rate"),
 		CalculateLocomotionPlayRate(Set, 0.0f, 640.0f, EAHCreatureAnimState::Idle), 1.0f);
+	Set.WalkReferenceSpeed = 75.0f;
+	Set.RunReferenceSpeed = 300.0f;
+	TestEqual(TEXT("measured walk speed is independent of transition threshold"),
+		CalculateLocomotionPlayRate(Set, 75.0f, 300.0f, EAHCreatureAnimState::Walk), 1.0f);
+	TestEqual(TEXT("slow approach slows the feet below the former 0.72 floor"),
+		CalculateLocomotionPlayRate(Set, 30.0f, 300.0f, EAHCreatureAnimState::Walk), 0.4f);
+	TestEqual(TEXT("measured run speed is independent of maximum pawn speed"),
+		CalculateLocomotionPlayRate(Set, 150.0f, 640.0f, EAHCreatureAnimState::Run), 0.5f);
+	TestEqual(TEXT("out of range cadence is capped"),
+		CalculateLocomotionPlayRate(Set, 3000.0f, 640.0f, EAHCreatureAnimState::Run), 3.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAHCreatureStrideContinuityTest,
+	"AshesOfHeaven.Assets.Enemies.StrideContinuity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+
+bool FAHCreatureStrideContinuityTest::RunTest(const FString& Parameters)
+{
+	UAHEnemyDefinition* Definition = LoadObject<UAHEnemyDefinition>(nullptr,
+		TEXT("/Game/Ashes/Data/Enemies/DA_Enemy_Hound.DA_Enemy_Hound"));
+	if (!TestNotNull(TEXT("Hound definition exists"), Definition)) return false;
+	FAHCreatureAnimationSet Set = Definition->Visuals.Locomotion;
+	Set.Idle.LoadSynchronous(); Set.Walk.LoadSynchronous(); Set.Run.LoadSynchronous();
+	Set.Attack.LoadSynchronous(); Set.Death.LoadSynchronous();
+	UGameInstance* Game = NewObject<UGameInstance>(GEngine);
+	Game->AddToRoot();
+	Game->InitializeStandalone(FName(TEXT("EnemyStrideTest")));
+	UWorld* World = Game->GetWorld();
+	AActor* Owner = World->SpawnActor<AActor>();
+	USkeletalMeshComponent* Body = NewObject<USkeletalMeshComponent>(Owner);
+	Body->SetSkeletalMeshAsset(Definition->Visuals.SkeletalMesh.LoadSynchronous());
+	Body->SetAnimInstanceClass(UAHCreatureAnimInstance::StaticClass());
+	Body->RegisterComponentWithWorld(World);
+	UAHCreatureAnimInstance* Instance = Cast<UAHCreatureAnimInstance>(Body->GetAnimInstance());
+	if (TestNotNull(TEXT("native graph initialized on a real mesh"), Instance))
+	{
+		Instance->Configure(Set);
+		auto Tick = [Body](float Delta)
+		{
+			Body->TickAnimation(Delta, false);
+			Body->RefreshBoneTransforms();
+		};
+		Instance->SetCreatureState(EAHCreatureAnimState::Walk);
+		for (int32 I = 0; I < 12; ++I) Tick(1.0f / 60.0f);
+		const float WalkPhase = Instance->GetPlaybackPhase(EAHCreatureAnimState::Walk);
+		TestTrue(TEXT("walk advances beyond its first frame"), WalkPhase > 0.05f);
+		Instance->SetCreatureState(EAHCreatureAnimState::Run);
+		Tick(0.0f);
+		TestEqual(TEXT("walk to run retains stride phase"), Instance->GetPlaybackPhase(EAHCreatureAnimState::Run), WalkPhase, 0.001f);
+		Tick(0.05f);
+		const float RunPhase = Instance->GetPlaybackPhase(EAHCreatureAnimState::Run);
+		Instance->SetCreatureState(EAHCreatureAnimState::Walk);
+		Tick(0.0f);
+		TestEqual(TEXT("run to walk retains stride phase"), Instance->GetPlaybackPhase(EAHCreatureAnimState::Walk), RunPhase, 0.001f);
+		Instance->SetCreatureState(EAHCreatureAnimState::Attack);
+		Tick(0.0f);
+		TestEqual(TEXT("attack begins at windup, not locomotion phase"), Instance->GetPlaybackPhase(EAHCreatureAnimState::Attack), 0.0f);
+		Tick(0.1f);
+		Instance->SetCreatureState(EAHCreatureAnimState::Attack);
+		Tick(0.0f);
+		TestEqual(TEXT("repeated attacks restart windup"), Instance->GetPlaybackPhase(EAHCreatureAnimState::Attack), 0.0f);
+	}
+	Owner->Destroy();
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(false);
+	Game->Shutdown();
+	Game->RemoveFromRoot();
 	return true;
 }
 
