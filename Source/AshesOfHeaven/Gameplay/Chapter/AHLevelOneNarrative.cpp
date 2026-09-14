@@ -1,4 +1,7 @@
 #include "Gameplay/Chapter/AHLevelOneNarrative.h"
+#include "AshesOfHeaven.h"
+#include "Misc/SecureHash.h"
+#include "Sound/SoundBase.h"
 
 namespace
 {
@@ -10,6 +13,23 @@ namespace
 		Result.Speaker = FName(Speaker);
 		Result.Subtitle = FText::FromString(Text);
 		Result.Duration = Duration;
+		// The same UTF-8 speaker/text key is used by GenerateDialogueVoices.py. Text edits
+		// cannot silently play an old take, and different speakers never share a recording.
+		const FString VoiceKey = FString(Speaker) + TEXT("\n") + Text;
+		const FTCHARToUTF8 VoiceKeyUtf8(*VoiceKey);
+		const FString Digest = FMD5::HashBytes(reinterpret_cast<const uint8*>(VoiceKeyUtf8.Get()), VoiceKeyUtf8.Length()).ToLower();
+		const FString AssetName = FString::Printf(TEXT("SW_%s_%s"), *FString(Speaker).Replace(TEXT(" "), TEXT("_")), *Digest);
+		const FString AssetPath = FString::Printf(TEXT("/Game/Ashes/Audio/Dialogue/%s.%s"), *AssetName, *AssetName);
+		Result.Voice = LoadObject<USoundBase>(nullptr, *AssetPath);
+		if (Result.Voice)
+		{
+			// Stage holds and subtitle timers must agree on the performed line length.
+			Result.Duration = FMath::Max(Duration, Result.Voice->GetDuration() + 0.15f);
+		}
+		else
+		{
+			UE_LOG(LogAshesOfHeaven, Warning, TEXT("[DialogueVoice] Missing take for %s: %s. Regenerate and import dialogue voices."), Speaker, Text);
+		}
 		return Result;
 	}
 
