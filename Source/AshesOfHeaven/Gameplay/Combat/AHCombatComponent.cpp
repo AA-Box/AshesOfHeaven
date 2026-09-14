@@ -80,7 +80,8 @@ void UAHCombatComponent::Reload()
 
 void UAHCombatComponent::Melee()
 {
-	if (bCombatDisabled || !CombatantOwner.IsValid() || GetWorld()->GetTimerManager().IsTimerActive(MeleeTimer))
+	if (bCombatDisabled || !CombatantOwner.IsValid() || CombatantOwner->IsCreatureAttackActive()
+		|| GetWorld()->GetTimerManager().IsTimerActive(MeleeTimer))
 	{
 		return;
 	}

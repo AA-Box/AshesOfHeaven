@@ -186,6 +186,14 @@ struct ASHESOFHEAVEN_API FAHCreatureAnimationSet
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
 	float RunSpeed = 340.0f;
 
+	/** Ground speed represented by each clip at rate 1, including the asset's RateScale, cm/s.
+	 * Zero retains the legacy threshold-derived estimate for definitions not yet calibrated. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="0.0"))
+	float WalkReferenceSpeed = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="0.0"))
+	float RunReferenceSpeed = 0.0f;
+
 	/** Crossfade time between locomotion and one-shot takes. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="0.04", ClampMax="0.5"))
 	float TransitionBlendSeconds = 0.16f;

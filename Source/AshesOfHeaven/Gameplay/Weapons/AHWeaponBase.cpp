@@ -234,7 +234,7 @@ void AAHWeaponBase::SetWeaponActive(bool bActive)
 		{
 			bUsingFirstPersonHold = false;
 			bUsingThirdPersonHold = false;
-			if (WeaponMesh->GetAttachParent() != AttachTarget)
+			if (WeaponMesh->GetAttachParent() != AttachTarget || WeaponMesh->GetAttachSocketName() != GripSocket)
 			{
 				WeaponMesh->AttachToComponent(AttachTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocket);
 			}

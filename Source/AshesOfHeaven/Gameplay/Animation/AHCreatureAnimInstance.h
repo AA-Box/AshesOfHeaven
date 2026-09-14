@@ -29,6 +29,7 @@ struct ASHESOFHEAVEN_API FAHCreatureAnimInstanceProxy : public FAnimInstanceProx
 
 	void Configure(const FAHCreatureAnimationSet& Set);
 	void SetState(EAHCreatureAnimState State, float PlayRate);
+	float GetPlaybackPhase(EAHCreatureAnimState State) const;
 
 private:
 	static constexpr int32 StateCount = 5;
@@ -38,6 +39,7 @@ private:
 	EAHCreatureAnimState RequestedState = EAHCreatureAnimState::Idle;
 	float RequestedPlayRate = 1.0f;
 	float BlendSeconds = 0.16f;
+	float RestartPhase = 0.0f;
 	bool bRestartRequested = false;
 };
 
@@ -52,6 +54,7 @@ public:
 
 	void Configure(const FAHCreatureAnimationSet& Set);
 	void SetCreatureState(EAHCreatureAnimState State, float PlayRate = 1.0f);
+	float GetPlaybackPhase(EAHCreatureAnimState State) const;
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;

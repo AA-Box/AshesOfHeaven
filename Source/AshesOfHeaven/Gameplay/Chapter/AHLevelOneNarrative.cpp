@@ -90,27 +90,27 @@ namespace AHLevelOneNarrative
 		case EAHChapterStage::TransitStation:
 			Location = TEXT("TRANSIT NORTH / EVACUATION ROUTE");
 			Situation = TEXT("The line is holding. The station beneath it should be carrying civilians out of District Nine, but only the evacuation announcement is answering.");
-			Orders = TEXT("Follow the North Line through the station. Find a route back to the surface.");
+			Orders = TEXT("Follow the North Line through Transit North to Platform 02. Reach the survivor beside Maya; the conversation begins when you arrive.");
 			break;
 		case EAHChapterStage::VeilRevelation:
 			Location = TEXT("TRANSIT NORTH / PLATFORM 02");
 			Situation = TEXT("A survivor recognizes something inside the Veil. Maya suspects the colony is being converted. Admiral Sael orders you to the Cathedral without explaining why.");
-			Orders = TEXT("Stay with Maya. Listen to the survivor, then continue toward the battlefield exit.");
+			Orders = TEXT("Stay near Maya and listen. No interaction is required; continue to the surface when the conversation ends and the objective changes.");
 			break;
 		case EAHChapterStage::OpenBattlefield:
 			Location = TEXT("EREBUS / SURFACE CORRIDOR");
 			Situation = TEXT("The Cathedral rises beyond the fighting. Ivo Ren is bringing Manticore Four-Seven through the wreckage to give your squad a way across.");
-			Orders = TEXT("Cross between cover positions. Reach Ivo's armored vehicle at the end of the route.");
+			Orders = TEXT("Move between cover positions toward Ivo's rendezvous on the Cathedral route. You do not need to eliminate every enemy; reach the rendezvous to meet the Manticore.");
 			break;
 		case EAHChapterStage::ManticoreSection:
 			Location = TEXT("MANTICORE FOUR-SEVEN / RENDEZVOUS");
 			Situation = TEXT("Ivo made it. The Manticore is damaged, but its armor is your best chance of reaching the Cathedral.");
-			Orders = TEXT("Approach the Manticore and interact to board. Drive toward the Cathedral.");
+			Orders = TEXT("Approach the Manticore and use the board interaction. Boarding completes this objective; follow the next objective toward the Cathedral entrance.");
 			break;
 		case EAHChapterStage::CathedralApproach:
 			Location = TEXT("THE CATHEDRAL / OUTER PERIMETER");
 			Situation = TEXT("The Cathedral is responding to the vehicle. Ivo is losing control of its systems. The final approach must be made on foot.");
-			Orders = TEXT("Reach the entrance. Stay on the expedition route and await Sael's transmission.");
+			Orders = TEXT("Drive to the ramp drop-off. The Manticore stops there and returns control on foot. Climb the ramp to the Cathedral entrance, then await Sael's transmission.");
 			break;
 		case EAHChapterStage::FailsafeOrder:
 		case EAHChapterStage::CathedralInterior:
@@ -130,7 +130,7 @@ namespace AHLevelOneNarrative
 		case EAHChapterStage::OtherLucian:
 			Location = TEXT("THE CATHEDRAL / EVACUATION");
 			Situation = TEXT("The failsafe is armed. The Cathedral is coming apart. Maya is still with you; reaching shelter is all that remains within your control.");
-			Orders = TEXT("Follow the illuminated escape route to shelter. Keep moving through the Veil attack.");
+			Orders = TEXT("Follow the illuminated escape route to shelter. Keep moving through the Veil attack; reaching shelter, not clearing every enemy, completes the escape.");
 			break;
 		case EAHChapterStage::ErebusDestruction:
 			Location = TEXT("EREBUS / LAST LIGHT");

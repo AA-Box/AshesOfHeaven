@@ -84,6 +84,8 @@ public:
 
 	bool EnterVehicle(AAHCombatPlayerCharacter* Player);
 	void ExitVehicle();
+	/** Stops the vehicle and returns control to the driver at the story drop-off. */
+	void ParkForArrival();
 	void FireMountedWeapon();
 	void SetMobileThrottle(float Value);
 	void SetMobileSteering(float Value);
@@ -121,5 +123,6 @@ protected:
 	float Steering = 0.0f;
 	float SuspensionCompression = 0.0f;
 	bool bDestroyed = false;
+	bool bParked = false;
 	float PresentationEventTime = 0.0f;
 };
