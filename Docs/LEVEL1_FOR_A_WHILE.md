@@ -37,7 +37,7 @@ The old `TenYearsLater` / `MayaScene` / `NysaTransmission` / `FleetDeparture` / 
 - **Ivo Ren** — Manticore pilot on radio, providing limited warmth and military banter before the Cathedral sequence.
 - **Other Lucian** — impossible duplicate encountered inside the Cathedral and glimpsed again during escape.
 - **Nysa** — unknown final transmission. Only one word is revealed in Level One.
-- **Veil Pilgrim / Warden** — existing combat classes remain the core Level One enemies. The encounter architecture remains unchanged by this narrative pass.
+- **Veil Pilgrim / Hound / Spider** — existing combat classes remain the core Level One enemies. The encounter architecture remains unchanged by this narrative pass.
 
 ## Environment contract
 

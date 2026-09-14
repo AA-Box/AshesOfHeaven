@@ -153,13 +153,11 @@ enum class EAHCreatureAnimState : uint8
 	Death
 };
 
-/** Named locomotion and reaction takes for a body with no AnimBlueprint.
+/** Named locomotion and reaction takes for a body with no skeleton-specific AnimBlueprint.
 
  *  The imported creatures each carry their own skeleton, so the mannequin AnimBlueprint cannot
- *  drive any of them and authoring four AnimBlueprints by hand is four graphs to maintain for
- *  what is a five-clip state machine. The character plays these through the single-node
- *  instance instead and picks between them on speed, which is the whole of what these bodies
- *  need: they walk, they run, they bite, they fall over. */
+ *  drive them. A shared native five-clip graph consumes this payload and blends the archetype's
+ *  idle, locomotion, strike, and death takes without duplicating one graph per creature. */
 USTRUCT(BlueprintType)
 struct ASHESOFHEAVEN_API FAHCreatureAnimationSet
 {
@@ -188,6 +186,14 @@ struct ASHESOFHEAVEN_API FAHCreatureAnimationSet
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="1.0"))
 	float RunSpeed = 340.0f;
 
+	/** Crossfade time between locomotion and one-shot takes. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="0.04", ClampMax="0.5"))
+	float TransitionBlendSeconds = 0.16f;
+
+	/** Normalized point in the attack take at which the melee trace should connect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual|Animation", meta=(ClampMin="0.1", ClampMax="0.8"))
+	float AttackImpactTime = 0.32f;
+
 	bool IsEmpty() const;
 };
 
@@ -200,6 +206,11 @@ namespace AHCreatureLocomotion
 	 *  swaps clip on alternate frames and reads as a stutter instead of a gait change. */
 	ASHESOFHEAVEN_API EAHCreatureAnimState SelectLocomotionState(
 		const FAHCreatureAnimationSet& Set, float GroundSpeed, EAHCreatureAnimState Current);
+
+	/** Rate that keeps authored walk/run footfalls aligned to character movement speed. */
+	ASHESOFHEAVEN_API float CalculateLocomotionPlayRate(
+		const FAHCreatureAnimationSet& Set, float GroundSpeed, float MaximumGroundSpeed,
+		EAHCreatureAnimState State);
 }
 
 /** Mesh, animation, physics, and material payload for one presentation tier. */
@@ -242,6 +253,14 @@ struct ASHESOFHEAVEN_API FAHEnemyVisualPayload
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual")
 	bool bOverrideMeshTransform = false;
+
+	/** Multiplier on the per-combatant body fill light. The 15cd fill was tuned for bodies
+	 *  authored at ~0.04-0.12 effective albedo; a body wearing brighter film-authored maps
+	 *  (the Teuthisan's pale flesh) reflects several times more of it, clips against the
+	 *  auto-exposed frame, and reads as a texture-less cut-out. Scaling the light per
+	 *  archetype keeps the maps as authored instead of darkening them to fit the lamp. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Visual", meta=(ClampMin=0.0))
+	float FillLightScale = 1.0f;
 
 	bool HasAnyAssetOverride() const;
 	void OverlayOnto(FAHEnemyVisualPayload& Target) const;

@@ -17,7 +17,42 @@
 #include "HAL/PlatformProperties.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Scalability.h"
+
+namespace
+{
+	const TCHAR* LookPreferenceSection = TEXT("/Script/AshesOfHeaven.LookPreferences");
+	const TCHAR* InvertLookYKey = TEXT("bInvertLookY");
+
+	// Read once and keep it: DoAim asks every frame, and GConfig lookups parse strings.
+	bool bInvertLookYCached = false;
+	bool bInvertLookYLoaded = false;
+}
+
+bool UAHPlatformManagerSubsystem::IsLookYInverted()
+{
+	if (!bInvertLookYLoaded)
+	{
+		if (GConfig)
+		{
+			GConfig->GetBool(LookPreferenceSection, InvertLookYKey, bInvertLookYCached, GGameUserSettingsIni);
+			bInvertLookYLoaded = true;
+		}
+	}
+	return bInvertLookYCached;
+}
+
+void UAHPlatformManagerSubsystem::SetLookYInverted(bool bInverted)
+{
+	bInvertLookYCached = bInverted;
+	bInvertLookYLoaded = true;
+	if (GConfig)
+	{
+		GConfig->SetBool(LookPreferenceSection, InvertLookYKey, bInverted, GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
+	}
+}
 
 UAHPlatformManagerSubsystem* UAHPlatformManagerSubsystem::Get(const UObject* WorldContextObject)
 {
@@ -354,10 +389,15 @@ void UAHPlatformManagerSubsystem::BuildRuntimeInputActions()
 	AddInputMapping(MoveAction, EKeys::Gamepad_LeftX);
 	AddInputMapping(MoveAction, EKeys::Gamepad_LeftY);
 
+	// Pitch is negated here, not in DoAim. MouseY/Gamepad_RightY are positive when the
+	// mouse or stick moves UP, and the project runs with bEnableLegacyInputScales=True, so
+	// APlayerController::AddPitchInput multiplies by BaseGame.ini's InputPitchScale=-2.5.
+	// Without this Negate the raw positive "up" reaches the controller as pitch-down and the
+	// whole game plays inverted. The authored Content IMCs negate here for the same reason.
 	AddInputMapping(LookAction, EKeys::Gamepad_RightX);
-	AddInputMapping(LookAction, EKeys::Gamepad_RightY, false, true);
+	AddInputMapping(LookAction, EKeys::Gamepad_RightY, true, true);
 	AddInputMapping(MouseLookAction, EKeys::MouseX);
-	AddInputMapping(MouseLookAction, EKeys::MouseY, false, true);
+	AddInputMapping(MouseLookAction, EKeys::MouseY, true, true);
 
 	AddInputMapping(FireAction, EKeys::LeftMouseButton);
 	AddInputMapping(FireAction, EKeys::Gamepad_RightTrigger);

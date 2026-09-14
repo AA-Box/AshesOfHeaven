@@ -67,6 +67,21 @@ public:
 	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Platform")
 	bool IsApplicationSuspended() const { return bApplicationSuspended; }
 
+	/**
+	 *  Player-facing "invert look Y" preference, persisted in GameUserSettings.ini.
+	 *  Static because the look path (character, vehicle) and the options menu both read it
+	 *  without a subsystem handle. Applied to the look axis only - weapon recoil must not
+	 *  flip with it.
+	 */
+	UFUNCTION(BlueprintPure, Category="Ashes of Heaven|Input")
+	static bool IsLookYInverted();
+
+	UFUNCTION(BlueprintCallable, Category="Ashes of Heaven|Input")
+	static void SetLookYInverted(bool bInverted);
+
+	/** Multiplier to apply to look pitch input: -1 when the player has inverted Y. */
+	static float GetLookPitchSign() { return IsLookYInverted() ? -1.0f : 1.0f; }
+
 	/** The generated input context is a fallback for maps whose Blueprint IMC is not configured yet. */
 	UInputMappingContext* GetRuntimeInputMappingContext() const { return RuntimeInputMappingContext; }
 

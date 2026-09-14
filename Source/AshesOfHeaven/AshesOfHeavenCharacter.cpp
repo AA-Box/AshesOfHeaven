@@ -123,7 +123,9 @@ void AAshesOfHeavenCharacter::DoAim(float Yaw, float Pitch)
 	{
 		// pass the rotation inputs
 		AddControllerYawInput(Yaw);
-		AddControllerPitchInput(Pitch);
+		// Only the look axis follows the player's invert-Y preference; recoil (ApplyCameraRecoil)
+		// must keep pushing the muzzle the same way whichever way the player looks.
+		AddControllerPitchInput(Pitch * UAHPlatformManagerSubsystem::GetLookPitchSign());
 	}
 }
 

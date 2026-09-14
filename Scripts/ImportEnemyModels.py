@@ -63,10 +63,12 @@ MODELS = {
         # Tint is a multiplier over a real albedo, so it sits near white; the darkness lives in
         # the baked map. Metallic 0: this is a shell, and a metallic organic body is exactly what
         # made it read as painted plastic.
-        "tint": (0.44, 0.40, 0.32),
-        "roughness": 1.0,
+        "tint": (0.20, 0.11, 0.055),
+        "roughness": 0.82,
         "metallic": 0.0,
         "specular": 0.18,
+        "normal_strength": 1.15,
+        "detail_normal_strength": 0.90,
         "emissive": (0.95, 0.28, 0.10),
         "emissive_strength": 2.0,
         "texture_sets": {
@@ -92,12 +94,18 @@ MODELS = {
         "target_height_cm": 115.0,
         # This model's albedo means 0.316 where the baked creature maps mean 0.10, so it needs
         # roughly a third of their tint to land on the same surface value.
-        "tint": (0.105, 0.098, 0.088),
-        "roughness": 0.95,
-        "metallic": 1.0,          # a real metallic map now drives this, so leave the scalar open
-        "specular": 0.22,
-        "emissive": (1.0, 0.20, 0.12),
-        "emissive_strength": 3.5,
+        "tint": (0.14, 0.095, 0.075),
+        "roughness": 0.88,
+        "metallic": 0.75,
+        "specular": 0.20,
+        "normal_strength": 1.10,
+        "detail_normal_strength": 0.85,
+        "emissive": (1.0, 0.12, 0.035),
+        "emissive_strength": 1.8,
+        "slot_tuning": {
+            1: {"tint": (0.10, 0.055, 0.035), "roughness": 0.24,
+                "metallic": 0.0, "specular": 0.18, "detail_normal_strength": 0.0},
+        },
         "texture_sets": {
             "body": {
                 "color": "prepared:Hound_Color.png",
@@ -114,76 +122,46 @@ MODELS = {
     # Scripts/AuthorCreatureAnimations.py, the maps by folding occlusion and cavity baked from
     # this mesh into the procedural carapace so the detail lands in the model's own creases.
     "Spider": {
-        "fbx": "4/BioMechSpider.fbx",
+        # The bio-mech crawler this archetype started from is gone. It was a 6,955-vert body with
+        # no textures of its own, and every map it wore was numpy noise; next to the quadruped's
+        # authored 4K set it read as a grey blob no tint could rescue. This is the crawler out of
+        # the alien-eggs diorama instead, rigged by Scripts/RigFacehugger.py - the drop ships it
+        # as static scene dressing with no armature at all, so the skeleton is built from its own
+        # geometry before it ever reaches Unreal.
+        "fbx": "prepared:Facehugger_Mesh.fbx",
         "import_animations": False,
-        "target_height_cm": 140.0,
-        # KNOWN: this body's maps do not reach its surface. Every texture parameter is wired
-        # and every map imports, but the mesh renders perfectly smooth and flat at any tint -
-        # 0.155 gave a uniform dark grey, 0.88 a uniform near-white - which is what a sampler
-        # reading one texel looks like. Its five source meshes each carry a UV layout (Blender
-        # bakes occlusion into them cleanly), so the loss is somewhere in the merge Unreal does
-        # when it folds them into one skeletal mesh. Until that is found, the tint is this
-        # body's whole albedo, so it is set as an albedo rather than as a multiplier: a dark
-        # bio-mech shell that sits just above the road it stands on.
-        "tint": (0.190, 0.196, 0.205),
-        "roughness": 1.0,
-        "specular": 0.16,
-        # Low, not zero: a bio-mech shell has some conductor in it, but 0.60 made the whole body
-        # a mirror with nothing to reflect except fog, which reads as a bright grey blob.
-        "metallic": 0.06,
-        "emissive": (0.25, 0.85, 0.75),
-        "emissive_strength": 2.5,
+        # Flat and long rather than tall: at 95 the body is about 130cm from tail tip to front
+        # legs, which is a crab the size of a large dog. The old 140 was a height for a body that
+        # stood up; this one lies along the ground and 140 would have made it a car.
+        "target_height_cm": 95.0,
+        # The hound's look, arithmetically: its 0.14 warm tint over a 0.316-mean map lands at
+        # ~0.044 effective albedo. This body's painted sheet is darker (0.121 linear mean), so
+        # the same landing point takes 0.36 - with the hound's exact hue ratio, so the two
+        # bodies read as one species under the shared warm fill.
+        "tint": (0.36, 0.244, 0.193),
+        # The packed roughness channel is film-authored and averages 0.44 - wet-skin gloss.
+        # The scalar doubles the map into the hound's matte band (the graph multiplies tex.R
+        # by this and the renderer clamps at 1).
+        "roughness": 2.0,
+        "specular": 0.20,
+        "normal_strength": 1.0,
+        "detail_normal_strength": 0.85,
+        # Chitin, not machinery. The source packs metal as a flat 1.0 because glTF defaults it
+        # that way, which would make a fleshy body a mirror - see prepare_facehugger().
+        "metallic": 0.0,
+        # No emissive mask ships with this body, and EmissiveMask defaults to white, so any
+        # strength above zero lights the entire creature rather than an eye.
+        "emissive": (0.55, 0.85, 0.60),
+        "emissive_strength": 0.0,
         "texture_sets": {
             "body": {
-                "color": "baked:T_Spider_Composite_D.png",
-                "normal": "baked:T_Creature_Carapace_N.png",
-                "roughness": "baked:T_Spider_Composite_R.png",
-                "ao": "baked:T_Spider_Composite_AO.png",
+                "color": "baked:T_Facehugger_D.png",
+                "normal": "baked:T_Facehugger_N.png",
+                "roughness": "baked:T_Facehugger_R.png",
             },
         },
         "slot_sets": [],
         "default_set": "body",
-    },
-    # The old Warden body. Re-exported from the .blend beside the model, because the FBX that
-    # ships next to the textures has no skin cluster: Unreal imports it as sixteen rigid parts
-    # named after the mesh pieces, which is a pile of armour plates standing in bind position,
-    # not a figure. The .blend has the same body on a Rigify rig with a hand-keyed walk cycle.
-    "Ravager": {
-        "fbx": "prepared:Ravager_Mesh.fbx",
-        "import_animations": False,
-        "anim_files": {
-            "Walk": "prepared:Ravager_Walk.fbx",
-            "Idle": "prepared:Ravager_Idle.fbx",
-            "Attack": "prepared:Ravager_Attack.fbx",
-            "Death": "prepared:Ravager_Death.fbx",
-        },
-        "target_height_cm": 235.0,
-        # This body went nearly black in Erebus at 0.30 over already-dark rock and leather.
-        "tint": (0.28, 0.26, 0.23),
-        "roughness": 0.88,
-        "metallic": 0.22,
-        "specular": 0.28,
-        "emissive": (0.95, 0.42, 0.08),
-        "emissive_strength": 2.5,
-        "texture_sets": {
-            "metal": {
-                "color": "3/FBX+only+model/TEXTUR/Metal color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Metal Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Metal Rough.png",
-            },
-            "leather": {
-                "color": "3/FBX+only+model/TEXTUR/Leather color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Leather Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Leather Rough.png",
-            },
-            "rock": {
-                "color": "3/FBX+only+model/TEXTUR/Rock Color.png",
-                "normal": "3/FBX+only+model/TEXTUR/Rock Normal.png",
-                "roughness": "3/FBX+only+model/TEXTUR/Rock Rough.png",
-            },
-        },
-        "slot_sets": [("rock", "rock"), ("leather", "leather"), ("metal", "metal")],
-        "default_set": "metal",
     },
 }
 
@@ -743,6 +721,10 @@ def build_material_instances(name, spec, mesh, texture_sets):
         is_glow_slot = any(token in lowered for token in GLOW_TOKENS)
         set_name = _set_for_slot(spec, source_name)
         maps = texture_sets.get(set_name) or {}
+        # Stable slot-specific overrides let one multi-material body keep distinct metal, hide,
+        # glow, and stone response without multiplying every surface by the same value.
+        tuning = dict(spec)
+        tuning.update((spec.get("slot_tuning") or {}).get(index, {}))
 
         instance_name = "MI_%s_%02d" % (name, index)
         full = "%s/%s" % (instance_dir, instance_name)
@@ -759,13 +741,16 @@ def build_material_instances(name, spec, mesh, texture_sets):
         emissive = _load(maps["emissive"]) if maps.get("emissive") else None
         albedo = emissive if (is_glow_slot and emissive) else (_load(maps["color"]) if maps.get("color") else None)
         MEL.set_material_instance_vector_parameter_value(
-            instance, "BaseTint", unreal.LinearColor(*(list(spec["tint"]) + [1.0])))
+            instance, "BaseTint", unreal.LinearColor(*(list(tuning["tint"]) + [1.0])))
         MEL.set_material_instance_scalar_parameter_value(instance, "UseBaseColorTex", 1.0 if albedo else 0.0)
         if albedo:
             set_texture(instance, "BaseColorTex", albedo)
 
         normal = None if is_glow_slot else (_load(maps["normal"]) if maps.get("normal") else None)
-        MEL.set_material_instance_scalar_parameter_value(instance, "NormalStrength", 1.0 if normal else 0.0)
+        MEL.set_material_instance_scalar_parameter_value(
+            instance, "NormalStrength", tuning.get("normal_strength", 1.0) if normal else 0.0)
+        MEL.set_material_instance_scalar_parameter_value(
+            instance, "DetailNormalStrength", tuning.get("detail_normal_strength", 0.65))
         if normal:
             set_texture(instance, "NormalTex", normal)
 
@@ -776,23 +761,23 @@ def build_material_instances(name, spec, mesh, texture_sets):
 
         rough = None if is_glow_slot else (_load(maps["roughness"]) if maps.get("roughness") else None)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Roughness", 0.18 if is_glow_slot else spec["roughness"])
+            instance, "Roughness", tuning["roughness"])
         MEL.set_material_instance_scalar_parameter_value(instance, "UseRoughnessTex", 1.0 if rough else 0.0)
         if rough:
             set_texture(instance, "RoughnessTex", rough)
         metal = None if is_glow_slot else (_load(maps["metallic"]) if maps.get("metallic") else None)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Metallic", 0.0 if is_glow_slot else spec["metallic"])
+            instance, "Metallic", tuning["metallic"])
         MEL.set_material_instance_scalar_parameter_value(instance, "UseMetallicTex", 1.0 if metal else 0.0)
         if metal:
             set_texture(instance, "MetallicTex", metal)
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "Specular", spec.get("specular", 0.28))
+            instance, "Specular", tuning.get("specular", 0.28))
 
         MEL.set_material_instance_vector_parameter_value(
-            instance, "EmissiveColor", unreal.LinearColor(*(list(spec["emissive"]) + [1.0])))
+            instance, "EmissiveColor", unreal.LinearColor(*(list(tuning["emissive"]) + [1.0])))
         MEL.set_material_instance_scalar_parameter_value(
-            instance, "EmissiveStrength", spec["emissive_strength"] if is_glow_slot else 0.0)
+            instance, "EmissiveStrength", tuning["emissive_strength"] if is_glow_slot else 0.0)
         if is_glow_slot and emissive:
             set_texture(instance, "EmissiveMask", emissive)
 

@@ -6,6 +6,7 @@
 #include "AHDialogueSubsystem.generated.h"
 
 class UAHChapterSubsystem;
+class UAudioComponent;
 
 /** A stage beat waiting for the dialogue channel, and the line it should resume on. */
 struct FAHPendingStageEntry
@@ -73,15 +74,19 @@ private:
 	void ShowNextLine();
 	void FinishSequence();
 
+	UPROPERTY(Transient)
 	TArray<FAHDialogueLine> QueuedLines;
 	TArray<FAHPendingStageEntry> PendingStageEntries;
 	EAHChapterStage ActiveStageEntryStage = EAHChapterStage::OpeningBlack;
 	int32 ActiveStageEntryResumeBase = 0;
 	bool bActiveSequenceIsStageEntry = false;
+	UPROPERTY(Transient)
 	FAHDialogueLine CurrentLine;
 	FName CurrentSequenceId = NAME_None;
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bActive = false;
 	FTimerHandle LineTimer;
 	FTimerHandle StageEntryTimer;
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> VoiceComponent;
 };
