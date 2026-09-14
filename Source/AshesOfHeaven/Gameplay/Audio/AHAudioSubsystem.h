@@ -25,6 +25,9 @@ enum class EAHAudioCue : uint8
 	Dialogue,
 	Pickup,
 	Footstep,
+	/** The sprint layer: a continuous running-feet loop the player carries while
+	 *  sprinting, replacing the per-step one-shots that would stack at sprint cadence. */
+	FootstepRun,
 	Ambient
 };
 
@@ -48,6 +51,12 @@ public:
 
 	bool IsAudioPaletteReady() const { return bAudioPaletteReady; }
 	bool HasAuthoredCue(EAHAudioCue Cue) const;
+	/** NAME_None deliberately leaves the cold open and completed chapter in silence. */
+	static FName GetEnvironmentForStage(EAHChapterStage Stage);
+
+	/** The authored sound itself, for callers that manage their own component - a loop
+	 *  cannot go through PlayWorldCue, which is fire-and-forget. */
+	USoundBase* GetAuthoredCueSound(EAHAudioCue Cue) { return ResolveAuthoredCue(Cue); }
 
 private:
 	FName GetSemanticEventName(EAHAudioCue Cue) const;
@@ -55,10 +64,17 @@ private:
 	USoundBase* ResolveAuthoredEnvironment(FName EnvironmentId);
 	UFUNCTION()
 	void HandleChapterStageChanged(EAHChapterStage Stage);
-	FName GetEnvironmentForStage(EAHChapterStage Stage) const;
+	UFUNCTION()
+	void HandleDialogueLine(FName Speaker, FText Subtitle, float Duration);
+	UFUNCTION()
+	void HandleDialogueComplete(FName SequenceId);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> ActiveEnvironmentComponent;
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> FadingEnvironmentComponent;
+	FName ActiveEnvironmentId;
+	bool bDialogueActive = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAHAudioPaletteData> AudioPalette;

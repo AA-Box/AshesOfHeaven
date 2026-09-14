@@ -111,7 +111,7 @@ bool UAHEnemyAssetValidationCommandlet::ValidateEnemyAssetManifest(FOutputDevice
 	// The whole shipped roster, not just the two the game started with. An archetype that stops
 	// registering does not fail anything else loudly - the encounters that field it simply spawn
 	// fewer bodies - so this list is what makes its disappearance an error.
-	for (const FName RequiredName : { FName(TEXT("Pilgrim")), FName(TEXT("Warden")), FName(TEXT("Hound")), FName(TEXT("Spider")) })
+	for (const FName RequiredName : { FName(TEXT("Pilgrim")), FName(TEXT("Hound")), FName(TEXT("Spider")), FName(TEXT("Teuthisan")) })
 	{
 		const FPrimaryAssetId RequiredId = AHEnemyAssets::EnemyId(RequiredName);
 		if (!EnemyIds.Contains(RequiredId))
@@ -180,7 +180,7 @@ bool UAHEnemyAssetValidationCommandlet::ValidateEnemyAssetManifest(FOutputDevice
 
 	TArray<FPrimaryAssetId> EncounterIds;
 	AssetManager.GetPrimaryAssetIdList(AHEnemyAssets::EncounterType, EncounterIds);
-	for (const FName RequiredName : { FName(TEXT("PilgrimPatrol")), FName(TEXT("PilgrimWarden")) })
+	for (const FName RequiredName : { FName(TEXT("PilgrimPatrol")), FName(TEXT("PilgrimHound")) })
 	{
 		const FPrimaryAssetId RequiredId = AHEnemyAssets::EncounterId(RequiredName);
 		if (!EncounterIds.Contains(RequiredId))

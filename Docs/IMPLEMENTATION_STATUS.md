@@ -2,7 +2,7 @@
 
 ## PHASE 3 — CHAPTER ONE GREYBOX — 2026-08-21
 
-Chapter One is implemented as a playable greybox slice on top of the Phase 2 combat foundation. The chapter uses a persistent `GameInstance` state, ordered mission stages, dialogue sequences, checkpoint serialization, encounter persistence, a Manticore vehicle, a Veil Warden, terminal interaction, countdown state, debug routing, and a chapter-complete state.
+Chapter One is implemented as a playable greybox slice on top of the Phase 2 combat foundation. The chapter uses a persistent `GameInstance` state, ordered mission stages, dialogue sequences, checkpoint serialization, encounter persistence, a Manticore vehicle, terminal interaction, countdown state, debug routing, and a chapter-complete state.
 
 No final art, animation, lighting, sound, or Chapter Two content was added.
 
@@ -39,7 +39,7 @@ The authored objective chain contains 17 objectives, from reaching the defensive
 ### Slice expectations
 
 - Target playtime: approximately 20–30 minutes for a first complete run, depending on combat pace and dialogue timing. This is a design target, not an automated timing result.
-- Systems included: Phase 2 FPS movement and combat, rifle/ADS/reload, grenades, pickups, melee, Veil enemies, human friendlies, objectives, checkpoints, death/restart, dialogue/subtitles, terminal confirmation, countdown, Manticore driving and mounted weapon, barricade destruction, Veil Warden navigation/fallback movement, debug chapter routing, and save-state restoration.
+- Systems included: Phase 2 FPS movement and combat, rifle/ADS/reload, grenades, pickups, melee, Veil enemies, human friendlies, objectives, checkpoints, death/restart, dialogue/subtitles, terminal confirmation, countdown, Manticore driving and mounted weapon, barricade destruction, debug chapter routing, and save-state restoration.
 - Greybox presentation is intentionally functional. Runtime-generated blockout geometry and labels stand in for final level art.
 
 ## Verification results
@@ -107,7 +107,6 @@ Result: **PASS for process-level normal-renderer launch** — the process remain
 - Checkpoint state includes chapter stage, objective index, narrative/section/encounter history, countdown/failsafe flags, player inventory, and Manticore state.
 - Encounter and pickup ownership is director-scoped; restarting reloads the world rather than duplicating the prior world’s actors.
 - Ammo and grenade state are serialized through the existing checkpoint/player save path.
-- Veil Warden movement uses a navigation query and a bounded direct fallback when projection is unavailable.
 - The terminal interaction is staged as inspect then confirm, and the completion route advances through escape, destruction, the ten-year transition, Maya, Nysa, the fleet, disappearing stars, and the chapter title.
 
 ### Phase 3.1 — objective HUD delegate fix
@@ -246,7 +245,7 @@ All four approved reference files are present under `References/ArtTargets/` and
 - **Cathedral:** monolithic fins, nested void/frame vocabulary, suspended masses, a human expedition walkway and equipment for scale, cold light/fog, and original procedural glyph families.
 - **Present-day Lucian/Maya:** separated industrial composition with table/platform, cold key, restrained warm practical, dark negative space, and legally present UE mannequin display proxies. Final character work is explicitly not claimed.
 - **M91:** reduced first-person occupancy, stable camera hold/recoil frame, first-person primitive tagging, a restrained capacitor/power-architecture scaffold, and dark first-person gauntlet proxies.
-- **Human/Veil:** faction-specific temporary materials, a visible human body proxy, matte Veil silhouette, and a broader Warden shoulder/body silhouette. Final authored soldier meshes/animation remain open.
+- **Human/Veil:** faction-specific temporary materials, a visible human body proxy, and a matte Veil silhouette. Final authored soldier meshes/animation remain open.
 - **HUD:** scalable panels and safe margins, legible 1280×720 baseline, objective update prominence/settle behavior, health/armor/ammo/reserve/grenades, interaction, hit/damage feedback, countdown, vehicle state, and completion presentation.
 
 ### Architecture and safety

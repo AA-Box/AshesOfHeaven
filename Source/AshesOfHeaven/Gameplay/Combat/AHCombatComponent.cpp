@@ -89,7 +89,24 @@ void UAHCombatComponent::Melee()
 	// Every melee path routes through here, so this is the one place a swing has to telegraph.
 	// Hanging it off the AI controller instead would leave a player melee, or any future
 	// scripted attack, swinging invisibly.
-	CombatantOwner->PlayCreatureAttack();
+	const float ImpactDelay = CombatantOwner->PlayCreatureAttack();
+	if (ImpactDelay > KINDA_SMALL_NUMBER)
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			MeleeImpactTimer, this, &UAHCombatComponent::ResolveMeleeImpact, ImpactDelay, false);
+	}
+	else
+	{
+		ResolveMeleeImpact();
+	}
+}
+
+void UAHCombatComponent::ResolveMeleeImpact()
+{
+	if (bCombatDisabled || !CombatantOwner.IsValid() || !GetWorld())
+	{
+		return;
+	}
 	if (MeleeSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, MeleeSound, CombatantOwner->GetActorLocation());
@@ -169,6 +186,10 @@ void UAHCombatComponent::CycleWeapon(int32 Direction)
 void UAHCombatComponent::DisableCombat()
 {
 	bCombatDisabled = true;
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(MeleeImpactTimer);
+	}
 	StopFire();
 	StopADS();
 }

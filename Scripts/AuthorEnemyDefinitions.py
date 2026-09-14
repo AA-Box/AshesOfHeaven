@@ -6,10 +6,11 @@ existing assets are updated in place instead of duplicated.
 
 The roster is four creature archetypes sharing one streaming and AI pipeline:
 
-  Pilgrim  humanoid alien skirmisher, rifle, keeps its distance
-  Warden   heavy armoured revenant, rifle, shield and teleport ability scalars
-  Hound    quadruped biter, no weapon at all, closes and attacks in contact
-  Spider   armoured bio-mech crawler, no weapon, slower and much harder to kill
+  Pilgrim    humanoid alien skirmisher, rifle, keeps its distance
+  Hound      quadruped biter, no weapon at all, closes and attacks in contact
+  Spider     small crawler, no weapon, fast and expendable
+  Teuthisan  the heavy - a film-grade alien migrated whole from its own project, crawls in
+             low and rears up to strike; fills the threat-4.0 slot the Warden vacated
 
 Sizes are not authored here. Each source model is in its own units - one is in metres, one is
 a forty-metre spider - so the mesh scale, capsule and body offset are derived from the imported
@@ -27,14 +28,13 @@ ENCOUNTER_PATH = "/Game/Ashes/Data/Encounters"
 MANIFEST_PATH = os.path.join(unreal.Paths.project_saved_dir(), "EnemyModelManifest.json")
 
 PILGRIM_CLASS = "/Script/AshesOfHeaven.AHVeilPilgrimCharacter"
-WARDEN_CLASS = "/Script/AshesOfHeaven.AHVeilWardenCharacter"
 
 
 # --- roster ----------------------------------------------------------------------------
 # ponytail: the beasts reuse AAHVeilPilgrimCharacter as their concrete combat class. It is the
 # only thing the class still supplies (AAHCombatantCharacter is abstract, and every other value
-# comes from the definition), so two more empty subclasses would buy nothing. Add real classes
-# when a beast needs C++ behaviour of its own, the way the Warden needed its shield cycle.
+# comes from the definition), so two more empty subclasses would buy nothing. Add a real class
+# only when a beast needs C++ behaviour of its own.
 ARCHETYPES = {
     "Pilgrim": {
         "model": "Stalker",
@@ -70,50 +70,6 @@ ARCHETYPES = {
             "death": "Stalker/AS_Stalker_Death",
         },
         "abilities": {},
-    },
-    "Warden": {
-        "model": "Ravager",
-        "combat_class": WARDEN_CLASS,
-        "display_name": "Veil Revenant",
-        "target_height_cm": 235.0,
-        "capsule_radius": 46.0,
-        "health": 260.0,
-        "armor": 120.0,
-        "speed": 215.0,
-        "headshot": 1.5,
-        "threat": 4.0,
-        "currency": 35,
-        "marker_color": (0.85, 0.22, 0.10, 1.0),
-        "voice": "Robo",
-        # The heavy body gets the heavy bank, so the Revenant is audibly a different threat from
-        # the skirmishers before the player has picked it out of the fog.
-        "shot_cue": "SC_SciFi_LazerHeavy",
-        # No rifle. Only the Stalker - the archetype this roster started from - carries one now;
-        # the other three close and strike. This body was modelled around its claws (its own
-        # mesh parts are named CLAWS, claws_head, claws_hip) and the .blend it came from has a
-        # walk cycle and no weapon pose at all, so a rifle in its hands was always a placeholder.
-        # 62 damage on a 1.9s cadence is roughly 33 dps: slower than a hound pack but survivable
-        # only for a few seconds, which is the pressure a heavy is meant to apply.
-        "melee": {
-            "damage": 62.0,
-            "range": 235.0,
-            "radius": 52.0,
-            "cooldown": 1.9,
-            "sight_range": 4500.0,
-        },
-        "locomotion": {
-            "idle": "Ravager/AS_Ravager_Idle",
-            "walk": "Ravager/AS_Ravager_Walk",
-            "run": "Ravager/AS_Ravager_Run",
-            "attack": "Ravager/AS_Ravager_Attack",
-            "death": "Ravager/AS_Ravager_Death",
-        },
-        "abilities": {
-            "ShieldCycleSeconds": 8.0,
-            "ShieldDamageMultiplier": 0.35,
-            "TeleportCycleSeconds": 6.0,
-            "TeleportDistance": 520.0,
-        },
     },
     "Hound": {
         "model": "Hound",
@@ -153,9 +109,17 @@ ARCHETYPES = {
     "Spider": {
         "model": "Spider",
         "combat_class": PILGRIM_CLASS,
-        "display_name": "Bio-Mech Crawler",
-        "target_height_cm": 140.0,
-        "capsule_radius": 52.0,
+        # The bio-mech spider this archetype was built on is gone; the body is now the crawler
+        # from the alien-eggs drop, which is organic rather than machine. The archetype id stays
+        # "Spider" because the encounters, the streaming manifests and four test files name it.
+        "display_name": "Veil Crawler",
+        # 95cm tall works out to about 130cm from tail tip to front claws - a body that reads as
+        # a large dog crossed with a crab, low to the ground. The old 140 was a height for a
+        # spider that stood up on its legs.
+        "target_height_cm": 95.0,
+        # The legs span 75cm but the mass is central; a radius that covered the leg tips would
+        # block doorways the creature visibly fits through.
+        "capsule_radius": 44.0,
         "health": 165.0,
         "armor": 55.0,
         "speed": 430.0,
@@ -164,13 +128,18 @@ ARCHETYPES = {
         "currency": 18,
         "marker_color": (0.20, 0.80, 0.70, 1.0),
         "voice": "Robo",
-        # This body faces -Y, unlike the other three; +90 turns it down +X with the rest.
+        # This body faces -Y like the one it replaced - measured off the imported skeleton, where
+        # the legs reach toward negative Y and the tail lies along positive Y - so +90 still turns
+        # it down +X with the rest of the roster.
         "mesh_yaw": 90.0,
-        # Measured from the authored stance rather than the bind pose. The bind pose has one leg
-        # folded under the belly and another stretched flat out behind, so its bounds describe a
-        # 783cm box that no pose the creature ever holds actually fills - fitting to it left the
-        # body scaled small and floating.
-        "pose_bounds": "spider_stance",
+
+        # No pose_bounds. The old body needed it because its bind pose was not a stance; this one
+        # was modelled crouched on its legs, so the imported bounds already describe it. Fitting
+        # to the authored stance would be wrong here in the other direction: that stance measures
+        # BONES, which span 17.7 units on a body whose mesh spans 88, and the scale would come out
+        # five times too large. What the stance IS good for is where the feet are, which is not
+        # the bottom of this mesh - the tail hangs below them.
+        "foot_plane_from": "spider_stance",
         "locomotion": {
             "idle": "Spider/AS_Spider_Idle",
             "walk": "Spider/AS_Spider_Walk",
@@ -187,13 +156,64 @@ ARCHETYPES = {
         },
         "abilities": {},
     },
+    "Teuthisan": {
+        # Not an imported model: the whole character - mesh, skeleton, materials, textures -
+        # was migrated path-preserving from its own project (Scripts/MigrateTeuthisan.py), and
+        # its clips are baked from its cinematic Control Rig takes rather than imported
+        # (Scripts/AuthorTeuthisanAnimations.py). mesh_asset is what routes _author_enemy to a
+        # live-measured manifest entry instead of the ImportEnemyModels one.
+        "model": "Teuthisan",
+        "mesh_asset": "/Game/Characters/Teuthisan/Rig/SKM_Teuthisan_rig_v001",
+        "physics_asset": "/Game/Characters/Teuthisan/Rig/PA_Teuthisan_rig_v001",
+        "combat_class": PILGRIM_CLASS,
+        "display_name": "Teuthisan",
+        # The bind pose stands 168cm, and the capsule has to cover the standing attack pose, not
+        # the crawl - so the native size is kept exactly (scale 1.0) and the body simply sits low
+        # in its capsule while it crawls.
+        "target_height_cm": 168.0,
+        "capsule_radius": 50.0,
+        # The heavy's numbers, inherited from the Warden slot it fills: the roster lost its
+        # threat-4.0 body when that archetype was cut, and every encounter has been spending the
+        # difference on extra Hounds since.
+        "health": 260.0,
+        "armor": 120.0,
+        # Matches the run clip: the crawl travels 75 cm/s natural and the run is that gait
+        # rate-scaled to about 300, so the pawn's top speed is the speed the feet animate at.
+        "speed": 300.0,
+        "headshot": 1.5,
+        "threat": 4.0,
+        "currency": 35,
+        "marker_color": (0.85, 0.22, 0.10, 1.0),
+        "voice": "Alien",
+        # Melee only, like every beast: it crawls in and rears up. The rifle stays the Pilgrim's
+        # alone - AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion pins exactly one
+        # armed archetype.
+        "melee": {
+            "damage": 62.0,
+            "range": 220.0,
+            "radius": 55.0,
+            "cooldown": 1.9,
+            "sight_range": 4500.0,
+        },
+        "locomotion": {
+            "idle": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Idle",
+            "walk": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Walk",
+            "run": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Run",
+            "attack": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Attack",
+            "death": "/Game/Characters/Teuthisan/GameAnims/A_Teuthisan_Death",
+        },
+        "abilities": {},
+    },
 }
 
-# Every archetype appears in at least one encounter. The Warden is held back from the generic
-# patrol so a routine contact does not open on the heaviest body in the roster.
+# Every archetype appears in at least one encounter. The two manifests differ by seed and by
+# which beast leads the mix: the patrol opens on Pilgrims with the beasts behind them, and the
+# battlefield manifest leads with the Hound, which is the body that closes the distance.
+# The Teuthisan is held back from the routine patrol so an ordinary contact does not open on
+# the heaviest body in the roster - the same reasoning that once kept the Warden out of it.
 ENCOUNTERS = {
     "PilgrimPatrol": {"primary": "Pilgrim", "additional": ["Hound", "Spider"], "seed": 1337},
-    "PilgrimWarden": {"primary": "Pilgrim", "additional": ["Warden", "Hound", "Spider"], "seed": 8821},
+    "PilgrimHound": {"primary": "Pilgrim", "additional": ["Hound", "Spider", "Teuthisan"], "seed": 8821},
 }
 
 
@@ -237,9 +257,9 @@ def _set_struct(owner, property_name, **values):
     """Author the whole struct. Never merge into what is already on the asset.
 
     Reading the existing struct and setting only the named keys leaves every other field frozen
-    at whatever a previous version of this script wrote. That is how DA_Enemy_Pilgrim and
-    DA_Enemy_Warden kept Visuals.AnimClass = ABP_TP_Rifle - the UE mannequin's third-person rifle
-    AnimBP - long after they stopped using the mannequin: AAHCombatantCharacter checks AnimClass
+    at whatever a previous version of this script wrote. That is how DA_Enemy_Pilgrim kept
+    Visuals.AnimClass = ABP_TP_Rifle - the UE mannequin's third-person rifle AnimBP - long
+    after it stopped using the mannequin: AAHCombatantCharacter checks AnimClass
     before AnimationSet, so the alien's one idle clip could never play, and re-running the script
     could not clear it because the script never names the field.
     """
@@ -276,7 +296,7 @@ def _read_anim_report():
         return json.load(handle)
 
 
-def _body_fit(entry, target_height_cm, capsule_radius, pose=None):
+def _body_fit(entry, target_height_cm, capsule_radius, pose=None, foot_plane=None):
     """Mesh scale, capsule and body offset for one imported model.
 
     The imported bounds are the only source of truth for how big a model actually is, and the Z
@@ -298,6 +318,14 @@ def _body_fit(entry, target_height_cm, capsule_radius, pose=None):
     else:
         lowest = float(entry["origin"][2]) - float(entry["extent"][2])
         source_height = max(1.0, float(entry["height_cm"]))
+        if foot_plane is not None:
+            # Height from the mesh, floor from the feet. A body whose tail hangs below its legs
+            # gets planted by the tail otherwise: the crawler's mesh reaches 30 units under its
+            # lowest bone, which put its feet 54 units above the bottom of its own capsule and
+            # floated the whole creature. Taking the whole stance instead would swing the error
+            # the other way, because that stance measures bones - 17.7 units on a body whose mesh
+            # spans 88 - and the scale would come out five times too large.
+            lowest = float(foot_plane)
     scale = target_height_cm / source_height
     half_height = target_height_cm * 0.5
     # Rotated, because the component's relative location is expressed in capsule space while the
@@ -323,7 +351,9 @@ def _locomotion_payload(name, spec, definition):
         relative = clips.get(field)
         if not relative:
             continue
-        path = "%s/%s" % (ENEMY_CONTENT_ROOT, relative)
+        # The Teuthisan's clips live with its migrated character folder, not under the enemy
+        # content root, so an absolute path passes through untouched.
+        path = relative if relative.startswith("/Game/") else "%s/%s" % (ENEMY_CONTENT_ROOT, relative)
         clip = _load(path)
         if not clip:
             raise RuntimeError("%s locomotion take missing: %s" % (name, path))
@@ -335,8 +365,33 @@ def _locomotion_payload(name, spec, definition):
     return payload
 
 
+def _in_engine_entry(spec):
+    """A synthetic manifest record for a model that never went through ImportEnemyModels.
+
+    The Teuthisan arrived as finished uassets migrated from its own project, so there is no FBX
+    import to measure it during. The manifest entry is built here instead, from the same source
+    of truth the import script uses: the mesh's own bounds.
+    """
+    mesh = unreal.load_asset(spec["mesh_asset"])
+    if not mesh:
+        raise RuntimeError("in-engine model missing: " + spec["mesh_asset"])
+    bounds = mesh.get_bounds()
+    entry = {
+        "mesh": spec["mesh_asset"],
+        "origin": (bounds.origin.x, bounds.origin.y, bounds.origin.z),
+        "extent": (bounds.box_extent.x, bounds.box_extent.y, bounds.box_extent.z),
+        "height_cm": 2.0 * bounds.box_extent.z,
+    }
+    if spec.get("physics_asset"):
+        entry["physics_asset"] = spec["physics_asset"]
+    return entry
+
+
 def _author_enemy(name, spec, manifest):
-    entry = manifest.get(spec["model"])
+    if spec.get("mesh_asset"):
+        entry = _in_engine_entry(spec)
+    else:
+        entry = manifest.get(spec["model"])
     if not entry:
         raise RuntimeError("%s has no imported model %s in the manifest" % (name, spec["model"]))
 
@@ -347,9 +402,11 @@ def _author_enemy(name, spec, manifest):
     # Rotator(0, -90, 0) sets PITCH and lays every creature face-down on the ground.
     mesh_rotation = unreal.Rotator(pitch=0.0, yaw=mesh_yaw, roll=0.0)
     pose_key = spec.get("pose_bounds")
+    floor_key = spec.get("foot_plane_from")
+    floor = _read_anim_report().get(floor_key, {}).get("foot_plane") if floor_key else None
     scale, half_height, radius, offset = _body_fit(
         entry, spec["target_height_cm"], spec["capsule_radius"],
-        _read_anim_report().get(pose_key) if pose_key else None)
+        _read_anim_report().get(pose_key) if pose_key else None, floor)
     melee = spec.get("melee")
     ranged = spec.get("ranged")
     voice = spec["voice"]
@@ -437,6 +494,7 @@ def _author_enemy(name, spec, manifest):
         "mesh_offset": offset,
         "mesh_rotation": mesh_rotation,
         "override_mesh_transform": True,
+        "fill_light_scale": spec.get("fill_light_scale", 1.0),
     }
     if entry.get("physics_asset"):
         visuals["physics_asset"] = _load(entry["physics_asset"])
@@ -496,15 +554,15 @@ def _author_enemy(name, spec, manifest):
         definition,
         "desktop_vfx",
         spawn_effect=_load("/Game/Ashes/VFX/NS_Erebus_SmokeLocal.NS_Erebus_SmokeLocal"),
-        death_effect=_load("/Game/Ashes/VFX/NS_Erebus_FireWreck.NS_Erebus_FireWreck"),
     )
+    # Death stays physical: authored collapse, ragdoll, and corpse. A generic vehicle-fire
+    # system on an organic creature reads as an accidental VFX assignment, on every tier.
     # Mobile keeps the same bodies and materials - they are the archetype's identity - and only
-    # trades the effects down.
+    # trades the spawn effect down.
     _set_struct(
         definition,
         "mobile_vfx",
         spawn_effect=_load("/Game/Ashes/VFX/NS_Erebus_EmbersNear.NS_Erebus_EmbersNear"),
-        death_effect=_load("/Game/Ashes/VFX/NS_Erebus_FireSmall.NS_Erebus_FireSmall"),
     )
     _set_struct(
         definition,

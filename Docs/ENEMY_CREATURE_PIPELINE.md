@@ -1,15 +1,34 @@
 # Enemy creature pipeline
 
-Four enemy archetypes are built from external models dropped in `~/Downloads/enemy` (override with
-`AH_ENEMY_SOURCE`). None of the four arrives game-ready: one is an FBX version no current DCC will
-open, one ships its maps only inside a `.blend`, one has no skin cluster at all, and one has
-neither textures nor animation. The scripts below turn that drop into the roster, in this order.
+Three enemy archetypes are built from external models. Two come from the drop in `~/Downloads/enemy`
+(override with `AH_ENEMY_SOURCE`); the crawler comes from a separate Sketchfab diorama in
+`~/Downloads/spider-new` (override with `AH_FACEHUGGER_SOURCE`). None of them arrives game-ready:
+one is an FBX version no current DCC will open, one ships its maps only inside a `.blend`, and the
+crawler is scene dressing with no skeleton at all. The scripts below turn those drops into the
+roster, in this order.
+
+The roster has churned. The `Warden` / Veil Revenant (armoured-figure model) was cut and its 4.0
+threat split across the light bodies; the `Teuthisan` has since taken that heavy slot back. The
+`Spider` archetype kept its id but changed body entirely: it was a 6,955-vert bio-mech spider
+wearing procedural noise, and it is now the crawler, which ships a painted 2048 trim sheet.
+
+The `Teuthisan` is the exception to everything below: it does not come from a drop and never
+passes through `ImportEnemyModels.py`. It is a film-grade character (809k verts, 717 bones, SSS
+materials, per-zone 4K textures) migrated whole and path-preserving from its own project by
+`Scripts/MigrateTeuthisan.py` into `/Game/Characters/Teuthisan` (gitignored, ~871 MB; the script
+is the restore path). Its five gameplay clips are baked from its cinematic Control Rig level
+sequences by `Scripts/AuthorTeuthisanAnimations.py`, and `Scripts/PrepareTeuthisanGameMesh.py`
+makes the body affordable: Nanite on for desktop, an authored LOD chain (screen sizes authored,
+never auto - auto sizes facet inside the engagement band), auxiliary bone stripping on LOD1+.
+Desktop renders its native materials untouched; mobile takes the shared cheap override like
+every other archetype. `AuthorEnemyDefinitions.py` measures it live (`mesh_asset` spec key)
+instead of reading the import manifest.
 
 | # | Script | Runs under | Produces |
 |---|--------|------------|----------|
-| 1 | `Scripts/BakeCreatureTextures.py` | plain python + numpy | Tileable procedural PBR sets in `Saved/CreatureTextureSource` |
-| 2 | `Scripts/PrepareCreatureSources.py` | Blender (headless) | Skinned re-export and takes, unpacked 4K maps, baked occlusion/cavity in `Saved/CreatureSource` |
-| 3 | `Scripts/BakeCreatureTextures.py` again | plain python + numpy | The composited spider maps, which need step 2's bakes |
+| 1 | `Scripts/BakeCreatureTextures.py` | plain python + numpy | Procedural chitin, the shared detail normal, and the crawler's split maps, in `Saved/CreatureTextureSource` |
+| 2 | `Scripts/PrepareCreatureSources.py` | Blender (headless) | The quadruped's 4K maps, unpacked from its `.blend` into `Saved/CreatureSource` |
+| 3 | `Scripts/RigFacehugger.py` | Blender (headless) | `Saved/CreatureSource/Facehugger_Mesh.fbx` - the crawler, rigged, because the drop ships it unskinned |
 | 4 | `Scripts/ImportEnemyModels.py` | `UnrealEditor-Cmd` | `SKM_*`, `PA_*`, `T_*`, `MI_*`, `M_EnemyCreature`, and `Saved/EnemyModelManifest.json` |
 | 5 | `Scripts/AuthorCreatureAnimations.py` | `UnrealEditor-Cmd` | `AS_*` takes for the skeletons that shipped without any, and `Saved/CreatureAnimations.json` |
 | 6 | `Scripts/AuthorEnemyDefinitions.py` | `UnrealEditor-Cmd` | `DA_Enemy_*`, `DA_Encounter_*` |
@@ -26,9 +45,9 @@ anything step 5 wrote; step 5 reads the skeletons step 4 imported; step 6 reads 
 | Archetype | Model | Weapon | Animation source | Textures |
 |-----------|-------|--------|------------------|----------|
 | `Pilgrim` - Veil Stalker | x-com alien | rifle | one idle take in the FBX, plus authored walk/run/attack/death | procedural chitin |
-| `Warden` - Veil Revenant | armoured figure | none - claws | walk cycle from the `.blend`, plus authored idle/attack/death | rock / leather / metal, from the drop |
 | `Hound` | Alien-Animal | none - bites | six takes in the FBX, plus a rate-scaled walk | 4096 albedo / normal / roughness / metallic, unpacked from the `.blend` |
-| `Spider` - Bio-Mech Crawler | BioMechSpider | none - bites | all five takes authored | procedural carapace folded with occlusion and cavity baked from this mesh |
+| `Spider` - Veil Crawler | facehugger, from the alien-eggs diorama | none - bites | all five takes authored | 2048 painted trim sheet + its packed roughness, normal derived from albedo luminance |
+| `Teuthisan` | migrated ASCTeuthisan character | none - rears up and strikes | baked from its cinematic Control Rig takes | its own film-grade per-zone sets, untouched on desktop |
 
 Only the Stalker carries a weapon. `AshesOfHeaven.Assets.Enemies.RosterArmamentAndLocomotion`
 pins that, because a loadout is a soft array in a data asset and nothing in the engine objects to
@@ -36,28 +55,25 @@ a hound holding a rifle.
 
 ## Why each script exists
 
-**`PrepareCreatureSources.py`** covers the three things Unreal cannot do for itself.
-
-*The armoured figure has two FBX variants and the one next to its textures has no skin cluster.*
-Unreal imports it as sixteen rigid parts named after the mesh pieces - `claws_hip_001`,
-`LEATHER_002`, `Mask_003` - which is a pile of armour plates standing in bind position, not a
-figure that can ever move. The `.blend` beside it has the same body on a Rigify rig with a
-hand-keyed walk cycle, so that is the real source. The walk travels 1.765 units forward over 24
-frames; Unreal drives translation from the movement component, so the travel is cancelled by
-counter-animating the rig's `root` bone before the take is baked.
+**`PrepareCreatureSources.py`** covers the two things Unreal cannot do for itself.
 
 *The quadruped's glTF export packs metallic and roughness into one image.* In the glTF convention
 that is occlusion in red, roughness in green, metal in blue - and a roughness sampler reads red,
 which is 1.0 nearly everywhere. The map did nothing and the animal had one flat roughness value
 over hide and plating alike. The `.blend` still carries the separate 4096 originals, packed.
 
-*Two models arrive with no texture at all.* Tiling generic noise over them is what makes them read
-as clay: the detail is not wrong, it is simply not attached to the model. Blender bakes occlusion
-and pointiness from the mesh into its own UV layout, and `BakeCreatureTextures.composite_spider`
-multiplies those into the procedural carapace so the dark lands in the model's own creases.
+**`RigFacehugger.py`** exists because the crawler is scene dressing, not a character. Its diorama
+has no armature, no vertex groups and no animation in the entire file, and the enemy pipeline
+consumes skeletal meshes. The skeleton - 8 legs of 3 joints in mirrored pairs, plus a 4-joint tail
+- is fitted to the geometry rather than hardcoded: limb tips come from farthest-point sampling with
+an angular separation test (a pure distance threshold merges the fused finger pairs), and each
+joint comes from walking the mesh edge graph back toward the body and averaging the limb's
+cross-section, so bones land on the centreline instead of the skin. Bone names are a contract that
+`AuthorCreatureAnimations.py` pattern-matches on: `root`, `body`, `leg_{L,R}_{1..4}_{a,b,c}`,
+`tail_{1..4}`.
 
-Occlusion is baked through an emission shader rather than Blender's dedicated AO bake, which
-returns solid black on these models - it is a lighting bake, and these scenes have no lighting.
+Measured limits, not assumed ones: about 20% of a leg's motion bleeds into its immediate
+neighbour, and the unweighted `root` bone sits about 5% of the model's size outside the mesh.
 
 **`AuthorCreatureAnimations.py`** writes `UAnimSequence` bone tracks directly through the
 animation data controller. No FBX round trip, because the alien's source FBX is version 6000 and
@@ -85,12 +101,27 @@ Three things in that script are worth knowing before editing it:
 
 ## Known gap
 
-The spider's maps do not reach its surface. Every texture parameter on `MI_Spider_00` is wired,
-every map imports, and the same code path textures the other three bodies - but this mesh renders
-perfectly smooth and perfectly flat at any tint, which is what a sampler reading a single texel
-looks like. Its five source meshes each carry a UV layout that Blender bakes into cleanly, so the
-loss is somewhere in the merge Unreal does when it folds them into one skeletal mesh. Until that
-is found, `BaseTint` is this body's entire albedo and is set as one rather than as a multiplier.
+The alien's surface has no local contrast. `BakeCreatureTextures.bake_chitin` writes its albedo
+across 0.055-0.185, which is both dark and nearly flat, and `MI_Stalker_00` then multiplies it by
+a 0.20/0.11/0.055 tint. The quadruped lands at a comparable surface value (0.316 albedo x 0.14
+tint) and still reads, because its 4K map carries real local variation and a metal mask; the
+alien's does not, so it renders as a silhouette. The fix is a wider bake range, not a tint.
+
+Resolved, and then made moot. The old spider carried a note here claiming Unreal's merge of its
+five sub-meshes had dropped its UVs; it had not - any high-contrast map landed with full detail on
+every leg segment. The flat body was a `BaseTint` authored as an albedo back when no map was bound
+and left in place after one was, so a dark map multiplied by a dark albedo value bottomed out near
+0.05, which looks exactly like a single-texel sample. That body has since been replaced outright:
+procedural noise on a 6,955-vert mesh was never going to sit beside the quadruped's authored 4K
+set, whatever the tint said.
+
+The crawler that replaced it fits two constraints worth recording. Its stride is bounded by its
+shortest chain - the side legs rest near extended, and targets past their reach are clamped onto
+the reachable sphere rather than strained at. And it is fitted to the ground by the authored
+stance's foot plane rather than by its mesh bounds, because its tail hangs 30 units below its
+lowest leg: fitting to the mesh floated the whole creature half a capsule off the floor, while
+fitting to the stance outright would have scaled it five times too large, since that stance
+measures bones spanning 17.7 units on a body whose mesh spans 88.
 
 ## Animation playback
 

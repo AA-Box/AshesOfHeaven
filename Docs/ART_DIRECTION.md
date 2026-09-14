@@ -34,11 +34,11 @@ The visual hierarchy is:
 
 Human/Erebus construction is heavy, repairable, and physically legible: armored panels, concrete, blast walls, pipes, conduits, barricades, crates, platforms, rails, utility equipment, painted warnings, wet surfaces, soot, and localized damage. The current procedural kit maps the available Unreal/LevelPrototyping assets into this language without introducing collision-bearing decoration.
 
-The temporary soldiers use faction materials and a readable body proxy. Human soldiers share a steel/gray family; Veil soldiers use matte obsidian; Warden has a wider body and shoulder armor. The final human soldier set still needs authored helmets, packs, textiles, markings, animation, and weapon sockets.
+The temporary soldiers use faction materials and a readable body proxy. Human soldiers share a steel/gray family; Veil soldiers use matte obsidian. The final human soldier set still needs authored helmets, packs, textiles, markings, animation, and weapon sockets.
 
 ## Veil language
 
-The Veil is reconstructed, ancient, synthetic, and haunted by biological memory. The target is matte dark ceramic, pale metal only where it helps silhouette, and rare cold internal illumination. It must not become a generic robot, zombie, or neon alien. Pilgrim remains the fast humanoid infantry silhouette; Warden is deliberately broader, slower, and more defensive.
+The Veil is reconstructed, ancient, synthetic, and haunted by biological memory. The target is matte dark ceramic, pale metal only where it helps silhouette, and rare cold internal illumination. It must not become a generic robot, zombie, or neon alien. Pilgrim remains the fast humanoid infantry silhouette; the Teuthisan is the heavy - a film-grade alien that crawls in low and rears to full height to strike - with the Hound closing fast and the Spider as the expendable skirmisher.
 
 ## Cathedral language
 

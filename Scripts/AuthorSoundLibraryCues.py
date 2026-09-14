@@ -11,8 +11,8 @@ master bus and is audible from anywhere in the level.
 This groups the clips into banks, authors one SoundCue per bank (a
 SoundNodeRandom over the bank's variations, so nothing repeats back to back), routes each
 through the same mix assets the existing cues use, and registers every bank in
-DA_AudioPalette_Default under a `Library.*` id. Three events that were still synthesised
-placeholders are repointed at the recorded banks.
+DA_AudioPalette_Default under a `Library.*` id. Every semantic event that was still a
+synthesised placeholder or a mismatched SciFi-pack stand-in is repointed at a recorded bank.
 
 Run with UnrealEditor-Cmd; idempotent, re-running rebuilds the cues in place.
 """
@@ -35,7 +35,8 @@ REPORT = []
 # different information, so they are different banks even though both are "impact".
 BANKS = {
     "Explosion":      ["ExplosionLarge11", "ExplosionMedium21"],
-    "GunshotHeavy":   ["Gunshot11", "Gunshot71"],
+    # Gunshot11 alone, by direction: the M91 fires "Gunshot 1-1.wav", not a random pair.
+    "GunshotHeavy":   ["Gunshot11"],
     "WeaponHandling": ["DrawWeaponMetal11"],
     "ImpactRock":     ["RockImpact11", "RockImpact37"],
     "Melee":          ["Punch21"],
@@ -44,28 +45,51 @@ BANKS = {
     "Door":           ["DoorOpen41", "DoorClose41", "WoodAndDoorCreak01"],
     "Pickup":         ["BagHandle15", "CoinBag31"],
     "Industry":       ["Blacksmithing11"],
+    # The player's feet. Walk steps are the rock impact, one per stride; the sprint layer is
+    # a recorded running loop the player character carries while sprinting (a 6-second sample
+    # retriggered every step would stack twenty deep). RockImpact11 is deliberately shared
+    # with the ImpactRock bank - same clip, two semantic jobs.
+    "FootstepRock":   ["RockImpact11"],
+    "FootstepSprint": ["SpinopelRunningInPackedSnow475140"],
     # Loops get a SoundNodeLooping and stay LoadOnDemand; the rest are inlined one-shots.
     "AmbienceWind":   ["AmbientWindLoop1"],
     "AmbienceBirds":  ["AmbientBirdsLoop04"],
     "AmbienceFire":   ["FireBurningLoop2"],
 }
 
-LOOPING_BANKS = {"AmbienceWind", "AmbienceBirds", "AmbienceFire"}
-UI_BANKS = {"Interface", "Pickup"}
+LOOPING_BANKS = {"AmbienceWind", "AmbienceBirds", "AmbienceFire", "FootstepSprint"}
+# No bank is UI. Pickup used to be, and that was wrong: UI.Pickup is raised through
+# PlayWorldCue at the item's location, so ATT_UI/SM_UI made a dropped magazine audible at
+# full volume from the far end of the level. Everything here is a world sound.
+UI_BANKS = set()
 
-# Existing semantic events worth repointing. Everything else keeps what it has: the SciFi
-# pack already owns weapon fire, footsteps and the UI stingers, and the player's own hurt and
-# death voices must not become creature noises.
+# Semantic events this script owns. Each one was either a synthesised placeholder (a sine and
+# noise render from GeneratePhase42Audio.py) or a SciFi-pack stand-in that did not match the
+# thing making the sound - the M91 is a bolt-action rifle and was firing a laser. The player's
+# own hurt/death voices stay on their existing cues: those are human, and must not become
+# creature noises.
 PALETTE_EVENTS = {
     "Combat.Grenade": "Explosion",
     "Combat.Melee": "Melee",
+    "Weapon.M91.Fire": "GunshotHeavy",
+    "Weapon.M91.Reload": "WeaponHandling",
+    "Weapon.M91.Impact": "ImpactRock",
+    "UI.Pickup": "Pickup",
+    # Taken over from the SciFi metal steps, by direction. The run event is new: the player
+    # character resolves it into a looping component (AAHCombatPlayerCharacter::UpdateSprintLoop)
+    # and silences its per-step one-shots while the loop carries the feet.
+    "Player.Footstep": "FootstepRock",
+    "Player.Footstep.Run": "FootstepSprint",
+}
+# Events bound straight to an existing cue instead of to a library bank.
+PALETTE_CUES = {
+    # UINegative is the "action denied" stinger. It was firing on every line of dialogue, so
+    # the whole script read as a stream of errors. UISelect is the neutral blip.
+    "UI.Dialogue": "/Game/Ashes/Audio/Cues/SC_SciFi_UISelect",
 }
 # Events this script previously repointed at banks that no longer exist, and the cue each must
-# be handed back to. Weapon.M91.Impact rode SC_Lib_ImpactMetal, whose every clip
-# (ShieldMetalImpact, HitGeneric x2) was pulled from the pack.
-PALETTE_RESTORE = {
-    "Weapon.M91.Impact": "/Game/Ashes/Audio/Cues/SC_M91_Impact",
-}
+# be handed back to. Empty now that Weapon.M91.Impact has ImpactRock.
+PALETTE_RESTORE = {}
 
 
 def _log(message):
@@ -171,6 +195,8 @@ def bind_palette(cue_paths):
         events[unreal.Name("Library." + bank)] = _require(path)
     for event_name, bank in PALETTE_EVENTS.items():
         events[unreal.Name(event_name)] = _require(cue_paths[bank])
+    for event_name, cue_path in PALETTE_CUES.items():
+        events[unreal.Name(event_name)] = _require(cue_path)
     palette.set_editor_property("events", events)
     EAL.save_asset(PALETTE_PATH, only_if_is_dirty=False)
 
@@ -179,11 +205,15 @@ def bind_palette(cue_paths):
         bound = written[unreal.Name(event_name)]
         if not bound or ("SC_Lib_" + bank) not in str(bound):
             raise RuntimeError("palette event %s did not bind to %s" % (event_name, bank))
+    for event_name, cue_path in PALETTE_CUES.items():
+        bound = written[unreal.Name(event_name)]
+        if not bound or cue_path.split("/")[-1] not in str(bound):
+            raise RuntimeError("palette event %s did not bind to %s" % (event_name, cue_path))
     for bank in cue_paths:
         if unreal.Name("Library." + bank) not in written:
             raise RuntimeError("palette is missing Library.%s" % bank)
     _log("palette: %d Library ids, %d existing events repointed"
-         % (len(cue_paths), len(PALETTE_EVENTS)))
+         % (len(cue_paths), len(PALETTE_EVENTS) + len(PALETTE_CUES)))
 
 
 def _erase(package_path):

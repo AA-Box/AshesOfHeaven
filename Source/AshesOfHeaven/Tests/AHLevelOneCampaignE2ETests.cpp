@@ -28,6 +28,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Animation/SkeletalMeshActor.h"
+#include "Animation/AnimSingleNodeInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Gameplay/UI/AHHUDRootWidget.h"
 
 // End-to-end coverage for the Level One campaign lifecycle: play the twelve objectives on the
 // real director, die and reload a checkpoint mid-run, finish the chapter, and prove the
@@ -774,6 +778,101 @@ bool FAHLevelOneAuthoredZonesTest::RunTest(const FString& Parameters)
 		TestEqual(*FString::Printf(TEXT("no visible debug primitive mesh remains in the %s corridor"), Corridor.Name), VisibleDebugPrimitives, 0);
 	}
 
+	Session.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneStoryCharacterTest, "AshesOfHeaven.LevelOne.StoryCharacterPresentation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneStoryCharacterTest::RunTest(const FString& Parameters)
+{
+	AHLevelOneE2ESupport::FScopedCampaignSaveSlot SaveSlot(TEXT("AH_Test_StoryCharacter"));
+	AHLevelOneE2ESupport::FLevelOneSession Session;
+	if (!Session.Boot(false))
+	{
+		AddError(TEXT("Story-character world could not start"));
+		Session.Teardown();
+		return false;
+	}
+	ASkeletalMeshActor* Maya = nullptr;
+	for (TActorIterator<ASkeletalMeshActor> It(Session.World); It; ++It)
+	{
+		if (It->ActorHasTag(TEXT("MayaSerrin"))) Maya = *It;
+	}
+	TestNotNull(TEXT("Maya exists in the opening"), Maya);
+	if (Maya)
+	{
+		TestTrue(TEXT("Opening facing retains authored rotation and mesh-forward correction"),
+			Maya->GetActorQuat().Equals(FRotator(0.0f, 90.0f, 0.0f).Quaternion()));
+		USkeletalMeshComponent* Mesh = Maya->GetSkeletalMeshComponent();
+		TestNotNull(TEXT("Maya has a skeletal mesh"), Mesh->GetSkeletalMeshAsset());
+		TestNotNull(TEXT("Story figure has an animation instance"), Mesh->GetSingleNodeInstance());
+		if (Mesh->GetSingleNodeInstance()) TestNotNull(TEXT("Idle clip is assigned"), Mesh->GetSingleNodeInstance()->GetCurrentAsset());
+		TestEqual(TEXT("Story figure cannot obstruct the route"), Mesh->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		Session.Director->DebugSkipToStage(EAHChapterStage::FailsafeTerminal);
+		TestFalse(TEXT("Maya is present for the decision"), Maya->IsHidden());
+		TestTrue(TEXT("Terminal reposition retains the same mesh-forward convention"),
+			Maya->GetActorQuat().Equals(FRotator(0.0f, 120.0f, 0.0f).Quaternion()));
+		TestTrue(TEXT("Decision blocking is on raised Cathedral floor"), Maya->GetActorLocation().Z > 790.0f);
+		Session.Director->DebugSkipToStage(EAHChapterStage::Escape);
+		TestTrue(TEXT("Static story figure is hidden during running combat"), Maya->IsHidden());
+	}
+	Session.Teardown();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAHLevelOneOpeningFadeTest, "AshesOfHeaven.LevelOne.OpeningFadeFollowsDialogueClock", EAutomationTestFlags::EditorContext | EAutomationTestFlags::CommandletContext | EAutomationTestFlags::ProductFilter)
+bool FAHLevelOneOpeningFadeTest::RunTest(const FString& Parameters)
+{
+	AHLevelOneE2ESupport::FScopedCampaignSaveSlot SaveSlot(TEXT("AH_Test_OpeningFade"));
+	AHLevelOneE2ESupport::FLevelOneSession Session;
+	if (!Session.Boot(false))
+	{
+		Session.Teardown();
+		return false;
+	}
+	UClass* HUDClass = LoadClass<UAHHUDRootWidget>(nullptr, TEXT("/Game/Ashes/UI/HUD/WBP_HUD_Root.WBP_HUD_Root_C"));
+	UAHHUDRootWidget* Root = HUDClass ? CreateWidget<UAHHUDRootWidget>(Session.GameInstance, HUDClass) : nullptr;
+	TestNotNull(TEXT("Authored HUD can be created"), Root);
+	if (Root)
+	{
+		// Realize Slate through the normal widget lifecycle. Calling NativeConstruct
+		// directly leaves IsVisible() without a cached Slate widget in a headless test.
+		const TSharedRef<SWidget> BuiltHUD = Root->TakeWidget();
+		TestTrue(TEXT("Authored HUD bindings are ready"), Root->IsPresentationReady());
+		UAHDialogueSubsystem* Dialogue = Session.World->GetSubsystem<UAHDialogueSubsystem>();
+		TestNotNull(TEXT("Opening dialogue subsystem exists"), Dialogue);
+		UWidget* Title = Root->GetWidgetFromName(TEXT("ChapterTitleWidget"));
+		UWidget* Curtain = Root->GetWidgetFromName(TEXT("OpeningCurtain"));
+		TestNotNull(TEXT("Chapter title is authored"), Title);
+		TestNotNull(TEXT("Opening curtain is authored"), Curtain);
+		if (Title && Curtain && Dialogue)
+		{
+			TestTrue(TEXT("Cold open is playing"), Dialogue->HasActiveDialogue());
+			TestEqual(TEXT("Cold open owns the dialogue channel"), Dialogue->GetCurrentSequence(), FName(TEXT("Ch01_Opening")));
+			TestFalse(TEXT("Title stays hidden during the cold open"), Title->IsVisible());
+			TestTrue(TEXT("Curtain covers the cold open"), Curtain->IsVisible());
+			Dialogue->SkipCurrentSequence();
+			TestEqual(TEXT("Opening completion advances the real director"), Session.Chapter()->GetStage(), EAHChapterStage::ErebusOpening);
+			TestTrue(TEXT("Opening reveal survives the stage transition"), Title->IsVisible());
+			TestTrue(TEXT("Opening reveal retains the fading curtain"), Curtain->IsVisible());
+			Session.World->TimeSeconds += 1.0;
+			Root->NativeTick(FGeometry(), 0.01f);
+			TestTrue(TEXT("Title fades in on the dialogue clock"), Title->GetRenderOpacity() > 0.9f);
+			TestTrue(TEXT("Curtain fades away on the dialogue clock"), Curtain->GetRenderOpacity() > 0.0f && Curtain->GetRenderOpacity() < 1.0f);
+			const float PausedTitleOpacity = Title->GetRenderOpacity();
+			const float PausedCurtainOpacity = Curtain->GetRenderOpacity();
+			Root->NativeTick(FGeometry(), 5.0f);
+			TestTrue(TEXT("Paused world keeps the title visible"), Title->IsVisible());
+			TestEqual(TEXT("UI time alone cannot advance the title fade"), Title->GetRenderOpacity(), PausedTitleOpacity);
+			TestEqual(TEXT("UI time alone cannot advance the curtain fade"), Curtain->GetRenderOpacity(), PausedCurtainOpacity);
+			// Reproduce a throttled window: dialogue/world advances five seconds,
+			// while Slate delivers only a short UI delta on its next paint.
+			Session.World->TimeSeconds += 5.0;
+			Root->NativeTick(FGeometry(), 0.01f);
+			TestFalse(TEXT("Title clears on the dialogue clock despite a small UI delta"), Title->IsVisible());
+			TestFalse(TEXT("Curtain clears with the title"), Curtain->IsVisible());
+		}
+	}
 	Session.Teardown();
 	return true;
 }

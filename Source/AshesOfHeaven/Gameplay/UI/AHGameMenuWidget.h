@@ -22,7 +22,8 @@ enum class EAHMenuPage : uint8
 {
 	Root,
 	Controls,
-	Options
+	Options,
+	Briefing
 };
 
 /**
@@ -56,6 +57,7 @@ protected:
 	UWidget* BuildRootPage();
 	UWidget* BuildControlsPage();
 	UWidget* BuildOptionsPage();
+	UWidget* BuildBriefingPage();
 	UButton* MakeMenuButton(const FText& Label, FName Action, UVerticalBox* Container);
 	UTextBlock* MakeText(const FText& Value, float Size, const FLinearColor& Color, float LetterSpacing = 300.0f);
 	void RefreshOptionRows();
@@ -65,12 +67,14 @@ protected:
 	UFUNCTION() void HandleRestartCheckpoint();
 	UFUNCTION() void HandleControls();
 	UFUNCTION() void HandleOptions();
+	UFUNCTION() void HandleBriefing();
 	UFUNCTION() void HandleExit();
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleCycleWindowMode();
 	UFUNCTION() void HandleCycleQuality();
 	UFUNCTION() void HandleResolutionDown();
 	UFUNCTION() void HandleResolutionUp();
+	UFUNCTION() void HandleToggleInvertLook();
 
 	class AAHCombatPlayerController* GetOwningCombatController() const;
 
@@ -81,6 +85,7 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> WindowModeValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> QualityValue;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> ResolutionValue;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> InvertLookValue;
 	UPROPERTY(Transient) TObjectPtr<UButton> ContinueButton;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> PrimaryLabel;
 };
