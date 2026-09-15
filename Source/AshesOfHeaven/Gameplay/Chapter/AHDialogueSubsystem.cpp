@@ -260,7 +260,7 @@ void UAHDialogueSubsystem::ShowNextLine()
 		}
 	}
 	#if !UE_BUILD_SHIPPING
-	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] line sequence=%s index=%d speaker=%s duration=%0.1f"), *CurrentSequenceId.ToString(), CurrentLineIndex, *CurrentLine.Speaker.ToString(), CurrentLine.Duration);
+	UE_LOG(LogAshesOfHeaven, Display, TEXT("[Phase3.2][Dialogue] line sequence=%s index=%d speaker=%s duration=%0.1f voice=%s playing=%s"), *CurrentSequenceId.ToString(), CurrentLineIndex, *CurrentLine.Speaker.ToString(), CurrentLine.Duration, *GetNameSafe(CurrentLine.Voice), VoiceComponent && VoiceComponent->IsPlaying() ? TEXT("true") : TEXT("false"));
 	#endif
 	OnLineChanged.Broadcast(CurrentLine.Speaker, CurrentLine.Subtitle, CurrentLine.Duration);
 	if (GetWorld())
