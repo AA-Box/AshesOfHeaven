@@ -186,6 +186,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Corpse")
 	bool IsPersistentCorpse() const;
+	bool IsPlayingDeathAnimation() const { return bPlayingDeathAnimation; }
 
 	UFUNCTION(BlueprintPure, Category="Corpse")
 	bool IsNarrativeCorpse() const;
@@ -286,6 +287,8 @@ protected:
 	void HandleSelfEnemyAssetsReady(FGuid RequestId, bool bSuccess, const TArray<UAHEnemyDefinition*>& Definitions, const FString& Error);
 	virtual FPrimaryAssetId GetDefaultEnemyDefinitionId() const;
 	void StartRagdoll();
+	void FinishDeathAnimation();
+	bool bPlayingDeathAnimation = false;
 	bool ShouldManageCorpseLifecycle() const;
 	void PrepareForCorpseManagement();
 	void SettleCorpsePhysics();

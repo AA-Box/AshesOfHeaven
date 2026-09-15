@@ -714,6 +714,12 @@ void AAHCombatantCharacter::UpdateCreatureAnimation(float DeltaSeconds)
 	}
 }
 
+void AAHCombatantCharacter::FinishDeathAnimation()
+{
+	bPlayingDeathAnimation = false;
+	// The non-looping sequence retains its final pose; corpse management can now freeze it.
+}
+
 void AAHCombatantCharacter::StartRagdoll()
 {
 	USkeletalMeshComponent* Body = GetMesh();
@@ -1080,17 +1086,19 @@ void AAHCombatantCharacter::OnDeathStarted()
 	{
 		CombatComponent->DisableCombat();
 	}
-	// Without this the body keeps standing in its idle loop and a kill reads as a bug.
-	// An archetype with an authored death take plays it first and goes limp afterwards; a
-	// ragdoll that starts on the frame of the killing shot throws the body around before the
-	// player has read that it died. Bodies with no take - every mannequin combatant, and every
-	// test fixture - ragdoll immediately, exactly as before.
+	// Authored creature collapses already supply the corpse pose. Switching their generated
+	// collision bodies to simulation here can explosively separate overlapping bodies.
 	if (UAnimSequenceBase* DeathClip = CreatureAnimations.Death.Get())
 	{
+		bPlayingDeathAnimation = true;
+		GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		GetMesh()->SetCollisionResponseToAllChannels(ECR_Ignore);
+		GetMesh()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 		PlayCreatureClip(EAHCreatureAnimState::Death, false);
-		const float Hold = FMath::Clamp(DeathClip->GetPlayLength(), 0.1f, 3.0f);
-		FTimerHandle RagdollHandle;
-		GetWorldTimerManager().SetTimer(RagdollHandle, this, &AAHCombatantCharacter::StartRagdoll, Hold, false);
+		const float Hold = DeathClip->GetPlayLength() / FMath::Max(0.01f, DeathClip->RateScale);
+		FTimerHandle DeathAnimationHandle;
+		GetWorldTimerManager().SetTimer(DeathAnimationHandle, this,
+			&AAHCombatantCharacter::FinishDeathAnimation, FMath::Max(0.1f, Hold), false);
 	}
 	else
 	{

@@ -131,7 +131,7 @@ void UAHCorpseManagerSubsystem::ProcessLifecycle(float CurrentTimeSeconds)
 void UAHCorpseManagerSubsystem::AdvanceLifecycle(FManagedCorpse& Entry, float CurrentTimeSeconds)
 {
 	AAHCombatantCharacter* Corpse = Entry.Actor.Get();
-	if (!IsValid(Corpse))
+	if (!IsValid(Corpse) || Corpse->IsPlayingDeathAnimation())
 	{
 		return;
 	}
